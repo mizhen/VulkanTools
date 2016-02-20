@@ -200,14 +200,41 @@ int main(int argc, char **argv)
     // Set up environment for screenshot
     if (replaySettings.screenshotList != NULL)
     {
-        // Set env var that communicates list to ScreenShot layer
-        vktrace_set_global_var("_VK_SCREENSHOT", replaySettings.screenshotList);
+		unsigned long startFrame = 0;
+		unsigned long endFrame = 0;
+		unsigned long stepFrame = 0;
+		if (sscanf(replaySettings.screenshotList, "%lu-%lu,%lu", &startFrame, &endFrame, &stepFrame) == 3)
+		{
+			// Validate supplying a range of frames, and a step count.
+			// example 1: every frame between 10 and 100: "10-100,1"
+			// example 2: every 2nd frame between 10 and 100: "10-100,2"
+			if (startFrame >= endFrame)
+			{
+				vktrace_LogError("Screenshot start frame (%ul) must come BEFORE the end frame (%ul).", startFrame, endFrame);
+				return 1;
+			}
+			else if (endFrame - startFrame < stepFrame)
+			{
+				vktrace_LogError("Screenshot step frame count (%ul) is greater than the start/end frame range. It must be less than %ul.", stepFrame, endFrame-startFrame);
+				return 1;
+			}
 
+			// set env var that communicates with the PNG ScreenShot layer
+			vktrace_set_global_var("_VK_SCREENSHOT", "");
+			vktrace_set_global_var("_VK_PNG_SCREENSHOT", replaySettings.screenshotList);
+		}
+		else
+		{
+			// Set env var that communicates list to ScreenShot layer
+			vktrace_set_global_var("_VK_SCREENSHOT", replaySettings.screenshotList);
+			vktrace_set_global_var("_VK_PNG_SCREENSHOT", "");
+		}
     }
     else
     {
-        vktrace_set_global_var("_VK_SCREENSHOT","");
-    }
+		vktrace_set_global_var("_VK_SCREENSHOT","");
+		vktrace_set_global_var("_VK_PNG_SCREENSHOT", "");
+	}
 
     // open trace file and read in header
     char* pTraceFile = replaySettings.pTraceFilePath;

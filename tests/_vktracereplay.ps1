@@ -22,10 +22,10 @@ new-item vktracereplay_tmp -itemtype directory > $null 2> $null
 cd vktracereplay_tmp
 cp ..\..\vktrace\$dPath\vkreplay.exe .
 cp ..\..\vktrace\$dPath\vktrace.exe .
-cp ..\..\..\..\LoaderAndValidationLayers\build\demos\$dPath\cube.exe .
-cp ..\..\..\..\LoaderAndValidationLayers\demos\*.ppm .
-cp ..\..\..\..\LoaderAndValidationLayers\build\demos\*.spv .
-cp ..\..\..\..\LoaderAndValidationLayers\build\loader\$dPath\vulkan-1.dll .
+cp ..\..\..\..\Vulkan-LoaderAndValidationLayers\build\demos\$dPath\cube.exe .
+cp ..\..\..\..\Vulkan-LoaderAndValidationLayers\demos\*.ppm .
+cp ..\..\..\..\Vulkan-LoaderAndValidationLayers\build\demos\*.spv .
+cp ..\..\..\..\Vulkan-LoaderAndValidationLayers\build\loader\$dPath\vulkan-1.dll .
 cp ..\..\layers\$dPath\VkLayer_screenshot.dll .
 cp ..\..\layers\$dPath\VkLayer_screenshot.json .
 cp ..\..\layers\$dPath\VkLayer_vktrace_layer.dll .
