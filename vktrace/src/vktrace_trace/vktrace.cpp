@@ -51,7 +51,8 @@ vktrace_SettingInfo g_settings_info[] =
     { "w", "WorkingDir", VKTRACE_SETTING_STRING, &g_settings.working_dir, &g_default_settings.working_dir, TRUE, "The program's working directory."},
     { "o", "OutputTrace", VKTRACE_SETTING_STRING, &g_settings.output_trace, &g_default_settings.output_trace, TRUE, "Path to the generated output trace file."},
     { "s", "ScreenShot", VKTRACE_SETTING_STRING, &g_settings.screenshotList, &g_default_settings.screenshotList, TRUE, "Comma separated list of frame numbers on which to take a screen snapshot."},
-    { "ptm", "PrintTraceMessages", VKTRACE_SETTING_BOOL, &g_settings.print_trace_messages, &g_default_settings.print_trace_messages, TRUE, "Print trace messages to vktrace console."},
+	{ "png", "PngScreenShot", VKTRACE_SETTING_STRING, &g_settings.pngScreenshotList, &g_default_settings.pngScreenshotList, TRUE, "Comma separated list of frame numbers on which to take a PNG screen snapshot." },
+	{ "ptm", "PrintTraceMessages", VKTRACE_SETTING_BOOL, &g_settings.print_trace_messages, &g_default_settings.print_trace_messages, TRUE, "Print trace messages to vktrace console."},
 
     //{ "z", "pauze", VKTRACE_SETTING_BOOL, &g_settings.pause, &g_default_settings.pause, TRUE, "Wait for a key at startup (so a debugger can be attached)" },
     //{ "q", "quiet", VKTRACE_SETTING_BOOL, &g_settings.quiet, &g_default_settings.quiet, TRUE, "Disable warning, verbose, and debug output" },
@@ -143,6 +144,34 @@ void loggingCallback(VktraceLogLevel level, const char* pMessage)
 #endif
 }
 
+void add_instance_layer(const char* fullLayerName)
+{
+	char *instanceEnv = vktrace_get_global_var("VK_INSTANCE_LAYERS");
+	if (!instanceEnv || strlen(instanceEnv) == 0)
+	{
+		vktrace_set_global_var("VK_INSTANCE_LAYERS", fullLayerName);
+	}
+	else if (instanceEnv != strstr(instanceEnv, fullLayerName))
+	{
+		char *newEnv = vktrace_copy_and_append(fullLayerName, VKTRACE_LIST_SEPARATOR, instanceEnv);
+		vktrace_set_global_var("VK_INSTANCE_LAYERS", newEnv);
+	}
+}
+
+void add_device_layer(const char* fullLayerName)
+{
+	char *deviceEnv = vktrace_get_global_var("VK_DEVICE_LAYERS");
+	if (!deviceEnv || strlen(deviceEnv) == 0)
+	{
+		vktrace_set_global_var("VK_DEVICE_LAYERS", fullLayerName);
+	}
+	else if (deviceEnv != strstr(deviceEnv, fullLayerName))
+	{
+		char *newEnv = vktrace_copy_and_append(fullLayerName, VKTRACE_LIST_SEPARATOR, deviceEnv);
+		vktrace_set_global_var("VK_DEVICE_LAYERS", newEnv);
+	}
+}
+
 // ------------------------------------------------------------------------------------------------
 int main(int argc, char* argv[])
 {
@@ -159,6 +188,7 @@ int main(int argc, char* argv[])
     g_default_settings.output_trace = vktrace_copy_and_append(execDir, VKTRACE_PATH_SEPARATOR, "vktrace_out.vktrace");
     g_default_settings.print_trace_messages = FALSE;
     g_default_settings.screenshotList = NULL;
+	g_default_settings.pngScreenshotList = NULL;
 
     // free binary directory string
     vktrace_free(execDir);
@@ -221,19 +251,46 @@ int main(int argc, char* argv[])
         }
     }
 
-    if (g_settings.screenshotList)
+	if (g_settings.screenshotList != NULL)
+	{
+		// Set env var that communicates list to ScreenShot layer
+		vktrace_set_global_var("_VK_SCREENSHOT", g_settings.screenshotList);
+	}
+	else
+	{
+		vktrace_set_global_var("_VK_SCREENSHOT", "");
+	}
+
+    if (g_settings.pngScreenshotList != NULL)
     {
+		unsigned int startFrame = 0;
+		unsigned int endFrame = 0;
+		unsigned int stepFrame = 0;
+		if (sscanf(g_settings.pngScreenshotList, "%u-%u,%u", &startFrame, &endFrame, &stepFrame) == 3)
+		{
+			// Validate supplying a range of frames, and a step count.
+			// example 1: every frame between 10 and 100: "10-100,1"
+			// example 2: every 2nd frame between 10 and 100: "10-100,2"
+			if (startFrame > endFrame)
+			{
+				vktrace_LogError("Screenshot start frame (%u) must come BEFORE the end frame (%u).", startFrame, endFrame);
+				return 1;
+			}
 
-        // Export list to screenshot layer
-        vktrace_set_global_var("_VK_SCREENSHOT", g_settings.screenshotList);
-
-    }
-    else
-    {
-        vktrace_set_global_var("_VK_SCREENSHOT","");
-    }
-
-
+			// set env var that communicates with the PNG ScreenShot layer
+			vktrace_set_global_var("_VK_PNG_SCREENSHOT", g_settings.pngScreenshotList);
+		}
+		else
+		{
+			vktrace_LogError("PNG Screenshot option must be formatted as: \"<startFrame>-<endFrame>,<stepFrames>\".");
+			return 1;
+		}
+	}
+	else
+	{
+		vktrace_set_global_var("_VK_PNG_SCREENSHOT", "");
+	}
+	
     unsigned int serverIndex = 0;
     do {
         // Create and start the process or run in server mode
@@ -248,7 +305,8 @@ int main(int argc, char* argv[])
             procInfo.fullProcessCmdLine = vktrace_copy_and_append(g_settings.program, " ", g_settings.arguments);
             procInfo.workingDirectory = vktrace_allocate_and_copy(g_settings.working_dir);
             procInfo.traceFilename = vktrace_allocate_and_copy(g_settings.output_trace);
-        } else
+        }
+		else
         {
             char *pExtension = strrchr(g_settings.output_trace, '.');
             char *basename = vktrace_allocate_and_copy_n(g_settings.output_trace, (int) ((pExtension == NULL) ? strlen(g_settings.output_trace) : pExtension - g_settings.output_trace));
@@ -263,56 +321,30 @@ int main(int argc, char* argv[])
 
         procInfo.parentThreadId = vktrace_platform_get_thread_id();
 
-        // setup tracer, only Vulkan tracer suppported
+        // setup tracer, only Vulkan tracer supported
         PrepareTracers(&procInfo.pCaptureThreads);
 
         if (g_settings.program != NULL)
         {
-            char *instEnv = vktrace_get_global_var("VK_INSTANCE_LAYERS");
-            // Add ScreenShot layer if enabled
-            if (g_settings.screenshotList && (!instEnv || !strstr(instEnv, "VK_LAYER_LUNARG_screenshot")))
-            {
-                if (!instEnv || strlen(instEnv)  == 0)
-                    vktrace_set_global_var("VK_INSTANCE_LAYERS", "VK_LAYER_LUNARG_screenshot");
-                else
-                {
-                    char *newEnv = vktrace_copy_and_append(instEnv, VKTRACE_LIST_SEPARATOR, "VK_LAYER_LUNARG_screenshot");
-                    vktrace_set_global_var("VK_INSTANCE_LAYERS", newEnv);
-                }
-                instEnv = vktrace_get_global_var("VK_INSTANCE_LAYERS");
-            }
-            char *devEnv = vktrace_get_global_var("VK_DEVICE_LAYERS");
-            if (g_settings.screenshotList && (!devEnv || !strstr(devEnv, "VK_LAYER_LUNARG_screenshot")))
-            {
-                if (!devEnv || strlen(devEnv) == 0)
-                    vktrace_set_global_var("VK_DEVICE_LAYERS", "VK_LAYER_LUNARG_screenshot");
-                else
-                {
-                    char *newEnv = vktrace_copy_and_append(devEnv, VKTRACE_LIST_SEPARATOR, "VK_LAYER_LUNARG_screenshot");
-                    vktrace_set_global_var("VK_DEVICE_LAYERS", newEnv);
-                }
-                devEnv = vktrace_get_global_var("VK_DEVICE_LAYERS");
-            }
-            // Add vktrace_layer enable env var if needed
-            if (!instEnv || strlen(instEnv) == 0)
-            {
-                vktrace_set_global_var("VK_INSTANCE_LAYERS", "VK_LAYER_LUNARG_vktrace");
-            }
-            else if (instEnv != strstr(instEnv, "VK_LAYER_LUNARG_vktrace"))
-            {
-                char *newEnv = vktrace_copy_and_append("VK_LAYER_LUNARG_vktrace", VKTRACE_LIST_SEPARATOR, instEnv);
-                vktrace_set_global_var("VK_INSTANCE_LAYERS", newEnv);
-            }
-            if (!devEnv || strlen(devEnv) == 0)
-            {
-                vktrace_set_global_var("VK_DEVICE_LAYERS", "VK_LAYER_LUNARG_vktrace");
-            }
-            else if (devEnv != strstr(devEnv, "VK_LAYER_LUNARG_vktrace"))
-            {
-                char *newEnv = vktrace_copy_and_append("VK_LAYER_LUNARG_vktrace", VKTRACE_LIST_SEPARATOR, devEnv);
-                vktrace_set_global_var("VK_DEVICE_LAYERS", newEnv);
-            }
-            // call CreateProcess to launch the application
+			// Add PNG ScreenShot layer if enabled
+			if (g_settings.pngScreenshotList != NULL)
+			{
+				add_instance_layer("VK_LAYER_AMD_png_screenshot");
+				add_device_layer("VK_LAYER_AMD_png_screenshot");
+			}
+			
+			// Add ScreenShot layer if enabled
+			if (g_settings.screenshotList != NULL)
+			{
+				add_instance_layer("VK_LAYER_LUNARG_screenshot");
+				add_device_layer("VK_LAYER_LUNARG_screenshot");
+			}
+
+			// Add vktrace_layer enable env var if needed
+			add_instance_layer("VK_LAYER_LUNARG_vktrace");
+			add_device_layer("VK_LAYER_LUNARG_vktrace");
+
+			// call CreateProcess to launch the application
             procStarted = vktrace_process_spawn(&procInfo);
         }
         if (procStarted == FALSE)

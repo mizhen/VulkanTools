@@ -21,6 +21,7 @@ set(LAYER_JSON_FILES
     VkLayer_generic
     VkLayer_multi
     VkLayer_screenshot
+    VkLayer_png_screenshot
     )
 
 set(VK_LAYER_RPATH /usr/lib/x86_64-linux-gnu/vulkan/layer:/usr/lib/i386-linux-gnu/vulkan/layer)
@@ -140,3 +141,5 @@ add_vk_layer(screenshot screenshot.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
 # generated
 add_vk_layer(generic generic_layer.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
 add_vk_layer(api_dump api_dump.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
+# AMD added
+add_vk_layer(png_screenshot png_screenshot.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
