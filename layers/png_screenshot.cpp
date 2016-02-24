@@ -41,6 +41,7 @@
 #include <map>
 #include <vector>
 #include <fstream>
+#include "png.h"
 
 using namespace std;
 
@@ -140,254 +141,321 @@ static void init_screenshot()
     }
 }
 
-static void writePPM( const char *filename, VkImage image1)
+static void writePNG(const char *filename, VkImage image1)
 {
-    VkImage image2;
-    VkResult err;
-    bool pass;
-    uint32_t x, y;
-    const char *ptr;
-    VkDeviceMemory mem2;
-    VkCommandBuffer commandBuffer;
+	VkImage image2;
+	VkResult err;
+	bool pass;
+	const char *ptr;
+	VkDeviceMemory mem2;
+	VkCommandBuffer commandBuffer;
 
-    if (imageMap.empty() || imageMap.find(image1) == imageMap.end())
-        return;
+	if (imageMap.empty() || imageMap.find(image1) == imageMap.end())
+		return;
 
-    VkDevice device = imageMap[image1]->device;
-    VkPhysicalDevice physicalDevice = deviceMap[device]->physicalDevice;
-    VkInstance instance = physDeviceMap[physicalDevice]->instance;
-    VkQueue queue = deviceMap[device]->queue;
-    uint32_t width = imageMap[image1]->imageExtent.width;
-    uint32_t height = imageMap[image1]->imageExtent.height;
-    VkFormat format = imageMap[image1]->format;
-    const VkImageSubresource sr = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0};
-    VkSubresourceLayout sr_layout;
-    const VkImageCreateInfo imgCreateInfo = {
-        VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        NULL,
-        0,
-        VK_IMAGE_TYPE_2D,
-        format,
-        {width, height, 1},
-        1,
-        1,
-        VK_SAMPLE_COUNT_1_BIT,
-        VK_IMAGE_TILING_LINEAR,
-        VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-        VK_SHARING_MODE_EXCLUSIVE,
-        0,
-        NULL,
-        VK_IMAGE_LAYOUT_UNDEFINED,
-    };
-    VkMemoryAllocateInfo memAllocInfo = {
-        VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        NULL,
-        0,     // allocationSize, queried later
-        0      // memoryTypeIndex, queried later
-    };
-    const VkCommandBufferAllocateInfo allocCommandBufferInfo = {
-        VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        NULL,
-        deviceMap[device]->commandPool,
-        VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        1
-    };
-    const VkCommandBufferBeginInfo commandBufferBeginInfo = {
-        VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        NULL,
-        VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-    };
-    const VkImageCopy imageCopyRegion = {
-        {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-        {0, 0, 0},
-        {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-        {0, 0, 0},
-        {width, height, 1}
-    };
-    VkMemoryRequirements memRequirements;
-    VkLayerDispatchTable* pTableDevice = get_dispatch_table(screenshot_device_table_map, device);
-    VkLayerDispatchTable* pTableQueue = get_dispatch_table(screenshot_device_table_map, queue);
-    VkLayerInstanceDispatchTable* pInstanceTable;
-    VkLayerDispatchTable* pTableCommandBuffer;
-    VkPhysicalDeviceMemoryProperties memory_properties;
+	VkDevice device = imageMap[image1]->device;
+	VkPhysicalDevice physicalDevice = deviceMap[device]->physicalDevice;
+	VkInstance instance = physDeviceMap[physicalDevice]->instance;
+	VkQueue queue = deviceMap[device]->queue;
+	uint32_t width = imageMap[image1]->imageExtent.width;
+	uint32_t height = imageMap[image1]->imageExtent.height;
+	VkFormat format = imageMap[image1]->format;
+	const VkImageSubresource sr = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0 };
+	VkSubresourceLayout sr_layout;
+	const VkImageCreateInfo imgCreateInfo = {
+		VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+		NULL,
+		0,
+		VK_IMAGE_TYPE_2D,
+		format,
+		{ width, height, 1 },
+		1,
+		1,
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_IMAGE_TILING_LINEAR,
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		VK_SHARING_MODE_EXCLUSIVE,
+		0,
+		NULL,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+	};
+	VkMemoryAllocateInfo memAllocInfo = {
+		VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+		NULL,
+		0,     // allocationSize, queried later
+		0      // memoryTypeIndex, queried later
+	};
+	const VkCommandBufferAllocateInfo allocCommandBufferInfo = {
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+		NULL,
+		deviceMap[device]->commandPool,
+		VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+		1
+	};
+	const VkCommandBufferBeginInfo commandBufferBeginInfo = {
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		NULL,
+		VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+	};
+	const VkImageCopy imageCopyRegion = {
+		{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+		{ 0, 0, 0 },
+		{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 },
+		{ 0, 0, 0 },
+		{ width, height, 1 }
+	};
+	VkMemoryRequirements memRequirements;
+	VkLayerDispatchTable* pTableDevice = get_dispatch_table(screenshot_device_table_map, device);
+	VkLayerDispatchTable* pTableQueue = get_dispatch_table(screenshot_device_table_map, queue);
+	VkLayerInstanceDispatchTable* pInstanceTable;
+	VkLayerDispatchTable* pTableCommandBuffer;
+	VkPhysicalDeviceMemoryProperties memory_properties;
 
-    // The VkImage image1 we are going to dump may not be mappable,
-    // and/or it may have a tiling mode of optimal rather than linear.
-    // To make sure we have an image that we can map and read linearly, we:
-    //     create image2 that is mappable and linear
-    //     copy image1 to image2
-    //     map image2
-    //     read from image2's mapped memory.
+	// The VkImage image1 we are going to dump may not be mappable,
+	// and/or it may have a tiling mode of optimal rather than linear.
+	// To make sure we have an image that we can map and read linearly, we:
+	//     create image2 that is mappable and linear
+	//     copy image1 to image2
+	//     map image2
+	//     read from image2's mapped memory.
 
-    err = pTableDevice->CreateImage(device, &imgCreateInfo, NULL, &image2);
-    assert(!err);
+	err = pTableDevice->CreateImage(device, &imgCreateInfo, NULL, &image2);
+	assert(!err);
 
-    pTableDevice->GetImageMemoryRequirements(device, image2, &memRequirements);
+	pTableDevice->GetImageMemoryRequirements(device, image2, &memRequirements);
 
-    memAllocInfo.allocationSize = memRequirements.size;
-    pInstanceTable = instance_dispatch_table(instance);
-    pInstanceTable->GetPhysicalDeviceMemoryProperties(physicalDevice, &memory_properties);
+	memAllocInfo.allocationSize = memRequirements.size;
+	pInstanceTable = instance_dispatch_table(instance);
+	pInstanceTable->GetPhysicalDeviceMemoryProperties(physicalDevice, &memory_properties);
 
-    pass = memory_type_from_properties(&memory_properties,
-                                       memRequirements.memoryTypeBits,
-                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                                       &memAllocInfo.memoryTypeIndex);
-    assert(pass);
+	pass = memory_type_from_properties(&memory_properties,
+		memRequirements.memoryTypeBits,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+		&memAllocInfo.memoryTypeIndex);
+	assert(pass);
 
-    err = pTableDevice->AllocateMemory(device, &memAllocInfo, NULL, &mem2);
-    assert(!err);
+	err = pTableDevice->AllocateMemory(device, &memAllocInfo, NULL, &mem2);
+	assert(!err);
 
-    err = pTableQueue->BindImageMemory(device, image2, mem2, 0);
-    assert(!err);
+	err = pTableQueue->BindImageMemory(device, image2, mem2, 0);
+	assert(!err);
 
-    err = pTableDevice->AllocateCommandBuffers(device, &allocCommandBufferInfo,  &commandBuffer);
-    assert(!err);
+	err = pTableDevice->AllocateCommandBuffers(device, &allocCommandBufferInfo, &commandBuffer);
+	assert(!err);
 
-    screenshot_device_table_map.emplace(commandBuffer, pTableDevice);
-    pTableCommandBuffer = screenshot_device_table_map[commandBuffer];
+	screenshot_device_table_map.emplace(commandBuffer, pTableDevice);
+	pTableCommandBuffer = screenshot_device_table_map[commandBuffer];
 
-    // We have just created a dispatchable object, but the dispatch table has not been placed
-    // in the object yet.  When a "normal" application creates a command buffer, the dispatch
-    // table is installed by the top-level api binding (trampoline.c).
-    // But here, we have to do it ourselves.
-    *((const void**)commandBuffer) = *(void**)device;
+	// We have just created a dispatchable object, but the dispatch table has not been placed
+	// in the object yet.  When a "normal" application creates a command buffer, the dispatch
+	// table is installed by the top-level api binding (trampoline.c).
+	// But here, we have to do it ourselves.
+	*((const void**)commandBuffer) = *(void**)device;
 
-    err = pTableCommandBuffer->BeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
-    assert(!err);
+	err = pTableCommandBuffer->BeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+	assert(!err);
 
-    // Transition the source image layout to prepare it for the copy.
+	// Transition the source image layout to prepare it for the copy.
 
-    VkImageMemoryBarrier image1_memory_barrier = {
-        VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        NULL,
-        0,
-        VK_ACCESS_TRANSFER_READ_BIT,
-        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        0,
-        0,
-        image1,
-        { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
-    };
+	VkImageMemoryBarrier image1_memory_barrier = {
+		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		NULL,
+		0,
+		VK_ACCESS_TRANSFER_READ_BIT,
+		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		0,
+		0,
+		image1,
+		{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+	};
 
-    VkImageMemoryBarrier image2_memory_barrier = {
-        VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        NULL,
-        0,
-        VK_ACCESS_TRANSFER_READ_BIT,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_IMAGE_LAYOUT_GENERAL,
-        0,
-        0,
-        image2,
-        { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
-    };
+	VkImageMemoryBarrier image2_memory_barrier = {
+		VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		NULL,
+		0,
+		VK_ACCESS_TRANSFER_READ_BIT,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_IMAGE_LAYOUT_GENERAL,
+		0,
+		0,
+		image2,
+		{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }
+	};
 
-    VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    VkPipelineStageFlags dst_stages = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	VkPipelineStageFlags src_stages = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	VkPipelineStageFlags dst_stages = VK_PIPELINE_STAGE_TRANSFER_BIT;
 
-    pTableCommandBuffer->CmdPipelineBarrier(commandBuffer, src_stages, dst_stages,
-                                            0, 0, NULL, 0, NULL, 1, &image1_memory_barrier);
+	pTableCommandBuffer->CmdPipelineBarrier(commandBuffer, src_stages, dst_stages,
+		0, 0, NULL, 0, NULL, 1, &image1_memory_barrier);
 
-    pTableCommandBuffer->CmdCopyImage(commandBuffer,
-                                      image1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                      image2, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                      1, &imageCopyRegion);
+	pTableCommandBuffer->CmdCopyImage(commandBuffer,
+		image1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		image2, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		1, &imageCopyRegion);
 
-    pTableCommandBuffer->CmdPipelineBarrier(commandBuffer, src_stages, dst_stages,
-                                            0, 0, NULL, 0, NULL, 1, &image2_memory_barrier);
+	pTableCommandBuffer->CmdPipelineBarrier(commandBuffer, src_stages, dst_stages,
+		0, 0, NULL, 0, NULL, 1, &image2_memory_barrier);
 
-    err = pTableCommandBuffer->EndCommandBuffer(commandBuffer);
-    assert(!err);
+	err = pTableCommandBuffer->EndCommandBuffer(commandBuffer);
+	assert(!err);
 
-    VkFence nullFence = { VK_NULL_HANDLE };
-    VkSubmitInfo submit_info;
-    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit_info.pNext = NULL;
-    submit_info.waitSemaphoreCount = 0;
-    submit_info.pWaitSemaphores = NULL;
-    submit_info.pWaitDstStageMask = NULL;
-    submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &commandBuffer;
-    submit_info.signalSemaphoreCount = 0;
-    submit_info.pSignalSemaphores = NULL;
+	VkFence nullFence = { VK_NULL_HANDLE };
+	VkSubmitInfo submit_info;
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.pNext = NULL;
+	submit_info.waitSemaphoreCount = 0;
+	submit_info.pWaitSemaphores = NULL;
+	submit_info.pWaitDstStageMask = NULL;
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &commandBuffer;
+	submit_info.signalSemaphoreCount = 0;
+	submit_info.pSignalSemaphores = NULL;
 
-    err = pTableQueue->QueueSubmit(queue, 1, &submit_info, nullFence);
-    assert(!err);
+	err = pTableQueue->QueueSubmit(queue, 1, &submit_info, nullFence);
+	assert(!err);
 
-    err = pTableQueue->QueueWaitIdle(queue);
-    assert(!err);
+	err = pTableQueue->QueueWaitIdle(queue);
+	assert(!err);
 
-    err =  pTableDevice->DeviceWaitIdle(device);
-    assert(!err);
+	err = pTableDevice->DeviceWaitIdle(device);
+	assert(!err);
 
-    pTableDevice->GetImageSubresourceLayout(device, image2, &sr, &sr_layout);
+	pTableDevice->GetImageSubresourceLayout(device, image2, &sr, &sr_layout);
 
-    err = pTableDevice->MapMemory(device, mem2, 0, 0, 0, (void **) &ptr );
-    assert(!err);
+	err = pTableDevice->MapMemory(device, mem2, 0, 0, 0, (void **)&ptr);
+	assert(!err);
 
-    ptr += sr_layout.offset;
+	ptr += sr_layout.offset;
 
-    ofstream file(filename, ios::binary);
+	FILE* hFile = fopen(filename, "wb");
+	if (hFile == NULL)
+	{
+		printf("Failed to open '%s' for writing png file.\n", filename);
+	}
+	else
+	{
+		UINT_PTR* pdwRowPtrs = NULL;
 
-    file << "P6\n";
-    file << width << "\n";
-    file << height << "\n";
-    file << 255 << "\n";
+		// Create PNG write 'context'
+		png_structp pPNG = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+		png_infop pPNGInfo = NULL;
 
-    for (y = 0; y < height; y++) {
-        const unsigned int *row = (const unsigned int*) ptr;
-        if (format == VK_FORMAT_B8G8R8A8_UNORM)
-        {
-            for (x = 0; x < width; x++) {
-                unsigned int swapped;
-                swapped = (*row & 0xff00ff00) | (*row & 0x000000ff) << 16 | (*row & 0x00ff0000) >> 16;
-                file.write((char *)&swapped, 3);
-                row++;
-            }
-        }
-        else if (format == VK_FORMAT_R8G8B8A8_UNORM)
-        {
-            for (x = 0; x < width; x++) {
-                file.write((char *)row, 3);
-                row++;
-            }
-        }
-        else
-        {
-            // TODO: add support for additional formats
-            printf("Unrecognized image format\n");
-            break;
-       }
-       ptr += sr_layout.rowPitch;
-    }
-    file.close();
-    pTableDevice->UnmapMemory(device, mem2);
+		if (pPNG == NULL)
+		{
+			printf("Failed to create PNG write struct.\n");
+		}
+		else
+		{
+			pPNGInfo = png_create_info_struct(pPNG);
+		}
 
-    // Restore the swap chain image layout to what it was before.
-    // This may not be strictly needed, but it is generally good to restore things to original state.
-    err = pTableCommandBuffer->BeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
-    assert(!err);
-    image1_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    image1_memory_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		if (pPNGInfo == NULL)
+		{
+			printf("Failed to create PNG info struct.\n");
+		}
+		else
+		{
+			png_init_io(pPNG, hFile);
 
-    pTableCommandBuffer->CmdPipelineBarrier(commandBuffer, src_stages, dst_stages,
-                                            0, 0, NULL, 0, NULL, 1, &image1_memory_barrier);
-    err = pTableCommandBuffer->EndCommandBuffer(commandBuffer);
-    assert(!err);
+			// Set header
+			png_set_IHDR(pPNG, pPNGInfo, width, height, 8, PNG_COLOR_TYPE_RGBA, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
 
-    err = pTableQueue->QueueSubmit(queue, 1, &submit_info, nullFence);
-    assert(!err);
+			// write header and palette info
+			png_write_info(pPNG, pPNGInfo);
 
-    err = pTableQueue->QueueWaitIdle(queue);
-    assert(!err);
+			png_set_packswap(pPNG);
 
-    err =  pTableDevice->DeviceWaitIdle(device);
-    assert(!err);
+			// Set up pointers for each row
+			uint32_t pitch = ceil(width * 4.0f / (float)memRequirements.alignment) * memRequirements.alignment;
+			pdwRowPtrs = new UINT_PTR[height];
+			DWORD dwIndex;
+			DWORD x;
+			if (format == VK_FORMAT_B8G8R8A8_UNORM)
+			{
+				UINT_PTR* uiPtr = (UINT_PTR*)ptr;
+				for (dwIndex = 0; dwIndex < height; dwIndex++)
+				{
+					// swizzle the pixels from abgr -> argb
+					unsigned int* pRow = (unsigned int*)&ptr[dwIndex*pitch];
+					for (x = 0; x < width; x++)
+					{
+						unsigned int argb = (*pRow & 0xff00ff00) | (*pRow & 0x000000ff) << 16 | (*pRow & 0x00ff0000) >> 16;
+						*pRow = argb;
+						pRow++;
+					}
 
-    // Clean up
-    pTableDevice->FreeMemory(device, mem2, NULL);
-    pTableDevice->FreeCommandBuffers(device, deviceMap[device]->commandPool, 1, &commandBuffer);
+					// set the pointer for each row
+					pdwRowPtrs[dwIndex] = (UINT_PTR)ptr + (dwIndex * pitch);
+				}
+			}
+			else if (format == VK_FORMAT_R8G8B8A8_UNORM)
+			{
+				for (dwIndex = 0; dwIndex < height; dwIndex++)
+				{
+					pdwRowPtrs[dwIndex] = (UINT_PTR)ptr + (dwIndex * pitch);
+				}
+			}
+			else
+			{
+				// TODO: add support for additional formats
+				printf("Unrecognized image format, but will attempt png anyway.\n");
+				for (dwIndex = 0; dwIndex < height; dwIndex++)
+				{
+					pdwRowPtrs[dwIndex] = (UINT_PTR)ptr + (dwIndex * pitch);
+				}
+			}
+
+			// Write the image
+			png_write_image(pPNG, (png_bytep*)pdwRowPtrs);
+
+			// Finish up
+			png_write_end(pPNG, pPNGInfo);
+
+			delete[] pdwRowPtrs;
+		}
+
+		if (pPNG)
+		{
+			if (pPNGInfo)
+			{
+				png_destroy_write_struct(&pPNG, &pPNGInfo);
+			}
+			else
+			{
+				png_destroy_write_struct(&pPNG, NULL);
+			}
+		}
+
+		fclose(hFile);
+	}
+
+	pTableDevice->UnmapMemory(device, mem2);
+
+	// Restore the swap chain image layout to what it was before.
+	// This may not be strictly needed, but it is generally good to restore things to original state.
+	err = pTableCommandBuffer->BeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+	assert(!err);
+	image1_memory_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	image1_memory_barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	pTableCommandBuffer->CmdPipelineBarrier(commandBuffer, src_stages, dst_stages,
+		0, 0, NULL, 0, NULL, 1, &image1_memory_barrier);
+	err = pTableCommandBuffer->EndCommandBuffer(commandBuffer);
+	assert(!err);
+
+	err = pTableQueue->QueueSubmit(queue, 1, &submit_info, nullFence);
+	assert(!err);
+
+	err = pTableQueue->QueueWaitIdle(queue);
+	assert(!err);
+
+	err = pTableDevice->DeviceWaitIdle(device);
+	assert(!err);
+
+	// Clean up
+	pTableDevice->FreeMemory(device, mem2, NULL);
+	pTableDevice->FreeCommandBuffers(device, deviceMap[device]->commandPool, 1, &commandBuffer);
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
@@ -504,10 +572,10 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDevices(
 
 static const VkLayerProperties ss_device_layers[] = {
     {
-        "VK_LAYER_LUNARG_screenshot",
+        "VK_LAYER_AMD_png_screenshot",
         VK_API_VERSION,
         1,
-        "Layer: screenshot",
+        "Layer: png screenshot",
     }
 };
 
@@ -761,14 +829,14 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, 
         if (it != screenshotFrames.end())
         {
             string fileName;
-            fileName = to_string(frameNumber) + ".ppm";
+            fileName = to_string(frameNumber) + ".png";
 
             VkImage image;
             VkSwapchainKHR swapchain;
             // We'll dump only one image: the first
             swapchain = pPresentInfo->pSwapchains[0];
             image = swapchainMap[swapchain]->imageList[pPresentInfo->pImageIndices[0]];
-            writePPM(fileName.c_str(), image);
+			writePNG(fileName.c_str(), image);
             screenshotFrames.erase(it);
 
             if (screenshotFrames.empty())
