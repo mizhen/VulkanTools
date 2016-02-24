@@ -51,10 +51,10 @@ vktrace_SettingInfo g_settings_info[] =
     { "w", "WorkingDir", VKTRACE_SETTING_STRING, &g_settings.working_dir, &g_default_settings.working_dir, TRUE, "The program's working directory."},
     { "o", "OutputTrace", VKTRACE_SETTING_STRING, &g_settings.output_trace, &g_default_settings.output_trace, TRUE, "Path to the generated output trace file."},
     { "s", "ScreenShot", VKTRACE_SETTING_STRING, &g_settings.screenshotList, &g_default_settings.screenshotList, TRUE, "Comma separated list of frame numbers on which to take a screen snapshot."},
-	{ "png", "PngScreenShot", VKTRACE_SETTING_STRING, &g_settings.pngScreenshotList, &g_default_settings.pngScreenshotList, TRUE, "Comma separated list of frame numbers on which to take a PNG screen snapshot." },
+	{ "png", "PngScreenShot", VKTRACE_SETTING_STRING, &g_settings.pngScreenshotList, &g_default_settings.pngScreenshotList, TRUE, "Saves a PNG screenshot of frames identified by: <startFrame>-<endFrame>,<stepFrames>." },
 	{ "ptm", "PrintTraceMessages", VKTRACE_SETTING_BOOL, &g_settings.print_trace_messages, &g_default_settings.print_trace_messages, TRUE, "Print trace messages to vktrace console."},
 
-    //{ "z", "pauze", VKTRACE_SETTING_BOOL, &g_settings.pause, &g_default_settings.pause, TRUE, "Wait for a key at startup (so a debugger can be attached)" },
+    //{ "z", "pause", VKTRACE_SETTING_BOOL, &g_settings.pause, &g_default_settings.pause, TRUE, "Wait for a key at startup (so a debugger can be attached)" },
     //{ "q", "quiet", VKTRACE_SETTING_BOOL, &g_settings.quiet, &g_default_settings.quiet, TRUE, "Disable warning, verbose, and debug output" },
     //{ "v", "verbose", VKTRACE_SETTING_BOOL, &g_settings.verbose, &g_default_settings.verbose, TRUE, "Enable verbose output" },
     //{ "d", "debug", VKTRACE_SETTING_BOOL, &g_settings.debug, &g_default_settings.debug, TRUE, "Enable verbose debug information" },
