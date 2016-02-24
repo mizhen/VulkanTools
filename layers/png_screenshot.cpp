@@ -367,7 +367,7 @@ static void writePNG(const char *filename, VkImage image1)
 			png_set_packswap(pPNG);
 
 			// Set up pointers for each row
-			uint32_t pitch = ceil(width * 4.0f / (float)memRequirements.alignment) * memRequirements.alignment;
+			uint32_t pitch = (uint32_t)ceil(width * 4.0f / (float)memRequirements.alignment) * memRequirements.alignment;
 			pdwRowPtrs = new UINT_PTR[height];
 			DWORD dwIndex;
 			DWORD x;
