@@ -1,3 +1,4 @@
+// TODO why are we not using an AMD copyright notice?
 /*
  *
  * Copyright (C) 2015-2016 Valve Corporation
@@ -51,7 +52,9 @@ using namespace std;
 #include "vk_layer_table.h"
 #include "vk_layer_extension_utils.h"
 
-
+// TODO add documentation comment - in general I prefer to see doxygen comments
+//    on structs, classes, function and fields but if this is the vulkan tools
+//    convention it's ok
 struct devExts {
     bool wsi_enabled;
 };
@@ -105,6 +108,7 @@ static vector<int> screenshotFrames;
 // Flag indicating we have queried _VK_SCREENSHOT env var
 static bool screenshotEnvQueried = false;
 
+// TODO missing documentation comment
 static bool memory_type_from_properties(
     VkPhysicalDeviceMemoryProperties *memory_properties,
     uint32_t typeBits,
@@ -126,6 +130,7 @@ static bool memory_type_from_properties(
      return false;
 }
 
+// TODO missing documentation comment
 static void init_screenshot()
 {
     if (!globalLockInitialized)
@@ -140,6 +145,8 @@ static void init_screenshot()
     }
 }
 
+// TODO missing documentation comment
+// TODO this funciton is very long - anyway to split it?
 static void writePPM( const char *filename, VkImage image1)
 {
     VkImage image2;
@@ -390,6 +397,7 @@ static void writePPM( const char *filename, VkImage image1)
     pTableDevice->FreeCommandBuffers(device, deviceMap[device]->commandPool, 1, &commandBuffer);
 }
 
+// TODO missing documentation comment
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
     const VkInstanceCreateInfo* pCreateInfo,
     const VkAllocationCallbacks* pAllocator,
@@ -421,6 +429,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(
 
 //TODO hook DestroyInstance to cleanup
 
+// TODO missing documentation comment
 static void createDeviceRegisterExtensions(const VkDeviceCreateInfo* pCreateInfo, VkDevice device)
 {
     uint32_t i;
@@ -437,6 +446,7 @@ static void createDeviceRegisterExtensions(const VkDeviceCreateInfo* pCreateInfo
     }
 }
 
+// TODO missing documentation comment
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
     VkPhysicalDevice          gpu,
     const VkDeviceCreateInfo *pCreateInfo,
@@ -475,6 +485,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(
     return result;
 }
 
+// TODO missing documentation comment
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDevices(
     VkInstance instance,
     uint32_t* pPhysicalDeviceCount,
@@ -502,6 +513,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDevices(
 
 /* TODO: Probably need a DestroyDevice as well */
 
+// TODO missing documentation comment
 static const VkLayerProperties ss_device_layers[] = {
     {
         "VK_LAYER_LUNARG_screenshot",
@@ -511,6 +523,7 @@ static const VkLayerProperties ss_device_layers[] = {
     }
 };
 
+// TODO missing documentation comment
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
         const char *pLayerName,
         uint32_t *pCount,
@@ -520,6 +533,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionPrope
     return util_GetExtensionProperties(0, NULL, pCount, pProperties);
 }
 
+// TODO missing documentation comment
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(
         uint32_t *pCount,
         VkLayerProperties*    pProperties)
@@ -529,6 +543,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerPropertie
                                    pCount, pProperties);
 }
 
+// TODO missing documentation comment
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionProperties(
         VkPhysicalDevice                            physicalDevice,
         const char*                                 pLayerName,
@@ -548,6 +563,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceExtensionPropert
     }
 }
 
+// TODO missing documentation comment
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(
         VkPhysicalDevice                            physicalDevice,
         uint32_t*                                   pCount,
@@ -558,6 +574,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(
                                    pCount, pProperties);
 }
 
+// TODO missing documentation comment
 VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
     VkDevice  device,
     uint32_t  queueNodeIndex,
@@ -586,6 +603,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
     layer_platform_thread_unlock_mutex(&globalLock);
 }
 
+// TODO missing documentation comment
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(
     VkDevice  device,
     const VkCommandPoolCreateInfo *pCreateInfo,
@@ -613,6 +631,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(
     return result;
 }
 
+// TODO missing documentation comment
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
     VkDevice                        device,
     const VkSwapchainCreateInfoKHR *pCreateInfo,
@@ -646,6 +665,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
     return result;
 }
 
+// TODO missing documentation comment
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkGetSwapchainImagesKHR(
     VkDevice                device,
     VkSwapchainKHR          swapchain,
@@ -697,6 +717,8 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkGetSwapchainImagesKHR(
     return result;
 }
 
+// TODO missing documentation comment
+// TODO this funciton is very long - anyway to split it?
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo)
 {
     static int frameNumber = 0;
@@ -710,6 +732,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, 
         const char *_vk_screenshot = layer_platform_getenv("_VK_PNG_SCREENSHOT");
         if (_vk_screenshot && *_vk_screenshot)
         {
+// TODO you are mixing tabs with whitespaces - what is the vulkan convention, tabs or whitespaces?
 			int startFrame = 0;
 			int endFrame = 0;
 			int stepFrame = 0;
@@ -806,10 +829,14 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, 
     return result;
 }
 
+// TODO missing documentation comment
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(
     VkDevice         dev,
     const char       *funcName)
 {
+    // TODO use 0 != strcmp instead of !strcmp
+    //    !strcmp forces the compiler to convert from int to bool
+    //    0 != is a boolean operation and requires less instructions
     if (!strcmp(funcName, "vkGetDeviceProcAddr"))
         return (PFN_vkVoidFunction)vkGetDeviceProcAddr;
     if (!strcmp(funcName, "vkGetDeviceQueue"))
@@ -837,10 +864,12 @@ VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(
     return pDisp->GetDeviceProcAddr(dev, funcName);
 }
 
-
+// TODO missing documentation comment
 VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char* funcName)
 {
-
+    // TODO use 0 != strcmp instead of !strcmp
+    //    !strcmp forces the compiler to convert from int to bool
+    //    0 != is a boolean operation and requires less instructions
     if (!strcmp("vkGetInstanceProcAddr", funcName))
         return (PFN_vkVoidFunction) vkGetInstanceProcAddr;
     if (!strcmp(funcName, "vkCreateInstance"))
