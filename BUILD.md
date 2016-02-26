@@ -265,7 +265,6 @@ export KHRONOS_ACCOUNT_NAME= <subversion login name for svn checkout of SPIR-V>
 # this will fetch LunarGLASS as sibling repository
 cd YOUR_DEV_DIRECTORY 
 ./update_external_sources.sh  # linux
-```
 
 ## Linux Build
 

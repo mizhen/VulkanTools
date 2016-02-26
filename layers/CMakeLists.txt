@@ -1,4 +1,6 @@
 cmake_minimum_required (VERSION 2.8.11)
+find_library(LIBPNG libpng16 ${VULKANTOOLS_SOURCE_DIR}/libs/libpng-1.6.21/x64)
+find_library(ZLIB zlib ${VULKANTOOLS_SOURCE_DIR}/libs/zlib-1.2.8/x64)
 
 set (LOADER_INCLUDE_DIR ${VULKANTOOLS_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/include)
 macro(run_vk_helper subcmd)
@@ -21,6 +23,7 @@ set(LAYER_JSON_FILES
     VkLayer_generic
     VkLayer_multi
     VkLayer_screenshot
+    VkLayer_png_screenshot
     )
 
 set(VK_LAYER_RPATH /usr/lib/x86_64-linux-gnu/vulkan/layer:/usr/lib/i386-linux-gnu/vulkan/layer)
@@ -75,11 +78,13 @@ endif()
 set (LOADER_LAYER_DIR ${VULKANTOOLS_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/layers)
 set (LOADER_LOADER_DIR ${VULKANTOOLS_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/loader)
 include_directories(
-        ${LOADER_LAYER_DIR}
-        ${LOADER_LOADER_DIR}
-	${CMAKE_CURRENT_SOURCE_DIR}
-	${LOADER_INCLUDE_DIR}
-	${CMAKE_CURRENT_BINARY_DIR}
+    ${LOADER_LAYER_DIR}
+    ${LOADER_LOADER_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${LOADER_INCLUDE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
+	${VULKANTOOLS_SOURCE_DIR}/libs/libpng-1.6.21/inc
+	${VULKANTOOLS_SOURCE_DIR}/libs/zlib-1.2.8/inc
 )
 
 if (WIN32)
@@ -140,3 +145,8 @@ add_vk_layer(screenshot screenshot.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
 # generated
 add_vk_layer(generic generic_layer.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
 add_vk_layer(api_dump api_dump.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
+# AMD added
+add_vk_layer(png_screenshot png_screenshot.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
+
+target_link_Libraries(VkLayer_png_screenshot ${LIBPNG})
+target_link_Libraries(VkLayer_png_screenshot ${ZLIB})

@@ -1,0 +1,11 @@
+{
+    "file_format_version" : "1.0.0",
+    "layer" : {
+        "name": "VK_LAYER_AMD_png_screenshot",
+        "type": "GLOBAL",
+        "library_path": "./libVkLayer_png_screenshot.so",
+        "api_version": "1.0.3",
+        "implementation_version": "1",
+        "description": "AMD png image capture layer"
+    }
+}
