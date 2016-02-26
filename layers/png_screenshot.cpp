@@ -145,6 +145,112 @@ static void init_png_screenshot_layer()
     }
 }
 
+// Write a png file with the supplied name, properties, and contents.
+static void writePNG(const char *filename, VkFormat format, uint32_t width, uint32_t height, VkDeviceSize alignment, const char* pData)
+{
+    FILE* hFile = fopen(filename, "wb");
+    if (hFile == NULL)
+    {
+        printf("Failed to open '%s' for writing png file.\n", filename);
+    }
+    else
+    {
+        UINT_PTR* pdwRowPtrs = NULL;
+
+        // Create PNG write 'context'
+        png_structp pPNG = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+        png_infop pPNGInfo = NULL;
+
+        if (pPNG == NULL)
+        {
+            printf("Failed to create PNG write struct.\n");
+        }
+        else
+        {
+            pPNGInfo = png_create_info_struct(pPNG);
+        }
+
+        if (pPNGInfo == NULL)
+        {
+            printf("Failed to create PNG info struct.\n");
+        }
+        else
+        {
+            png_init_io(pPNG, hFile);
+
+            // Set header
+            png_set_IHDR(pPNG, pPNGInfo, width, height, 8, PNG_COLOR_TYPE_RGBA, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+
+            // write header and palette info
+            png_write_info(pPNG, pPNGInfo);
+
+            png_set_packswap(pPNG);
+
+            // Set up pointers for each row
+            VkDeviceSize pitch = (VkDeviceSize)ceil(width * 4.0f / (float)alignment) * alignment;
+            pdwRowPtrs = new UINT_PTR[height];
+            DWORD dwIndex;
+            DWORD x;
+            if (format == VK_FORMAT_B8G8R8A8_UNORM)
+            {
+                UINT_PTR* uiPtr = (UINT_PTR*)pData;
+                for (dwIndex = 0; dwIndex < height; dwIndex++)
+                {
+                    // swizzle the pixels from abgr -> argb
+                    unsigned int* pRow = (unsigned int*)&pData[dwIndex*pitch];
+                    for (x = 0; x < width; x++)
+                    {
+                        unsigned int argb = (*pRow & 0xff00ff00) | (*pRow & 0x000000ff) << 16 | (*pRow & 0x00ff0000) >> 16;
+                        *pRow = argb;
+                        pRow++;
+                    }
+
+                    // set the pointer for each row
+                    pdwRowPtrs[dwIndex] = (UINT_PTR)pData + (dwIndex * pitch);
+                }
+            }
+            else if (format == VK_FORMAT_R8G8B8A8_UNORM)
+            {
+                for (dwIndex = 0; dwIndex < height; dwIndex++)
+                {
+                    pdwRowPtrs[dwIndex] = (UINT_PTR)pData + (dwIndex * pitch);
+                }
+            }
+            else
+            {
+                // TODO: add support for additional formats
+                printf("Unrecognized image format, but will attempt png anyway.\n");
+                for (dwIndex = 0; dwIndex < height; dwIndex++)
+                {
+                    pdwRowPtrs[dwIndex] = (UINT_PTR)pData + (dwIndex * pitch);
+                }
+            }
+
+            // Write the image
+            png_write_image(pPNG, (png_bytep*)pdwRowPtrs);
+
+            // Finish up
+            png_write_end(pPNG, pPNGInfo);
+
+            delete[] pdwRowPtrs;
+        }
+
+        if (pPNG)
+        {
+            if (pPNGInfo)
+            {
+                png_destroy_write_struct(&pPNG, &pPNGInfo);
+            }
+            else
+            {
+                png_destroy_write_struct(&pPNG, NULL);
+            }
+        }
+
+        fclose(hFile);
+    }
+}
+
 // Generates a PNG file from the contents of a VkImage.
 // Converts the supplied VkImage into a resource that can be read back to the CPU,
 // then uses that second image to obtain the contents to be written to the PNG file.
@@ -364,112 +470,6 @@ static void generate_png_from_vkimage(const char* filename, VkImage image1)
     // Clean up
     pTableDevice->FreeMemory(device, mem2, NULL);
     pTableDevice->FreeCommandBuffers(device, deviceMap[device]->commandPool, 1, &commandBuffer);
-}
-
-// Write a png file with the supplied name, properties, and contents.
-static void writePNG(const char *filename, VkFormat format, uint32_t width, uint32_t height, VkDeviceSize alignment, const char* pData)
-{
-    FILE* hFile = fopen(filename, "wb");
-    if (hFile == NULL)
-    {
-        printf("Failed to open '%s' for writing png file.\n", filename);
-    }
-    else
-    {
-        UINT_PTR* pdwRowPtrs = NULL;
-
-        // Create PNG write 'context'
-        png_structp pPNG = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-        png_infop pPNGInfo = NULL;
-
-        if (pPNG == NULL)
-        {
-            printf("Failed to create PNG write struct.\n");
-        }
-        else
-        {
-            pPNGInfo = png_create_info_struct(pPNG);
-        }
-
-        if (pPNGInfo == NULL)
-        {
-            printf("Failed to create PNG info struct.\n");
-        }
-        else
-        {
-            png_init_io(pPNG, hFile);
-
-            // Set header
-            png_set_IHDR(pPNG, pPNGInfo, width, height, 8, PNG_COLOR_TYPE_RGBA, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-
-            // write header and palette info
-            png_write_info(pPNG, pPNGInfo);
-
-            png_set_packswap(pPNG);
-
-            // Set up pointers for each row
-            uint32_t pitch = (uint32_t)ceil(width * 4.0f / (float)alignment) * alignment;
-            pdwRowPtrs = new UINT_PTR[height];
-            DWORD dwIndex;
-            DWORD x;
-            if (format == VK_FORMAT_B8G8R8A8_UNORM)
-            {
-                UINT_PTR* uiPtr = (UINT_PTR*)pData;
-                for (dwIndex = 0; dwIndex < height; dwIndex++)
-                {
-                    // swizzle the pixels from abgr -> argb
-                    unsigned int* pRow = (unsigned int*)&pData[dwIndex*pitch];
-                    for (x = 0; x < width; x++)
-                    {
-                        unsigned int argb = (*pRow & 0xff00ff00) | (*pRow & 0x000000ff) << 16 | (*pRow & 0x00ff0000) >> 16;
-                        *pRow = argb;
-                        pRow++;
-                    }
-
-                    // set the pointer for each row
-                    pdwRowPtrs[dwIndex] = (UINT_PTR)pData + (dwIndex * pitch);
-                }
-            }
-            else if (format == VK_FORMAT_R8G8B8A8_UNORM)
-            {
-                for (dwIndex = 0; dwIndex < height; dwIndex++)
-                {
-                    pdwRowPtrs[dwIndex] = (UINT_PTR)pData + (dwIndex * pitch);
-                }
-            }
-            else
-            {
-                // TODO: add support for additional formats
-                printf("Unrecognized image format, but will attempt png anyway.\n");
-                for (dwIndex = 0; dwIndex < height; dwIndex++)
-                {
-                    pdwRowPtrs[dwIndex] = (UINT_PTR)pData + (dwIndex * pitch);
-                }
-            }
-
-            // Write the image
-            png_write_image(pPNG, (png_bytep*)pdwRowPtrs);
-
-            // Finish up
-            png_write_end(pPNG, pPNGInfo);
-
-            delete[] pdwRowPtrs;
-        }
-
-        if (pPNG)
-        {
-            if (pPNGInfo)
-            {
-                png_destroy_write_struct(&pPNG, &pPNGInfo);
-            }
-            else
-            {
-                png_destroy_write_struct(&pPNG, NULL);
-            }
-        }
-
-        fclose(hFile);
-    }
 }
 
 // Called when the application creates an instance and this layer is enabled.
