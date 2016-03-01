@@ -41,7 +41,7 @@
 
 using namespace std;
 
-#include "vk_layer_platform.h"
+#include "vk_loader_platform.h"
 #include "vk_dispatch_table_helper.h"
 #include "vk_struct_string_helper_cpp.h"
 #include "vk_layer_config.h"
@@ -58,7 +58,7 @@ static device_table_map screenshot_device_table_map;
 //static instance_table_map screenshot_instance_table_map;
 
 static int globalLockInitialized = 0;
-static layer_platform_thread_mutex globalLock;
+static loader_platform_thread_mutex globalLock;
 
 // unordered map: associates a swap chain with a device, image extent, format, and
 // list of images
@@ -132,7 +132,7 @@ static void init_screenshot()
         // can clean it up during vkDestroyInstance().  However, that requires
         // that the layer have per-instance locks.  We need to come back and
         // address this soon.
-        layer_platform_thread_create_mutex(&globalLock);
+        loader_platform_thread_create_mutex(&globalLock);
         globalLockInitialized = 1;
     }
 }
@@ -564,10 +564,10 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
     VkLayerDispatchTable* pTable = screenshot_device_table_map[device];
     get_dispatch_table(screenshot_device_table_map, device)->GetDeviceQueue(device, queueNodeIndex, queueIndex, pQueue);
 
-    layer_platform_thread_lock_mutex(&globalLock);
+    loader_platform_thread_lock_mutex(&globalLock);
     if (screenshotEnvQueried && screenshotFrames.empty()) {
         // We are all done taking screenshots, so don't do anything else
-        layer_platform_thread_unlock_mutex(&globalLock);
+        loader_platform_thread_unlock_mutex(&globalLock);
         return;
     }
 
@@ -580,7 +580,7 @@ VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkGetDeviceQueue(
         deviceMap[device] = deviceMapElem;
     }
     deviceMap[device]->queue = *pQueue;
-    layer_platform_thread_unlock_mutex(&globalLock);
+    loader_platform_thread_unlock_mutex(&globalLock);
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(
@@ -592,10 +592,10 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(
     VkLayerDispatchTable* pTable = screenshot_device_table_map[device];
     VkResult result = get_dispatch_table(screenshot_device_table_map, device)->CreateCommandPool(device, pCreateInfo, pAllocator, pCommandPool);
 
-    layer_platform_thread_lock_mutex(&globalLock);
+    loader_platform_thread_lock_mutex(&globalLock);
     if (screenshotEnvQueried && screenshotFrames.empty()) {
         // We are all done taking screenshots, so don't do anything else
-        layer_platform_thread_unlock_mutex(&globalLock);
+        loader_platform_thread_unlock_mutex(&globalLock);
         return result;
     }
 
@@ -606,7 +606,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(
         deviceMap[device] = deviceMapElem;
     }
     deviceMap[device]->commandPool = *pCommandPool;
-    layer_platform_thread_unlock_mutex(&globalLock);
+    loader_platform_thread_unlock_mutex(&globalLock);
     return result;
 }
 
@@ -619,10 +619,10 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
     VkLayerDispatchTable* pTable = screenshot_device_table_map[device];
     VkResult result = get_dispatch_table(screenshot_device_table_map, device)->CreateSwapchainKHR(device, pCreateInfo, pAllocator, pSwapchain);
 
-    layer_platform_thread_lock_mutex(&globalLock);
+    loader_platform_thread_lock_mutex(&globalLock);
     if (screenshotEnvQueried && screenshotFrames.empty()) {
         // We are all done taking screenshots, so don't do anything else
-        layer_platform_thread_unlock_mutex(&globalLock);
+        loader_platform_thread_unlock_mutex(&globalLock);
         return result;
     }
 
@@ -638,7 +638,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
         // Create a mapping for the swapchain object into the dispatch table
         screenshot_device_table_map.emplace((void *)pSwapchain, pTable);
     }
-    layer_platform_thread_unlock_mutex(&globalLock);
+    loader_platform_thread_unlock_mutex(&globalLock);
 
     return result;
 }
@@ -651,10 +651,10 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkGetSwapchainImagesKHR(
 {
     VkResult result = get_dispatch_table(screenshot_device_table_map, device)->GetSwapchainImagesKHR(device, swapchain, pCount, pSwapchainImages);
 
-    layer_platform_thread_lock_mutex(&globalLock);
+    loader_platform_thread_lock_mutex(&globalLock);
     if (screenshotEnvQueried && screenshotFrames.empty()) {
         // We are all done taking screenshots, so don't do anything else
-        layer_platform_thread_unlock_mutex(&globalLock);
+        loader_platform_thread_unlock_mutex(&globalLock);
         return result;
     }
 
@@ -690,7 +690,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkGetSwapchainImagesKHR(
         }
 
     }   
-    layer_platform_thread_unlock_mutex(&globalLock);
+    loader_platform_thread_unlock_mutex(&globalLock);
     return result;
 }
 
@@ -700,11 +700,11 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, 
     if (frameNumber == 10) {fflush(stdout); /* *((int*)0)=0; */ }
     VkResult result = get_dispatch_table(screenshot_device_table_map, queue)->QueuePresentKHR(queue, pPresentInfo);
 
-    layer_platform_thread_lock_mutex(&globalLock);
+    loader_platform_thread_lock_mutex(&globalLock);
 
     if (!screenshotEnvQueried)
     {
-        const char *_vk_screenshot = layer_platform_getenv("_VK_SCREENSHOT");
+        const char *_vk_screenshot = loader_getenv("_VK_SCREENSHOT");
         if (_vk_screenshot && *_vk_screenshot)
         {
             string spec(_vk_screenshot), word;
@@ -730,7 +730,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, 
                 start = comma + 1;
             }
         }
-        layer_platform_free_getenv(_vk_screenshot);
+        loader_free_getenv(_vk_screenshot);
         screenshotEnvQueried = true;
     }
     
@@ -783,7 +783,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, 
         }
     }
     frameNumber++;
-    layer_platform_thread_unlock_mutex(&globalLock);
+    loader_platform_thread_unlock_mutex(&globalLock);
     return result;
 }
 
