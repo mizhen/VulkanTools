@@ -1,13 +1,17 @@
 #!/bin/bash
 #
 # Run all the regression tests with validation layers enabled
+cd $(dirname "$0")
 
 # Halt on error
 set -e
 
+# Verify that validation checks in source match documentation
+./vkvalidatelayerdoc.sh
+
 # enable layers
-export VK_INSTANCE_LAYERS=VK_LAYER_LUNARG_threading:VK_LAYER_LUNARG_mem_tracker:VK_LAYER_LUNARG_object_tracker:VK_LAYER_LUNARG_draw_state:VK_LAYER_LUNARG_param_checker:VK_LAYER_LUNARG_swapchain:VK_LAYER_LUNARG_device_limits:VK_LAYER_LUNARG_image
-export VK_DEVICE_LAYERS=VK_LAYER_LUNARG_threading:VK_LAYER_LUNARG_mem_tracker:VK_LAYER_LUNARG_object_tracker:VK_LAYER_LUNARG_draw_state:VK_LAYER_LUNARG_param_checker:VK_LAYER_LUNARG_swapchain:VK_LAYER_LUNARG_device_limits:VK_LAYER_LUNARG_image
+export VK_INSTANCE_LAYERS=VK_LAYER_GOOGLE_threading:VK_LAYER_LUNARG_mem_tracker:VK_LAYER_LUNARG_object_tracker:VK_LAYER_LUNARG_draw_state:VK_LAYER_LUNARG_param_checker:VK_LAYER_LUNARG_swapchain:VK_LAYER_LUNARG_device_limits:VK_LAYER_LUNARG_image
+export VK_DEVICE_LAYERS=VK_LAYER_GOOGLE_threading:VK_LAYER_LUNARG_mem_tracker:VK_LAYER_LUNARG_object_tracker:VK_LAYER_LUNARG_draw_state:VK_LAYER_LUNARG_param_checker:VK_LAYER_LUNARG_swapchain:VK_LAYER_LUNARG_device_limits:VK_LAYER_LUNARG_image
 
 if [ -f ../../tests/vk_layer_settings.txt ];
 then
@@ -44,4 +48,7 @@ fi
 
 unset VK_INSTANCE_LAYERS
 unset VK_DEVICE_LAYERS
-
+# vk_layer_validation_tests check to see that validation layers will
+# catch the errors that they are supposed to by intentionally doing things
+# that are wrong
+./vk_layer_validation_tests

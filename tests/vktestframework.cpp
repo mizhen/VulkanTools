@@ -1,32 +1,35 @@
-//
-//  Copyright (C) 2015-2016 Valve Corporation
-//  Copyright (C) 2015-2016 LunarG, Inc.
-//
-//  Permission is hereby granted, free of charge, to any person obtaining a
-//  copy of this software and associated documentation files (the "Software"),
-//  to deal in the Software without restriction, including without limitation
-//  the rights to use, copy, modify, merge, publish, distribute, sublicense,
-//  and/or sell copies of the Software, and to permit persons to whom the
-//  Software is furnished to do so, subject to the following conditions:
-//
-//  The above copyright notice and this permission notice shall be included
-//  in all copies or substantial portions of the Software.
-//
-//  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-//  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-//  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-//  THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-//  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-//  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-//  DEALINGS IN THE SOFTWARE.
-//
-// Author: Chia-I Wu <olv@lunarg.com>
-// Author: Courtney Goeltzenleuchter <courtney@LunarG.com>
-// Author: Tony Barbour <tony@LunarG.com>
+/*
+ * Copyright (c) 2015-2016 The Khronos Group Inc.
+ * Copyright (c) 2015-2016 Valve Corporation
+ * Copyright (c) 2015-2016 LunarG, Inc.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and/or associated documentation files (the "Materials"), to
+ * deal in the Materials without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Materials, and to permit persons to whom the Materials are
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice(s) and this permission notice shall be included in
+ * all copies or substantial portions of the Materials.
+ *
+ * THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ *
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+ * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
+ * USE OR OTHER DEALINGS IN THE MATERIALS.
+ *
+ * Author: Chia-I Wu <olvaffe@gmail.com>
+ * Author: Courtney Goeltzenleuchter <courtney@LunarG.com>
+ * Author: Tony Barbour <tony@LunarG.com>
+ */
 
 #include "vktestframework.h"
 #include "vkrenderframework.h"
-//TODO FIXME remove this once glslang doesn't define this
+// TODO FIXME remove this once glslang doesn't define this
 #undef BadValue
 #include "SPIRV/GlslangToSpv.h"
 #include "SPIRV/SPVRemapper.h"
@@ -34,61 +37,62 @@
 #include <math.h>
 #include <wand/MagickWand.h>
 
-
 #if defined(PATH_MAX) && !defined(MAX_PATH)
 #define MAX_PATH PATH_MAX
 #endif
 
 #ifdef _WIN32
-#define ERR_EXIT(err_msg, err_class)                    \
-    do {                                                \
-        MessageBox(NULL, err_msg, err_class, MB_OK);    \
-        exit(1);                                        \
-   } while (0)
-#else  // _WIN32
+#define ERR_EXIT(err_msg, err_class)                                           \
+    do {                                                                       \
+        MessageBox(NULL, err_msg, err_class, MB_OK);                           \
+        exit(1);                                                               \
+    } while (0)
+#else // _WIN32
 
-#define ERR_EXIT(err_msg, err_class)                    \
-    do {                                                \
-        printf(err_msg);                                \
-        fflush(stdout);                                 \
-        exit(1);                                        \
-   } while (0)
+#define ERR_EXIT(err_msg, err_class)                                           \
+    do {                                                                       \
+        printf(err_msg);                                                       \
+        fflush(stdout);                                                        \
+        exit(1);                                                               \
+    } while (0)
 #endif // _WIN32
 
-#define GET_INSTANCE_PROC_ADDR(inst, entrypoint)                        \
-{                                                                       \
-    m_fp##entrypoint = (PFN_vk##entrypoint) vkGetInstanceProcAddr(inst, "vk"#entrypoint); \
-    if (m_fp##entrypoint == NULL) {                                 \
-        ERR_EXIT("vkGetInstanceProcAddr failed to find vk"#entrypoint,  \
-                 "vkGetInstanceProcAddr Failure");                      \
-    }                                                                   \
-}
+#define GET_INSTANCE_PROC_ADDR(inst, entrypoint)                               \
+    {                                                                          \
+        m_fp##entrypoint =                                                     \
+            (PFN_vk##entrypoint)vkGetInstanceProcAddr(inst, "vk" #entrypoint); \
+        if (m_fp##entrypoint == NULL) {                                        \
+            ERR_EXIT("vkGetInstanceProcAddr failed to find vk" #entrypoint,    \
+                     "vkGetInstanceProcAddr Failure");                         \
+        }                                                                      \
+    }
 
-#define GET_DEVICE_PROC_ADDR(dev, entrypoint)                           \
-{                                                                       \
-    m_fp##entrypoint = (PFN_vk##entrypoint) vkGetDeviceProcAddr(dev, "vk"#entrypoint);   \
-    if (m_fp##entrypoint == NULL) {                                 \
-        ERR_EXIT("vkGetDeviceProcAddr failed to find vk"#entrypoint,    \
-                 "vkGetDeviceProcAddr Failure");                        \
-    }                                                                   \
-}
+#define GET_DEVICE_PROC_ADDR(dev, entrypoint)                                  \
+    {                                                                          \
+        m_fp##entrypoint =                                                     \
+            (PFN_vk##entrypoint)vkGetDeviceProcAddr(dev, "vk" #entrypoint);    \
+        if (m_fp##entrypoint == NULL) {                                        \
+            ERR_EXIT("vkGetDeviceProcAddr failed to find vk" #entrypoint,      \
+                     "vkGetDeviceProcAddr Failure");                           \
+        }                                                                      \
+    }
 
 // Command-line options
 enum TOptions {
-    EOptionNone               = 0x000,
-    EOptionIntermediate       = 0x001,
-    EOptionSuppressInfolog    = 0x002,
-    EOptionMemoryLeakMode     = 0x004,
-    EOptionRelaxedErrors      = 0x008,
-    EOptionGiveWarnings       = 0x010,
-    EOptionLinkProgram        = 0x020,
-    EOptionMultiThreaded      = 0x040,
-    EOptionDumpConfig         = 0x080,
-    EOptionDumpReflection     = 0x100,
-    EOptionSuppressWarnings   = 0x200,
-    EOptionDumpVersions       = 0x400,
-    EOptionSpv                = 0x800,
-    EOptionDefaultDesktop     = 0x1000,
+    EOptionNone = 0x000,
+    EOptionIntermediate = 0x001,
+    EOptionSuppressInfolog = 0x002,
+    EOptionMemoryLeakMode = 0x004,
+    EOptionRelaxedErrors = 0x008,
+    EOptionGiveWarnings = 0x010,
+    EOptionLinkProgram = 0x020,
+    EOptionMultiThreaded = 0x040,
+    EOptionDumpConfig = 0x080,
+    EOptionDumpReflection = 0x100,
+    EOptionSuppressWarnings = 0x200,
+    EOptionDumpVersions = 0x400,
+    EOptionSpv = 0x800,
+    EOptionDefaultDesktop = 0x1000,
 };
 
 typedef struct _SwapchainBuffers {
@@ -176,59 +180,41 @@ private:
 
 #include <errno.h>
 
-int fopen_s(
-   FILE** pFile,
-   const char* filename,
-   const char* mode
-)
-{
-   if (!pFile || !filename || !mode) {
-      return EINVAL;
-   }
+int fopen_s(FILE **pFile, const char *filename, const char *mode) {
+    if (!pFile || !filename || !mode) {
+        return EINVAL;
+    }
 
-   FILE* f = fopen(filename, mode);
-   if (! f) {
-      if (errno != 0) {
-         return errno;
-      } else {
-         return ENOENT;
-      }
-   }
-   *pFile = f;
+    FILE *f = fopen(filename, mode);
+    if (!f) {
+        if (errno != 0) {
+            return errno;
+        } else {
+            return ENOENT;
+        }
+    }
+    *pFile = f;
 
-   return 0;
+    return 0;
 }
 
 #endif
 
-
-
 // Set up environment for GLSL compiler
 // Must be done once per process
-void TestEnvironment::SetUp()
-{
+void TestEnvironment::SetUp() {
     // Initialize GLSL to SPV compiler utility
     glslang::InitializeProcess();
 
     vk_testing::set_error_callback(test_error_callback);
 }
 
-void TestEnvironment::TearDown()
-{
-    glslang::FinalizeProcess();
-}
+void TestEnvironment::TearDown() { glslang::FinalizeProcess(); }
 
-VkTestFramework::VkTestFramework() :
-    m_compile_options( 0 ),
-    m_num_shader_strings( 0 )
-{
+VkTestFramework::VkTestFramework()
+    : m_compile_options(0), m_num_shader_strings(0) {}
 
-}
-
-VkTestFramework::~VkTestFramework()
-{
-
-}
+VkTestFramework::~VkTestFramework() {}
 
 // Define all the static elements
 bool VkTestFramework::m_show_images       = false;
@@ -244,16 +230,14 @@ std::list<VkTestImageRecord> VkTestFramework::m_images;
 std::list<VkTestImageRecord>::iterator VkTestFramework::m_display_image;
 int m_display_image_idx = 0;
 
-bool VkTestFramework::optionMatch(const char* option, char* optionLine)
-{
+bool VkTestFramework::optionMatch(const char *option, char *optionLine) {
     if (strncmp(option, optionLine, strlen(option)) == 0)
         return true;
     else
         return false;
 }
 
-void VkTestFramework::InitArgs(int *argc, char *argv[])
-{
+void VkTestFramework::InitArgs(int *argc, char *argv[]) {
     int i, n;
 
     for (i=1, n=1; i< *argc; i++) {
@@ -276,21 +260,28 @@ void VkTestFramework::InitArgs(int *argc, char *argv[])
             printf("\t--show-images\n"
                    "\t\tDisplay test images in viewer after tests complete.\n");
             printf("\t--save-images\n"
-                   "\t\tSave tests images as ppm files in current working directory.\n"
+                   "\t\tSave tests images as ppm files in current working "
+                   "directory.\n"
                    "\t\tUsed to generate golden images for compare-images.\n");
-            printf("\t--compare-images\n"
-                   "\t\tCompare test images to 'golden' image in golden folder.\n"
-                   "\t\tAlso saves the generated test image in current working\n"
-                   "\t\t\tdirectory but only if the image is different from the golden\n"
-                   "\t\tSetting RENDERTEST_GOLDEN_DIR environment variable can specify\n"
-                   "\t\t\tdifferent directory for golden images\n"
-                   "\t\tSignal test failure if different.\n");
-            printf("\t--no-SPV\n"
-                   "\t\tUse built-in GLSL compiler rather than SPV code path.\n");
+            printf(
+                "\t--compare-images\n"
+                "\t\tCompare test images to 'golden' image in golden folder.\n"
+                "\t\tAlso saves the generated test image in current working\n"
+                "\t\t\tdirectory but only if the image is different from the "
+                "golden\n"
+                "\t\tSetting RENDERTEST_GOLDEN_DIR environment variable can "
+                "specify\n"
+                "\t\t\tdifferent directory for golden images\n"
+                "\t\tSignal test failure if different.\n");
+            printf(
+                "\t--no-SPV\n"
+                "\t\tUse built-in GLSL compiler rather than SPV code path.\n");
             printf("\t--strip-SPV\n"
-                   "\t\tStrip SPIR-V debug information (line numbers, names, etc).\n");
-            printf("\t--canonicalize-SPV\n"
-                   "\t\tRemap SPIR-V ids before submission to aid compression.\n");
+                   "\t\tStrip SPIR-V debug information (line numbers, names, "
+                   "etc).\n");
+            printf(
+                "\t--canonicalize-SPV\n"
+                "\t\tRemap SPIR-V ids before submission to aid compression.\n");
             exit(0);
         } else {
             printf("\nUnrecognized option: %s\n", argv[i]);
@@ -308,8 +299,8 @@ void VkTestFramework::InitArgs(int *argc, char *argv[])
     }
 }
 
-VkFormat VkTestFramework::GetFormat(VkInstance instance, vk_testing::Device *device)
-{
+VkFormat VkTestFramework::GetFormat(VkInstance instance,
+                                    vk_testing::Device *device) {
     VkFormatProperties format_props;
     if (!m_show_images)
     {
@@ -1357,7 +1348,7 @@ void VkTestFramework::Finish()
 //  - parsing this string for the case where the user didn't supply one
 //  - dumping out a template for user construction of a config file
 //
-static const char* DefaultConfig =
+static const char *DefaultConfig =
     "MaxLights 32\n"
     "MaxClipPlanes 6\n"
     "MaxTextureUnits 32\n"
@@ -1450,14 +1441,12 @@ static const char* DefaultConfig =
     "generalVaryingIndexing 1\n"
     "generalSamplerIndexing 1\n"
     "generalVariableIndexing 1\n"
-    "generalConstantMatrixVectorIndexing 1\n"
-    ;
+    "generalConstantMatrixVectorIndexing 1\n";
 
 //
 // *.conf => this is a config file that can set limits/resources
 //
-bool VkTestFramework::SetConfigFile(const std::string& name)
-{
+bool VkTestFramework::SetConfigFile(const std::string &name) {
     if (name.size() < 5)
         return false;
 
@@ -1472,30 +1461,34 @@ bool VkTestFramework::SetConfigFile(const std::string& name)
 //
 // Parse either a .conf file provided by the user or the default string above.
 //
-void VkTestFramework::ProcessConfigFile()
-{
-    char** configStrings = 0;
-    char* config = 0;
+void VkTestFramework::ProcessConfigFile() {
+    char **configStrings = 0;
+    char *config = 0;
     if (ConfigFile.size() > 0) {
         configStrings = ReadFileData(ConfigFile.c_str());
         if (configStrings)
             config = *configStrings;
         else {
-            printf("Error opening configuration file; will instead use the default configuration\n");
+            printf("Error opening configuration file; will instead use the "
+                   "default configuration\n");
         }
     }
 
     if (config == 0) {
-        config = (char *) alloca(strlen(DefaultConfig) + 1);
+        config = (char *)alloca(strlen(DefaultConfig) + 1);
         strcpy(config, DefaultConfig);
     }
 
-    const char* delims = " \t\n\r";
-    const char* token = strtok(config, delims);
+    const char *delims = " \t\n\r";
+    const char *token = strtok(config, delims);
     while (token) {
-        const char* valueStr = strtok(0, delims);
-        if (valueStr == 0 || ! (valueStr[0] == '-' || (valueStr[0] >= '0' && valueStr[0] <= '9'))) {
-            printf("Error: '%s' bad .conf file.  Each name must be followed by one number.\n", valueStr ? valueStr : "");
+        const char *valueStr = strtok(0, delims);
+        if (valueStr == 0 ||
+            !(valueStr[0] == '-' ||
+              (valueStr[0] >= '0' && valueStr[0] <= '9'))) {
+            printf("Error: '%s' bad .conf file.  Each name must be followed by "
+                   "one number.\n",
+                   valueStr ? valueStr : "");
             return;
         }
         int value = atoi(valueStr);
@@ -1658,7 +1651,8 @@ void VkTestFramework::ProcessConfigFile()
             Resources.maxAtomicCounterBufferSize = value;
         else if (strcmp(token, "MaxTransformFeedbackBuffers") == 0)
             Resources.maxTransformFeedbackBuffers = value;
-        else if (strcmp(token, "MaxTransformFeedbackInterleavedComponents") == 0)
+        else if (strcmp(token, "MaxTransformFeedbackInterleavedComponents") ==
+                 0)
             Resources.maxTransformFeedbackInterleavedComponents = value;
         else if (strcmp(token, "MaxCullDistances") == 0)
             Resources.maxCullDistances = value;
@@ -1676,7 +1670,8 @@ void VkTestFramework::ProcessConfigFile()
         else if (strcmp(token, "generalUniformIndexing") == 0)
             Resources.limits.generalUniformIndexing = (value != 0);
         else if (strcmp(token, "generalAttributeMatrixVectorIndexing") == 0)
-            Resources.limits.generalAttributeMatrixVectorIndexing = (value != 0);
+            Resources.limits.generalAttributeMatrixVectorIndexing =
+                (value != 0);
         else if (strcmp(token, "generalVaryingIndexing") == 0)
             Resources.limits.generalVaryingIndexing = (value != 0);
         else if (strcmp(token, "generalSamplerIndexing") == 0)
@@ -1686,7 +1681,8 @@ void VkTestFramework::ProcessConfigFile()
         else if (strcmp(token, "generalConstantMatrixVectorIndexing") == 0)
             Resources.limits.generalConstantMatrixVectorIndexing = (value != 0);
         else
-            printf("Warning: unrecognized limit (%s) in configuration file.\n", token);
+            printf("Warning: unrecognized limit (%s) in configuration file.\n",
+                   token);
 
         token = strtok(0, delims);
     }
@@ -1694,8 +1690,7 @@ void VkTestFramework::ProcessConfigFile()
         FreeFileData(configStrings);
 }
 
-void VkTestFramework::SetMessageOptions(EShMessages& messages)
-{
+void VkTestFramework::SetMessageOptions(EShMessages &messages) {
     if (m_compile_options & EOptionRelaxedErrors)
         messages = (EShMessages)(messages | EShMsgRelaxedErrors);
     if (m_compile_options & EOptionIntermediate)
@@ -1707,20 +1702,20 @@ void VkTestFramework::SetMessageOptions(EShMessages& messages)
 //
 //   Malloc a string of sufficient size and read a string into it.
 //
-char** VkTestFramework::ReadFileData(const char* fileName)
-{
+char **VkTestFramework::ReadFileData(const char *fileName) {
     FILE *in;
-    #if defined(_WIN32) && defined(__GNUC__)
-        in = fopen(fileName, "r");
-        int errorCode = in ? 0 : 1;
-    #else
-        int errorCode = fopen_s(&in, fileName, "r");
-    #endif
+#if defined(_WIN32) && defined(__GNUC__)
+    in = fopen(fileName, "r");
+    int errorCode = in ? 0 : 1;
+#else
+    int errorCode = fopen_s(&in, fileName, "r");
+#endif
 
     char *fdata;
     int count = 0;
     const int maxSourceStrings = 5;
-    char** return_data = (char**)malloc(sizeof(char *) * (maxSourceStrings+1));
+    char **return_data =
+        (char **)malloc(sizeof(char *) * (maxSourceStrings + 1));
 
     if (errorCode) {
         printf("Error: unable to open input file: %s\n", fileName);
@@ -1732,47 +1727,46 @@ char** VkTestFramework::ReadFileData(const char* fileName)
 
     fseek(in, 0, SEEK_SET);
 
-    if (!(fdata = (char*)malloc(count+2))) {
+    if (!(fdata = (char *)malloc(count + 2))) {
         printf("Error allocating memory\n");
         return 0;
     }
-    if (fread(fdata,1,count, in)!=count) {
-            printf("Error reading input file: %s\n", fileName);
-            return 0;
+    if (fread(fdata, 1, count, in) != count) {
+        printf("Error reading input file: %s\n", fileName);
+        return 0;
     }
     fdata[count] = '\0';
     fclose(in);
     if (count == 0) {
-        return_data[0]=(char*)malloc(count+2);
-        return_data[0][0]='\0';
+        return_data[0] = (char *)malloc(count + 2);
+        return_data[0][0] = '\0';
         m_num_shader_strings = 0;
         return return_data;
     } else
         m_num_shader_strings = 1;
 
-    int len = (int)(ceil)((float)count/(float)m_num_shader_strings);
-    int ptr_len=0,i=0;
-    while(count>0){
-        return_data[i]=(char*)malloc(len+2);
-        memcpy(return_data[i],fdata+ptr_len,len);
-        return_data[i][len]='\0';
-        count-=(len);
-        ptr_len+=(len);
-        if(count<len){
-            if(count==0){
-               m_num_shader_strings=(i+1);
-               break;
+    int len = (int)(ceil)((float)count / (float)m_num_shader_strings);
+    int ptr_len = 0, i = 0;
+    while (count > 0) {
+        return_data[i] = (char *)malloc(len + 2);
+        memcpy(return_data[i], fdata + ptr_len, len);
+        return_data[i][len] = '\0';
+        count -= (len);
+        ptr_len += (len);
+        if (count < len) {
+            if (count == 0) {
+                m_num_shader_strings = (i + 1);
+                break;
             }
-           len = count;
+            len = count;
         }
         ++i;
     }
     return return_data;
 }
 
-void VkTestFramework::FreeFileData(char** data)
-{
-    for(int i=0;i<m_num_shader_strings;i++)
+void VkTestFramework::FreeFileData(char **data) {
+    for (int i = 0; i < m_num_shader_strings; i++)
         free(data[i]);
 }
 
@@ -1787,8 +1781,7 @@ void VkTestFramework::FreeFileData(char** data)
 //   .frag = fragment
 //   .comp = compute
 //
-EShLanguage VkTestFramework::FindLanguage(const std::string& name)
-{
+EShLanguage VkTestFramework::FindLanguage(const std::string &name) {
     size_t ext = name.rfind('.');
     if (ext == std::string::npos) {
         return EShLangVertex;
@@ -1814,8 +1807,8 @@ EShLanguage VkTestFramework::FindLanguage(const std::string& name)
 //
 // Convert VK shader type to compiler's
 //
-EShLanguage VkTestFramework::FindLanguage(const VkShaderStageFlagBits shader_type)
-{
+EShLanguage
+VkTestFramework::FindLanguage(const VkShaderStageFlagBits shader_type) {
     switch (shader_type) {
     case VK_SHADER_STAGE_VERTEX_BIT:
         return EShLangVertex;
@@ -1840,15 +1833,13 @@ EShLanguage VkTestFramework::FindLanguage(const VkShaderStageFlagBits shader_typ
     }
 }
 
-
 //
 // Compile a given string containing GLSL into SPV for use by VK
 // Return value of false means an error was encountered.
 //
 bool VkTestFramework::GLSLtoSPV(const VkShaderStageFlagBits shader_type,
-                                 const char *pshader,
-                                 std::vector<unsigned int> &spirv)
-{
+                                const char *pshader,
+                                std::vector<unsigned int> &spirv) {
     glslang::TProgram program;
     const char *shaderStrings[1];
 
@@ -1860,17 +1851,20 @@ bool VkTestFramework::GLSLtoSPV(const VkShaderStageFlagBits shader_type,
 
     EShMessages messages = EShMsgDefault;
     SetMessageOptions(messages);
-    messages = static_cast<EShMessages>(messages | EShMsgSpvRules | EShMsgVulkanRules);
+    messages =
+        static_cast<EShMessages>(messages | EShMsgSpvRules | EShMsgVulkanRules);
 
     EShLanguage stage = FindLanguage(shader_type);
-    glslang::TShader* shader = new glslang::TShader(stage);
+    glslang::TShader *shader = new glslang::TShader(stage);
 
     shaderStrings[0] = pshader;
     shader->setStrings(shaderStrings, 1);
 
-    if (! shader->parse(&Resources, (m_compile_options & EOptionDefaultDesktop) ? 110 : 100, false, messages)) {
+    if (!shader->parse(&Resources,
+                       (m_compile_options & EOptionDefaultDesktop) ? 110 : 100,
+                       false, messages)) {
 
-        if (! (m_compile_options & EOptionSuppressInfolog)) {
+        if (!(m_compile_options & EOptionSuppressInfolog)) {
             puts(shader->getInfoLog());
             puts(shader->getInfoDebugLog());
         }
@@ -1880,14 +1874,13 @@ bool VkTestFramework::GLSLtoSPV(const VkShaderStageFlagBits shader_type,
 
     program.addShader(shader);
 
-
     //
     // Program-level processing...
     //
 
-    if (! program.link(messages)) {
+    if (!program.link(messages)) {
 
-        if (! (m_compile_options & EOptionSuppressInfolog)) {
+        if (!(m_compile_options & EOptionSuppressInfolog)) {
             puts(shader->getInfoLog());
             puts(shader->getInfoDebugLog());
         }

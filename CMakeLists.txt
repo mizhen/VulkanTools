@@ -11,6 +11,7 @@ project (VULKANTOOLS)
 # vulkan-<major>.dll (and other files).
 set(MAJOR "1")
 
+find_package(PythonInterp 3 REQUIRED)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -DWIN32_LEAN_AND_MEAN)
@@ -19,21 +20,32 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
     add_definitions(-DVK_USE_PLATFORM_ANDROID_KHR)
     set(DisplayServer Android)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    add_definitions(-DVK_USE_PLATFORM_XCB_KHR)
-    set(DisplayServer Xcb)
+    #   TODO: Basic support is present for Xlib but is untested.
+    #         Mir support is stubbed in but unimplemented and untested.
+    option(BUILD_WSI_XCB_SUPPORT "Build XCB WSI support" ON)
+    option(BUILD_WSI_XLIB_SUPPORT "Build Xlib WSI support" OFF)
+    option(BUILD_WSI_WAYLAND_SUPPORT "Build Wayland WSI support" OFF)
+    option(BUILD_WSI_MIR_SUPPORT "Build Mir WSI support" OFF)
 
-#   TODO: Basic support is present for Xlib but is untested.
-#         Wayland/Mir support is stubbed in but unimplemented and untested.
+    if (BUILD_WSI_XCB_SUPPORT)
+        add_definitions(-DVK_USE_PLATFORM_XCB_KHR)
+        set(DisplayServer Xcb)
+    endif()
 
-#   add_definitions(-DVK_USE_PLATFORM_XLIB_KHR)
-#   set(DisplayServer Xlib)
+    if (BUILD_WSI_XLIB_SUPPORT)
+        add_definitions(-DVK_USE_PLATFORM_XLIB_KHR)
+        set(DisplayServer XLib)
+    endif()
 
-#   add_definitions(-DVK_USE_PLATFORM_MIR_KHR)
-#   set(DisplayServer Mir)
+    if (BUILD_WSI_WAYLAND_SUPPORT)
+        add_definitions(-DVK_USE_PLATFORM_WAYLAND_KHR)
+        set(DisplayServer Wayland)
+    endif()
 
-#   add_definitions(-DVK_USEPLATFORM_WAYLAND_KHR)
-#   set(DisplayServer Wayland)
-
+    if (BUILD_WSI_MIR_SUPPORT)
+        add_definitions(-DVK_USE_PLATFORM_MIR_KHR)
+        set(DisplayServer Mir)
+    endif()
 else()
     message(FATAL_ERROR "Unsupported Platform!")
 endif()
@@ -45,9 +57,7 @@ endif()
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 
 # Header file for CMake settings
-#hacky use layer include directory from loader repo
-set (LOADER_INCLUDE_DIR ${VULKANTOOLS_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/include)
-include_directories(${PROJECT_SOURCE_DIR}/include ${LOADER_UNCLUDE_DIR})
+include_directories("${PROJECT_SOURCE_DIR}/include")
 
 if(NOT WIN32)
     include(FindPkgConfig)
@@ -66,6 +76,7 @@ if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     endif()
 endif()
 
+option(BUILD_LOADER "Build loader" ON)
 if(WIN32)
     option(BUILD_ICD "Build LunarG intel icd" OFF)
 else()
@@ -73,7 +84,9 @@ else()
 endif()
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_LAYERS "Build layers" ON)
+option(BUILD_DEMOS "Build demos" ON)
 option(BUILD_VKTRACE "Build VkTrace" ON)
+option(BUILD_VKJSON "Build vkjson" ON)
 
 if (BUILD_ICD OR BUILD_TESTS)
     # Hard code our glslang path for now
@@ -109,10 +122,12 @@ else()
     set(PYTHON_CMD "py")
 endif()
 
-set(LOADER_PY_DIR ${VULKANTOOLS_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers)
-
+# loader: Generic VULKAN ICD loader
 # icd: Device dependent (DD) VULKAN components
 # tests: VULKAN tests
+if(BUILD_LOADER)
+    add_subdirectory(loader)
+endif()
 
 if(BUILD_ICD)
     add_subdirectory(icd)
@@ -126,8 +141,15 @@ if(BUILD_LAYERS)
     add_subdirectory(layers)
 endif()
 
+if(BUILD_DEMOS)
+    add_subdirectory(demos)
+endif()
 
 if(BUILD_VKTRACE)
     add_subdirectory(vktrace)
+endif()
+
+if(BUILD_VKJSON)
+    add_subdirectory(libs/vkjson)
 endif()
 

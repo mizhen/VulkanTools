@@ -1,34 +1,37 @@
 #!/usr/bin/env python3
 #
-# Copyright (C) 2015-2016 Valve Corporation
-# Copyright (C) 2015-2016 LunarG, Inc.
+# Copyright (c) 2015-2016 The Khronos Group Inc.
+# Copyright (c) 2015-2016 Valve Corporation
+# Copyright (c) 2015-2016 LunarG, Inc.
+# Copyright (c) 2015-2016 Google Inc.
 #
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and/or associated documentation files (the "Materials"), to
+# deal in the Materials without restriction, including without limitation the
+# rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+# sell copies of the Materials, and to permit persons to whom the Materials
+# are furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
+# The above copyright notice(s) and this permission notice shall be included
+# in all copies or substantial portions of the Materials.
 #
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+#
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+# OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
+# USE OR OTHER DEALINGS IN THE MATERIALS
 #
 # Author: Chia-I Wu <olv@lunarg.com>
 # Author: Courtney Goeltzenleuchter <courtney@LunarG.com>
 # Author: Jon Ashburn <jon@lunarg.com>
+# Author: Gwan-gyeong Mun <kk.moon@samsung.com>
 
 import sys
-import imp
-vulkan = imp.load_source('vulkan', '../../../../Vulkan-LoaderAndValidationLayers/vulkan.py')
 
+import vulkan
 
 def generate_get_proc_addr_check(name):
     return "    if (!%s || %s[0] != 'v' || %s[1] != 'k')\n" \
@@ -65,27 +68,28 @@ class Subcommand(object):
         return """/* THIS FILE IS GENERATED.  DO NOT EDIT. */
 
 /*
+ * Copyright (c) 2015-2016 The Khronos Group Inc.
+ * Copyright (c) 2015-2016 Valve Corporation
+ * Copyright (c) 2015-2016 LunarG, Inc.
  *
- * Copyright (C) 2015-2016 Valve Corporation
- * Copyright (C) 2015-2016 LunarG, Inc.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and/or associated documentation files (the "Materials"), to
+ * deal in the Materials without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Materials, and to permit persons to whom the Materials are
+ * furnished to do so, subject to the following conditions:
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
+ * The above copyright notice(s) and this permission notice shall be included in
+ * all copies or substantial portions of the Materials.
  *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ *
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+ * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
+ * USE OR OTHER DEALINGS IN THE MATERIALS.
  *
  * Author: Courtney Goeltzenleuchter <courtney@LunarG.com>
  */"""
@@ -99,107 +103,165 @@ class Subcommand(object):
     def generate_footer(self):
         pass
 
-class IcdDummyEntrypointsSubcommand(Subcommand):
+class DispatchTableOpsSubcommand(Subcommand):
     def run(self):
-        if len(self.argv) == 1:
-            self.prefix = self.argv[0]
-            self.qual = "static"
+        if len(self.argv) != 1:
+            print("DispatchTableOpsSubcommand: <prefix> unspecified")
+            return
+
+        self.prefix = self.argv[0]
+        super(DispatchTableOpsSubcommand, self).run()
+
+    def generate_header(self):
+        return "\n".join(["#include <vulkan/vulkan.h>",
+                          "#include <vulkan/vk_layer.h>",
+                          "#include <string.h>"])
+
+    def _generate_init_dispatch(self, type):
+        stmts = []
+        func = []
+        if type == "device":
+            # GPA has to be first one and uses wrapped object
+            stmts.append("memset(table, 0, sizeof(*table));")
+            stmts.append("table->GetDeviceProcAddr =(PFN_vkGetDeviceProcAddr)  gpa(device,\"vkGetDeviceProcAddr\");")
+            for proto in self.protos:
+                if proto.name == "CreateInstance" or proto.name == "EnumerateInstanceExtensionProperties" or proto.name == "EnumerateInstanceLayerProperties" or proto.params[0].ty == "VkInstance" or proto.params[0].ty == "VkPhysicalDevice":
+                    continue
+                if proto.name != "GetDeviceProcAddr" and 'KHR' not in proto.name:
+                    stmts.append("table->%s = (PFN_vk%s) gpa(device, \"vk%s\");" %
+                        (proto.name, proto.name, proto.name))
+            func.append("static inline void %s_init_device_dispatch_table(VkDevice device,"
+                % self.prefix)
+            func.append("%s                                               VkLayerDispatchTable *table,"
+                % (" " * len(self.prefix)))
+            func.append("%s                                               PFN_vkGetDeviceProcAddr gpa)"
+                % (" " * len(self.prefix)))
         else:
-            self.prefix = "vk"
-            self.qual = ""
+            stmts.append("table->GetInstanceProcAddr =(PFN_vkGetInstanceProcAddr)  gpa(instance,\"vkGetInstanceProcAddr\");")
+            for proto in self.protos:
+                if proto.params[0].ty != "VkInstance" and proto.params[0].ty != "VkPhysicalDevice":
+                    continue
+                if proto.name == "CreateDevice":
+                    continue
+                if proto.name != "GetInstanceProcAddr" and 'KHR' not in proto.name:
+                    stmts.append("table->%s = (PFN_vk%s) gpa(instance, \"vk%s\");" %
+                          (proto.name, proto.name, proto.name))
+            func.append("static inline void %s_init_instance_dispatch_table(" % self.prefix)
+            func.append("%s        VkInstance instance," % (" " * len(self.prefix)))
+            func.append("%s        VkLayerInstanceDispatchTable *table," % (" " * len(self.prefix)))
+            func.append("%s        PFN_vkGetInstanceProcAddr gpa)" % (" " * len(self.prefix)))
+        func.append("{")
+        func.append("    %s" % "\n    ".join(stmts))
+        func.append("}")
+
+        return "\n".join(func)
+
+    def generate_body(self):
+        body = [self._generate_init_dispatch("device"),
+                self._generate_init_dispatch("instance")]
+
+        return "\n\n".join(body)
+
+class WinDefFileSubcommand(Subcommand):
+    def run(self):
+        library_exports = {
+                "all": [],
+                "icd": [
+                    "vk_icdGetInstanceProcAddr",
+                ],
+                "layer": [
+                    "vkGetInstanceProcAddr",
+                    "vkGetDeviceProcAddr",
+                    "vkEnumerateInstanceLayerProperties",
+                    "vkEnumerateInstanceExtensionProperties"
+                ],
+                "layer_multi": [
+                    "multi2GetInstanceProcAddr",
+                    "multi1GetDeviceProcAddr"
+                ]
+        }
+
+        if len(self.argv) != 2 or self.argv[1] not in library_exports:
+            print("WinDefFileSubcommand: <library-name> {%s}" %
+                    "|".join(library_exports.keys()))
+            return
+
+        self.library = self.argv[0]
+        if self.library == "VkLayer_multi":
+            self.exports = library_exports["layer_multi"]
+        else:
+            self.exports = library_exports[self.argv[1]]
 
         super().run()
 
+    def generate_copyright(self):
+        return """; THIS FILE IS GENERATED.  DO NOT EDIT.
+
+;;;; Begin Copyright Notice ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Vulkan
+;
+; Copyright (c) 2015-2016 The Khronos Group Inc.
+; Copyright (c) 2015-2016 Valve Corporation
+; Copyright (c) 2015-2016 LunarG, Inc.
+;
+; Permission is hereby granted, free of charge, to any person obtaining a copy
+; of this software and/or associated documentation files (the "Materials"), to
+; deal in the Materials without restriction, including without limitation the
+; rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+; sell copies of the Materials, and to permit persons to whom the Materials are
+; furnished to do so, subject to the following conditions:
+;
+; The above copyright notice(s) and this permission notice shall be included in
+; all copies or substantial portions of the Materials.
+;
+; THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+; IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+; FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+;
+; IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+; DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+; OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
+; USE OR OTHER DEALINGS IN THE MATERIALS.
+;
+;  Author: Courtney Goeltzenleuchter <courtney@LunarG.com>
+;;;;  End Copyright Notice ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;"""
+
     def generate_header(self):
-        return "#include \"icd.h\""
-
-    def _generate_stub_decl(self, proto):
-        if proto.name == "GetInstanceProcAddr":
-            return proto.c_pretty_decl(self.prefix + "_icd" + proto.name, attr="ICD_EXPORT VKAPI")
-        else:
-            return proto.c_pretty_decl(self.prefix + proto.name, attr="VKAPI")
-
-    def _generate_stubs(self):
-        stubs = []
-        for proto in self.protos:
-            decl = self._generate_stub_decl(proto)
-            if proto.ret != "void":
-                stmt = "    return VK_ERROR_UNKNOWN;\n"
-            else:
-                stmt = ""
-
-            stubs.append("%s %s\n{\n%s}" % (self.qual, decl, stmt))
-
-        return "\n\n".join(stubs)
+        return "; The following is required on Windows, for exporting symbols from the DLL"
 
     def generate_body(self):
-        return self._generate_stubs()
-
-class IcdGetProcAddrSubcommand(IcdDummyEntrypointsSubcommand):
-    def generate_header(self):
-        return "\n".join(["#include <string.h>", "#include \"icd.h\""])
-
-    def generate_body(self):
-        for proto in self.protos:
-            if proto.name == "GetDeviceProcAddr":
-                gpa_proto = proto
-            if proto.name == "GetInstanceProcAddr":
-                gpa_instance_proto = proto
-
-        gpa_instance_decl = self._generate_stub_decl(gpa_instance_proto)
-        gpa_decl = self._generate_stub_decl(gpa_proto)
-        gpa_pname = gpa_proto.params[-1].name
-
-        lookups = []
-        for proto in self.protos:
-            if proto.name == "CreateAndroidSurfaceKHR":
-                continue
-            lookups.append("if (!strcmp(%s, \"%s\"))" %
-                    (gpa_pname, proto.name))
-            if proto.name != "GetInstanceProcAddr":
-                lookups.append("    return (%s) %s%s;" %
-                    (gpa_proto.ret, self.prefix, proto.name))
-            else:
-                lookups.append("    return (%s) %s%s;" %
-                    (gpa_proto.ret, self.prefix, "_icdGetInstanceProcAddr"))
-
         body = []
-        body.append("%s %s" % (self.qual, gpa_instance_decl))
-        body.append("{")
-        body.append(generate_get_proc_addr_check(gpa_pname))
-        body.append("")
-        body.append("    %s += 2;" % gpa_pname)
-        body.append("    %s" % "\n    ".join(lookups))
-        body.append("")
-        body.append("    return NULL;")
-        body.append("}")
-        body.append("")
 
-        body.append("%s %s" % (self.qual, gpa_decl))
-        body.append("{")
-        body.append(generate_get_proc_addr_check(gpa_pname))
-        body.append("")
-        body.append("    %s += 2;" % gpa_pname)
-        body.append("    %s" % "\n    ".join(lookups))
-        body.append("")
-        body.append("    return NULL;")
-        body.append("}")
+        body.append("LIBRARY " + self.library)
+        body.append("EXPORTS")
+
+        for proto in self.exports:
+            if self.library != "VkLayerSwapchain" or proto != "vkEnumerateInstanceExtensionProperties" and proto != "vkEnumerateInstanceLayerProperties":
+                body.append( proto)
 
         return "\n".join(body)
 
 def main():
+    wsi = {
+            "Win32",
+            "Android",
+            "Xcb",
+            "Xlib",
+            "Wayland",
+            "Mir"
+    }
     subcommands = {
-            "icd-dummy-entrypoints": IcdDummyEntrypointsSubcommand,
-            "icd-get-proc-addr": IcdGetProcAddrSubcommand
+            "dispatch-table-ops": DispatchTableOpsSubcommand,
+            "win-def-file": WinDefFileSubcommand,
     }
 
-    if len(sys.argv) < 2 or sys.argv[1] not in subcommands:
-        print("Usage: %s <subcommand> [options]" % sys.argv[0])
+    if len(sys.argv) < 3 or sys.argv[1] not in wsi or sys.argv[2] not in subcommands:
+        print("Usage: %s <wsi> <subcommand> [options]" % sys.argv[0])
         print
         print("Available sucommands are: %s" % " ".join(subcommands))
         exit(1)
 
-    subcmd = subcommands[sys.argv[1]](sys.argv[2:])
+    subcmd = subcommands[sys.argv[2]](sys.argv[3:])
     subcmd.run()
 
 if __name__ == "__main__":

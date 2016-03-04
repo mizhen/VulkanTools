@@ -2,27 +2,50 @@ cmake_minimum_required (VERSION 2.8.11)
 find_library(LIBPNG libpng16 ${VULKANTOOLS_SOURCE_DIR}/libs/libpng-1.6.21/x64)
 find_library(ZLIB zlib ${VULKANTOOLS_SOURCE_DIR}/libs/zlib-1.2.8/x64)
 
-set (LOADER_INCLUDE_DIR ${VULKANTOOLS_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/include)
 macro(run_vk_helper subcmd)
 	add_custom_command(OUTPUT ${ARGN}
-		COMMAND ${PYTHON_CMD} ${LOADER_PY_DIR}/vk_helper.py --${subcmd} ${LOADER_INCLUDE_DIR}/vulkan/vulkan.h --abs_out_dir ${CMAKE_CURRENT_BINARY_DIR}
-		DEPENDS ${LOADER_PY_DIR}/vk_helper.py ${LOADER_INCLUDE_DIR}/vulkan/vulkan.h
+		COMMAND ${PYTHON_CMD} ${PROJECT_SOURCE_DIR}/vk_helper.py --${subcmd} ${PROJECT_SOURCE_DIR}/include/vulkan/vulkan.h --abs_out_dir ${CMAKE_CURRENT_BINARY_DIR}
+		DEPENDS ${PROJECT_SOURCE_DIR}/vk_helper.py ${PROJECT_SOURCE_DIR}/include/vulkan/vulkan.h
 	)
 endmacro()
 
 macro(run_vk_layer_generate subcmd output)
 	add_custom_command(OUTPUT ${output}
-		COMMAND ${PYTHON_CMD} ${PROJECT_SOURCE_DIR}/vk-layer-generate.py ${subcmd} ${LOADER_INCLUDE_DIR}/vulkan/vulkan.h > ${output}
-		DEPENDS ${PROJECT_SOURCE_DIR}/vk-layer-generate.py ${LOADER_INCLUDE_DIR}/vulkan/vulkan.h ${LOADER_PY_DIR}/vulkan.py
+		COMMAND ${PYTHON_CMD} ${PROJECT_SOURCE_DIR}/vk-layer-generate.py ${DisplayServer} ${subcmd} ${PROJECT_SOURCE_DIR}/include/vulkan/vulkan.h > ${output}
+		DEPENDS ${PROJECT_SOURCE_DIR}/vk-layer-generate.py ${PROJECT_SOURCE_DIR}/include/vulkan/vulkan.h ${PROJECT_SOURCE_DIR}/vulkan.py
+	)
+endmacro()
+
+macro(run_vk_layer_xml_generate subcmd output)
+	add_custom_command(OUTPUT ${output}
+		COMMAND ${PYTHON_CMD} ${PROJECT_SOURCE_DIR}/genvk.py -registry ${PROJECT_SOURCE_DIR}/vk.xml ${output}
+		DEPENDS ${PROJECT_SOURCE_DIR}/vk.xml ${PROJECT_SOURCE_DIR}/generator.py ${PROJECT_SOURCE_DIR}/genvk.py ${PROJECT_SOURCE_DIR}/reg.py
+	)
+endmacro()
+
+## VulkanTools has its own layer generator script
+macro(run_vk_vtlayer_generate subcmd output)
+	add_custom_command(OUTPUT ${output}
+		COMMAND ${PYTHON_CMD} ${PROJECT_SOURCE_DIR}/vk-vtlayer-generate.py ${DisplayServer} ${subcmd} ${PROJECT_SOURCE_DIR}/include/vulkan/vulkan.h > ${output}
+		DEPENDS ${PROJECT_SOURCE_DIR}/vk-vtlayer-generate.py ${PROJECT_SOURCE_DIR}/include/vulkan/vulkan.h ${PROJECT_SOURCE_DIR}/vulkan.py
 	)
 endmacro()
 
 set(LAYER_JSON_FILES
     VkLayer_api_dump
     VkLayer_basic
+    VkLayer_draw_state
     VkLayer_generic
+    VkLayer_image
+    VkLayer_mem_tracker
     VkLayer_multi
+    VkLayer_object_tracker
+    VkLayer_unique_objects
+    VkLayer_param_checker
     VkLayer_screenshot
+    VkLayer_swapchain
+    VkLayer_threading
+    VkLayer_device_limits
     VkLayer_png_screenshot
     )
 
@@ -55,8 +78,8 @@ endif()
 if (WIN32)
     macro(add_vk_layer target)
 	add_custom_command(OUTPUT VkLayer_${target}.def
-		COMMAND ${PYTHON_CMD} ${LOADER_PY_DIR}/vk-generate.py win-def-file VkLayer_${target} layer > VkLayer_${target}.def
-		DEPENDS ${LOADER_PY_DIR}/vk-generate.py ${LOADER_PY_DIR}/vk.py
+		COMMAND ${PYTHON_CMD} ${PROJECT_SOURCE_DIR}/vk-generate.py ${DisplayServer} win-def-file VkLayer_${target} layer > VkLayer_${target}.def
+		DEPENDS ${PROJECT_SOURCE_DIR}/vk-generate.py ${PROJECT_SOURCE_DIR}/vk.py
 	)
 	add_library(VkLayer_${target} SHARED ${ARGN} VkLayer_${target}.def)
     target_link_Libraries(VkLayer_${target} layer_utils)
@@ -74,22 +97,32 @@ else()
     endmacro()
 endif()
 
-#hacky use layer include directory from loader repo
-set (LOADER_LAYER_DIR ${VULKANTOOLS_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/layers)
-set (LOADER_LOADER_DIR ${VULKANTOOLS_SOURCE_DIR}/../Vulkan-LoaderAndValidationLayers/loader)
 include_directories(
-    ${LOADER_LAYER_DIR}
-    ${LOADER_LOADER_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${LOADER_INCLUDE_DIR}
-    ${CMAKE_CURRENT_BINARY_DIR}
-	${VULKANTOOLS_SOURCE_DIR}/libs/libpng-1.6.21/inc
-	${VULKANTOOLS_SOURCE_DIR}/libs/zlib-1.2.8/inc
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${CMAKE_CURRENT_SOURCE_DIR}/../loader
+	${CMAKE_CURRENT_SOURCE_DIR}/../include/vulkan
+	${CMAKE_CURRENT_BINARY_DIR}
+	${PROJECT_SOURCE_DIR}/../glslang/SPIRV
+	${PROJECT_SOURCE_DIR}/libs/libpng-1.6.21/inc
+	${PROJECT_SOURCE_DIR}/libs/zlib-1.2.8/inc
 )
 
 if (WIN32)
-    set (CMAKE_CXX_FLAGS   "${CMAKE_CXX_FLAGS} -D_CRT_SECURE_NO_WARNINGS")
-    set (CMAKE_C_FLAGS    "${CMAKE_C_FLAGS} -D_CRT_SECURE_NO_WARNINGS")
+    set (CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -D_CRT_SECURE_NO_WARNINGS")
+    set (CMAKE_C_FLAGS_RELEASE   "${CMAKE_C_FLAGS_RELEASE} -D_CRT_SECURE_NO_WARNINGS")
+
+    # For VS 2015, which uses compiler version 1900, draw_state.cpp fails with too many objects
+    # without either optimizations enabled, or setting the /bigobj compilation option.  Since
+    # optimizations are enabled in a release build, this only affects the debug build.  For now,
+    # enable /bigobj mode for all debug layer files. An alternative for the future is to split
+    # draw_state.cpp into multiple files, which will also alleviate the compilation error.
+    if (MSVC AND NOT (MSVC_VERSION LESS 1900))
+        set (CMAKE_CXX_FLAGS_DEBUG   "${CMAKE_CXX_FLAGS_DEBUG} -D_CRT_SECURE_NO_WARNINGS /bigobj")
+        set (CMAKE_C_FLAGS_DEBUG     "${CMAKE_C_FLAGS_DEBUG} -D_CRT_SECURE_NO_WARNINGS /bigobj")
+    else()
+        set (CMAKE_CXX_FLAGS_DEBUG   "${CMAKE_CXX_FLAGS_DEBUG} -D_CRT_SECURE_NO_WARNINGS")
+        set (CMAKE_C_FLAGS_DEBUG     "${CMAKE_C_FLAGS_DEBUG} -D_CRT_SECURE_NO_WARNINGS")
+    endif()
 endif()
 if (NOT WIN32)
     set (CMAKE_CXX_FLAGS "-std=c++11")
@@ -98,55 +131,78 @@ if (NOT WIN32)
 endif()
 
 add_custom_command(OUTPUT vk_dispatch_table_helper.h
-	COMMAND ${PYTHON_CMD} ${LOADER_PY_DIR}/vk-generate.py dispatch-table-ops layer > vk_dispatch_table_helper.h
-	DEPENDS ${LOADER_PY_DIR}/vk-generate.py ${LOADER_PY_DIR}/vulkan.py)
+	COMMAND ${PYTHON_CMD} ${PROJECT_SOURCE_DIR}/vk-generate.py ${DisplayServer} dispatch-table-ops layer > vk_dispatch_table_helper.h
+	DEPENDS ${PROJECT_SOURCE_DIR}/vk-generate.py ${PROJECT_SOURCE_DIR}/vulkan.py)
 
 run_vk_helper(gen_enum_string_helper vk_enum_string_helper.h)
 run_vk_helper(gen_struct_wrappers
-    vk_struct_string_helper.h
+	vk_struct_string_helper.h
     vk_struct_string_helper_cpp.h
-    vk_struct_string_helper_no_addr.h
-    vk_struct_string_helper_no_addr_cpp.h
+	vk_struct_string_helper_no_addr.h
+	vk_struct_string_helper_no_addr_cpp.h
     vk_struct_size_helper.h
     vk_struct_size_helper.c
-    vk_struct_wrappers.h
-    vk_struct_wrappers.cpp
+	vk_struct_wrappers.h
+	vk_struct_wrappers.cpp
+    vk_safe_struct.h
+    vk_safe_struct.cpp
 )
 
 add_custom_target(generate_vk_layer_helpers DEPENDS
-    vk_dispatch_table_helper.h
-    vk_enum_string_helper.h
-    vk_struct_string_helper.h
-    vk_struct_string_helper_no_addr.h
+	vk_dispatch_table_helper.h
+	vk_enum_string_helper.h
+	vk_struct_string_helper.h
+	vk_struct_string_helper_no_addr.h
     vk_struct_string_helper_cpp.h
-    vk_struct_string_helper_no_addr_cpp.h
+	vk_struct_string_helper_no_addr_cpp.h
     vk_struct_size_helper.h
     vk_struct_size_helper.c
-    vk_struct_wrappers.h
-    vk_struct_wrappers.cpp
+	vk_struct_wrappers.h
+	vk_struct_wrappers.cpp
+    vk_safe_struct.h
+    vk_safe_struct.cpp
 )
 
-run_vk_layer_generate(generic generic_layer.cpp)
-run_vk_layer_generate(api_dump api_dump.cpp)
+#VulkanTools layers
+run_vk_vtlayer_generate(generic generic_layer.cpp)
+run_vk_vtlayer_generate(api_dump api_dump.cpp)
 
-# hacky: find layer utils in Loader directory
-add_library(layer_utils SHARED ${LOADER_LAYER_DIR}/vk_layer_config.cpp ${LOADER_LAYER_DIR}/vk_layer_extension_utils.cpp)
+
+run_vk_layer_generate(object_tracker object_tracker.cpp)
+run_vk_layer_xml_generate(Threading thread_check.h)
+run_vk_layer_generate(unique_objects unique_objects.cpp)
+run_vk_layer_xml_generate(ParamChecker param_check.h)
+
+add_library(layer_utils SHARED vk_layer_config.cpp vk_layer_extension_utils.cpp vk_layer_utils.cpp)
 if (WIN32)
-    add_library(layer_utils_static STATIC ${LOADER_LAYER_DIR}/vk_layer_config.cpp ${LOADER_LAYER_DIR}/vk_layer_extension_utils.cpp)
+    add_library(layer_utils_static STATIC vk_layer_config.cpp vk_layer_extension_utils.cpp vk_layer_utils.cpp)
     set_target_properties(layer_utils_static PROPERTIES OUTPUT_NAME layer_utils)
     target_link_libraries(layer_utils)
 else()
     install(TARGETS layer_utils DESTINATION ${PROJECT_BINARY_DIR}/install_staging)
 endif()
 
-add_vk_layer(basic basic.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
-add_vk_layer(multi multi.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
-add_vk_layer(screenshot screenshot.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
+#VulkanTools layers
+add_vk_layer(basic basic.cpp vk_layer_table.cpp)
+add_vk_layer(multi multi.cpp vk_layer_table.cpp)
 # generated
-add_vk_layer(generic generic_layer.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
-add_vk_layer(api_dump api_dump.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
+add_vk_layer(generic generic_layer.cpp vk_layer_table.cpp)
+add_vk_layer(api_dump api_dump.cpp vk_layer_table.cpp)
+
+
+add_vk_layer(draw_state draw_state.cpp vk_layer_debug_marker_table.cpp vk_layer_table.cpp)
+add_vk_layer(device_limits device_limits.cpp vk_layer_debug_marker_table.cpp vk_layer_table.cpp vk_layer_utils.cpp)
+add_vk_layer(mem_tracker mem_tracker.cpp vk_layer_table.cpp)
+add_vk_layer(image image.cpp vk_layer_table.cpp)
+add_vk_layer(screenshot screenshot.cpp vk_layer_table.cpp)
+add_vk_layer(swapchain swapchain.cpp vk_layer_table.cpp)
 # AMD added
-add_vk_layer(png_screenshot png_screenshot.cpp ${LOADER_LAYER_DIR}/vk_layer_table.cpp)
+add_vk_layer(png_screenshot png_screenshot.cpp vk_layer_table.cpp)
+# generated
+add_vk_layer(object_tracker object_tracker.cpp vk_layer_table.cpp)
+add_vk_layer(threading threading.cpp thread_check.h vk_layer_table.cpp)
+add_vk_layer(unique_objects unique_objects.cpp vk_layer_table.cpp vk_safe_struct.cpp)
+add_vk_layer(param_checker param_checker.cpp param_check.h vk_layer_debug_marker_table.cpp vk_layer_table.cpp)
 
 target_link_Libraries(VkLayer_png_screenshot ${LIBPNG})
 target_link_Libraries(VkLayer_png_screenshot ${ZLIB})

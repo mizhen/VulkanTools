@@ -37,6 +37,71 @@ LOCAL_LDLIBS    := -llog
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
+LOCAL_MODULE := VkLayer_draw_state
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/draw_state.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/vk_layer_debug_marker_table.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/vk_layer_table.cpp
+LOCAL_C_INCLUDES += $(SRC_DIR)/include \
+                    $(SRC_DIR)/buildAndroid/generated \
+                    $(SRC_DIR)/loader \
+                    $(SRC_DIR)/../glslang/SPIRV
+LOCAL_STATIC_LIBRARIES += layer_utils
+LOCAL_CPPFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR
+LOCAL_LDLIBS    := -llog
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := VkLayer_mem_tracker
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/mem_tracker.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/vk_layer_table.cpp
+LOCAL_C_INCLUDES += $(SRC_DIR)/include \
+                    $(SRC_DIR)/buildAndroid/generated \
+                    $(SRC_DIR)/loader
+LOCAL_STATIC_LIBRARIES += layer_utils
+LOCAL_CPPFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR
+LOCAL_LDLIBS    := -llog
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := VkLayer_device_limits
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/device_limits.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/vk_layer_debug_marker_table.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/vk_layer_table.cpp
+LOCAL_C_INCLUDES += $(SRC_DIR)/include \
+                    $(SRC_DIR)/buildAndroid/generated \
+                    $(SRC_DIR)/loader
+LOCAL_STATIC_LIBRARIES += layer_utils
+LOCAL_CPPFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR
+LOCAL_LDLIBS    := -llog
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := VkLayer_image
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/image.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/vk_layer_table.cpp
+LOCAL_C_INCLUDES += $(SRC_DIR)/include \
+                    $(SRC_DIR)/buildAndroid/generated \
+                    $(SRC_DIR)/loader
+LOCAL_STATIC_LIBRARIES += layer_utils
+LOCAL_CPPFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR
+LOCAL_LDLIBS    := -llog
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := VkLayer_param_checker
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/param_checker.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/vk_layer_debug_marker_table.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/vk_layer_table.cpp
+LOCAL_C_INCLUDES += $(SRC_DIR)/include \
+                    $(SRC_DIR)/buildAndroid/generated \
+                    $(SRC_DIR)/layers \
+                    $(SRC_DIR)/loader
+LOCAL_STATIC_LIBRARIES += layer_utils
+LOCAL_CPPFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR
+LOCAL_LDLIBS    := -llog
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
 LOCAL_MODULE := VkLayer_generic
 LOCAL_SRC_FILES += $(SRC_DIR)/buildAndroid/generated/generic_layer.cpp
 LOCAL_SRC_FILES += $(SRC_DIR)/layers/vk_layer_table.cpp
@@ -62,5 +127,56 @@ LOCAL_CPPFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR
 LOCAL_LDLIBS    := -llog
 include $(BUILD_SHARED_LIBRARY)
 
+include $(CLEAR_VARS)
+LOCAL_MODULE := VkLayer_object_tracker
+LOCAL_SRC_FILES += $(SRC_DIR)/buildAndroid/generated/object_tracker.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/vk_layer_table.cpp
+LOCAL_C_INCLUDES += $(SRC_DIR)/include \
+                    $(SRC_DIR)/layers \
+                    $(SRC_DIR)/buildAndroid/generated \
+                    $(SRC_DIR)/loader
+LOCAL_STATIC_LIBRARIES += layer_utils
+LOCAL_CPPFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR
+LOCAL_LDLIBS    := -llog
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := VkLayer_threading
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/threading.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/vk_layer_table.cpp
+LOCAL_C_INCLUDES += $(SRC_DIR)/include \
+                    $(SRC_DIR)/layers \
+                    $(SRC_DIR)/buildAndroid/generated \
+                    $(SRC_DIR)/loader
+LOCAL_STATIC_LIBRARIES += layer_utils
+LOCAL_CPPFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR
+LOCAL_LDLIBS    := -llog
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := VkLayer_unique_objects
+LOCAL_SRC_FILES += $(SRC_DIR)/buildAndroid/generated/unique_objects.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/buildAndroid/generated/vk_safe_struct.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/vk_layer_table.cpp
+LOCAL_C_INCLUDES += $(SRC_DIR)/include \
+                    $(SRC_DIR)/layers \
+		    $(SRC_DIR)/buildAndroid/generated \
+		    $(SRC_DIR)/loader
+LOCAL_STATIC_LIBRARIES += layer_utils
+LOCAL_CPPFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR
+LOCAL_LDLIBS    := -llog
+include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := VkLayer_swapchain
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/swapchain.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/layers/vk_layer_table.cpp
+LOCAL_C_INCLUDES += $(SRC_DIR)/include \
+		    $(SRC_DIR)/buildAndroid/generated \
+		    $(SRC_DIR)/loader
+LOCAL_STATIC_LIBRARIES += layer_utils
+LOCAL_CPPFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR
+LOCAL_LDLIBS    := -llog
+include $(BUILD_SHARED_LIBRARY)
 
 $(call import-module,third_party/googletest)
