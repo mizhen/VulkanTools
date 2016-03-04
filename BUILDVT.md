@@ -19,10 +19,12 @@ and create a pull request on GitHub to integrate that work back into the repo.
 ## Linux System Requirements
 Ubuntu 14.04.3 LTS, 14.10, 15.04 and 15.10 have been tested with this repo.
 
-These packages are used for building the components in this repo.
+These additional packages are needed for building the components in this repo.
 ```
-sudo apt-get install git subversion cmake libgl1-mesa-dev freeglut3-dev libglm-dev libmagickwand-dev qt5-default libpciaccess-dev libpthread-stubs0-dev libudev-dev bison graphviz libpng-dev
-sudo apt-get build-dep mesa
+# Dependencies from the LoaderAndValidationLayers repo:
+sudo apt-get install git cmake build-essential bison libxcb1-dev
+# Additional dependencies for this repo:
+sudo apt-get install libudev-dev libpciaccess-dev libxcb-dri3-dev libxcb-present-dev libmagickwand-dev libgl1-mesa-dev
 ```
 
 If you are using the sample Intel Vulkan driver in this repo, you will have to ensure that
@@ -83,6 +85,14 @@ Windows 7+ with additional required software packages:
 - Python 3 (from https://www.python.org/downloads).  Notes:
   - Select to install the optional sub-package to add Python to the system PATH environment variable.
   - Need python3.3 or later to get the Windows py.exe launcher that is used to get python3 rather than python2 if both are installed on Windows
+  - Python lxml package must be installed
+  - Download the lxml package from
+        http://www.lfd.uci.edu/~gohlke/pythonlibs/#lxml
+        32-bit latest for Python 3.5 is: lxml-3.5.0-cp35-none-win32.whl
+        64-bit latest for Python 3.5 is: lxml-3.5.0-cp35-none-win_amd64.whl
+  - The package can be installed with pip as follows:
+        pip install lxml-3.5.0-cp35-none-win32.whl
+        If pip is not in your path, you can find it at $PYTHON_HOME\Scripts\pip.exe, where PYTHON_HOME is the folder where you installed Python.
 - Git (from http://git-scm.com/download/win).
   - Note: If you use Cygwin, you can normally use Cygwin's "git.exe".  However, in order to use the "update_external_sources.bat" script, you must have this version.
   - Tell the installer to allow it to be used for "Developer Prompt" as well as "Git Bash".
