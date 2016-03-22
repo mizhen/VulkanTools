@@ -856,6 +856,7 @@ class ObjectTrackerSubcommand(Subcommand):
             procs_txt.append('        (uint64_t)(vkObj));')
             procs_txt.append('')
             procs_txt.append('    OBJTRACK_NODE* pNewObjNode = new OBJTRACK_NODE;')
+            procs_txt.append('    pNewObjNode->belongsTo = (uint64_t)dispatchable_object;')
             procs_txt.append('    pNewObjNode->objType = objType;')
             procs_txt.append('    pNewObjNode->status  = OBJSTATUS_NONE;')
             procs_txt.append('    pNewObjNode->vkObj  = (uint64_t)(vkObj);')
@@ -872,8 +873,9 @@ class ObjectTrackerSubcommand(Subcommand):
                 procs_txt.append('static void destroy_%s(VkDevice dispatchable_object, %s object)' % (name, o))
             procs_txt.append('{')
             procs_txt.append('    uint64_t object_handle = (uint64_t)(object);')
-            procs_txt.append('    if (%sMap.find(object_handle) != %sMap.end()) {' % (o, o))
-            procs_txt.append('        OBJTRACK_NODE* pNode = %sMap[(uint64_t)object];' % (o))
+            procs_txt.append('    auto it = %sMap.find(object_handle);' % o)
+            procs_txt.append('    if (it != %sMap.end()) {' % o)
+            procs_txt.append('        OBJTRACK_NODE* pNode = it->second;')
             procs_txt.append('        uint32_t objIndex = objTypeToIndex(pNode->objType);')
             procs_txt.append('        assert(numTotalObjs > 0);')
             procs_txt.append('        numTotalObjs--;')
@@ -884,7 +886,7 @@ class ObjectTrackerSubcommand(Subcommand):
             procs_txt.append('            string_VkDebugReportObjectTypeEXT(pNode->objType), (uint64_t)(object), numTotalObjs, numObjs[objIndex],')
             procs_txt.append('            string_VkDebugReportObjectTypeEXT(pNode->objType));')
             procs_txt.append('        delete pNode;')
-            procs_txt.append('        %sMap.erase(object_handle);' % (o))
+            procs_txt.append('        %sMap.erase(it);' % (o))
             procs_txt.append('    } else {')
             procs_txt.append('        log_msg(mdd(dispatchable_object), VK_DEBUG_REPORT_ERROR_BIT_EXT, (VkDebugReportObjectTypeEXT ) 0, object_handle, __LINE__, OBJTRACK_NONE, "OBJTRACK",')
             procs_txt.append('            "Unable to remove obj 0x%" PRIxLEAST64 ". Was it created? Has it already been destroyed?",')
@@ -900,9 +902,9 @@ class ObjectTrackerSubcommand(Subcommand):
             procs_txt.append('{')
             procs_txt.append('    if (object != VK_NULL_HANDLE) {')
             procs_txt.append('        uint64_t object_handle = (uint64_t)(object);')
-            procs_txt.append('        if (%sMap.find(object_handle) != %sMap.end()) {' % (o, o))
-            procs_txt.append('            OBJTRACK_NODE* pNode = %sMap[object_handle];' % (o))
-            procs_txt.append('            pNode->status |= status_flag;')
+            procs_txt.append('        auto it = %sMap.find(object_handle);' % o)
+            procs_txt.append('        if (it != %sMap.end()) {' % o)
+            procs_txt.append('            it->second->status |= status_flag;')
             procs_txt.append('        }')
             procs_txt.append('        else {')
             procs_txt.append('            // If we do not find it print an error')
@@ -928,8 +930,9 @@ class ObjectTrackerSubcommand(Subcommand):
             procs_txt.append('    const char         *fail_msg)')
             procs_txt.append('{')
             procs_txt.append('    uint64_t object_handle = (uint64_t)(object);')
-            procs_txt.append('    if (%sMap.find(object_handle) != %sMap.end()) {' % (o, o))
-            procs_txt.append('        OBJTRACK_NODE* pNode = %sMap[object_handle];' % (o))
+            procs_txt.append('    auto it = %sMap.find(object_handle);' % o)
+            procs_txt.append('    if (it != %sMap.end()) {' % o)
+            procs_txt.append('        OBJTRACK_NODE* pNode = it->second;')
             procs_txt.append('        if ((pNode->status & status_mask) != status_flag) {')
             procs_txt.append('            log_msg(mdd(dispatchable_object), msg_flags, pNode->objType, object_handle, __LINE__, OBJTRACK_UNKNOWN_OBJECT, "OBJTRACK",')
             procs_txt.append('                "OBJECT VALIDATION WARNING: %s object 0x%" PRIxLEAST64 ": %s", string_VkDebugReportObjectTypeEXT(objType),')
@@ -954,9 +957,9 @@ class ObjectTrackerSubcommand(Subcommand):
                 procs_txt.append('static VkBool32 reset_%s_status(VkDevice dispatchable_object, %s object, VkDebugReportObjectTypeEXT objType, ObjectStatusFlags status_flag)' % (name, o))
             procs_txt.append('{')
             procs_txt.append('    uint64_t object_handle = (uint64_t)(object);')
-            procs_txt.append('    if (%sMap.find(object_handle) != %sMap.end()) {' % (o, o))
-            procs_txt.append('        OBJTRACK_NODE* pNode = %sMap[object_handle];' % (o))
-            procs_txt.append('        pNode->status &= ~status_flag;')
+            procs_txt.append('    auto it = %sMap.find(object_handle);' % o)
+            procs_txt.append('    if (it != %sMap.end()) {' % o)
+            procs_txt.append('        it->second->status &= ~status_flag;')
             procs_txt.append('    }')
             procs_txt.append('    else {')
             procs_txt.append('        // If we do not find it print an error')
@@ -1026,17 +1029,33 @@ class ObjectTrackerSubcommand(Subcommand):
         gedi_txt.append('')
         gedi_txt.append('    destroy_instance(instance, instance);')
         gedi_txt.append('    // Report any remaining objects in LL')
+        gedi_txt.append('')
+        gedi_txt.append('    for (auto iit = VkDeviceMap.begin(); iit != VkDeviceMap.end();) {')
+        gedi_txt.append('        OBJTRACK_NODE* pNode = iit->second;')
+        gedi_txt.append('        if (pNode->belongsTo == (uint64_t)instance) {')
+        gedi_txt.append('            log_msg(mid(instance), VK_DEBUG_REPORT_ERROR_BIT_EXT, pNode->objType, pNode->vkObj, __LINE__, OBJTRACK_OBJECT_LEAK, "OBJTRACK",')
+        gedi_txt.append('                    "OBJ ERROR : %s object 0x%" PRIxLEAST64 " has not been destroyed.", string_VkDebugReportObjectTypeEXT(pNode->objType),')
+        gedi_txt.append('                    pNode->vkObj);')
         for o in vulkan.core.objects:
-            if o in ['VkInstance', 'VkPhysicalDevice', 'VkQueue']:
+            if o in ['VkInstance', 'VkPhysicalDevice', 'VkQueue', 'VkDevice']:
                 continue
-            gedi_txt.append('    for (auto it = %sMap.begin(); it != %sMap.end(); ++it) {' % (o, o))
-            gedi_txt.append('        OBJTRACK_NODE* pNode = it->second;')
-            gedi_txt.append('        log_msg(mid(instance), VK_DEBUG_REPORT_ERROR_BIT_EXT, pNode->objType, pNode->vkObj, __LINE__, OBJTRACK_OBJECT_LEAK, "OBJTRACK",')
-            gedi_txt.append('                "OBJ ERROR : %s object 0x%" PRIxLEAST64 " has not been destroyed.", string_VkDebugReportObjectTypeEXT(pNode->objType),')
-            gedi_txt.append('                pNode->vkObj);')
-            gedi_txt.append('    }')
-            gedi_txt.append('    %sMap.clear();' % (o))
-            gedi_txt.append('')
+            gedi_txt.append('            for (auto idt = %sMap.begin(); idt != %sMap.end();) {' % (o, o))
+            gedi_txt.append('                OBJTRACK_NODE* pNode = idt->second;')
+            gedi_txt.append('                if (pNode->belongsTo == iit->first) {')
+            gedi_txt.append('                    log_msg(mid(instance), VK_DEBUG_REPORT_ERROR_BIT_EXT, pNode->objType, pNode->vkObj, __LINE__, OBJTRACK_OBJECT_LEAK, "OBJTRACK",')
+            gedi_txt.append('                            "OBJ ERROR : %s object 0x%" PRIxLEAST64 " has not been destroyed.", string_VkDebugReportObjectTypeEXT(pNode->objType),')
+            gedi_txt.append('                            pNode->vkObj);')
+            gedi_txt.append('                    %sMap.erase(idt++);' % o )
+            gedi_txt.append('                } else {')
+            gedi_txt.append('                    ++idt;')
+            gedi_txt.append('                }')
+            gedi_txt.append('            }')
+        gedi_txt.append('            VkDeviceMap.erase(iit++);')
+        gedi_txt.append('        } else {')
+        gedi_txt.append('            ++iit;')
+        gedi_txt.append('        }')
+        gedi_txt.append('    }')
+        gedi_txt.append('')
         gedi_txt.append('    dispatch_key key = get_dispatch_key(instance);')
         gedi_txt.append('    VkLayerInstanceDispatchTable *pInstanceTable = get_dispatch_table(object_tracker_instance_table_map, instance);')
         gedi_txt.append('    pInstanceTable->DestroyInstance(instance, pAllocator);')
@@ -1074,18 +1093,22 @@ class ObjectTrackerSubcommand(Subcommand):
         gedd_txt.append('    validate_device(device, device, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT, false);')
         gedd_txt.append('')
         gedd_txt.append('    destroy_device(device, device);')
-        gedd_txt.append('    // Report any remaining objects in LL')
+        gedd_txt.append('    // Report any remaining objects associated with this VkDevice object in LL')
         for o in vulkan.core.objects:
             # DescriptorSets and Command Buffers are destroyed through their pools, not explicitly
             if o in ['VkInstance', 'VkPhysicalDevice', 'VkQueue', 'VkDevice', 'VkDescriptorSet', 'VkCommandBuffer']:
                 continue
-            gedd_txt.append('    for (auto it = %sMap.begin(); it != %sMap.end(); ++it) {' % (o, o))
+            gedd_txt.append('    for (auto it = %sMap.begin(); it != %sMap.end();) {' % (o, o))
             gedd_txt.append('        OBJTRACK_NODE* pNode = it->second;')
-            gedd_txt.append('        log_msg(mdd(device), VK_DEBUG_REPORT_ERROR_BIT_EXT, pNode->objType, pNode->vkObj, __LINE__, OBJTRACK_OBJECT_LEAK, "OBJTRACK",')
-            gedd_txt.append('                "OBJ ERROR : %s object 0x%" PRIxLEAST64 " has not been destroyed.", string_VkDebugReportObjectTypeEXT(pNode->objType),')
-            gedd_txt.append('                pNode->vkObj);')
+            gedd_txt.append('        if (pNode->belongsTo == (uint64_t)device) {')
+            gedd_txt.append('            log_msg(mdd(device), VK_DEBUG_REPORT_ERROR_BIT_EXT, pNode->objType, pNode->vkObj, __LINE__, OBJTRACK_OBJECT_LEAK, "OBJTRACK",')
+            gedd_txt.append('                    "OBJ ERROR : %s object 0x%" PRIxLEAST64 " has not been destroyed.", string_VkDebugReportObjectTypeEXT(pNode->objType),')
+            gedd_txt.append('                    pNode->vkObj);')
+            gedd_txt.append('            %sMap.erase(it++);' % o )
+            gedd_txt.append('        } else {')
+            gedd_txt.append('            ++it;')
+            gedd_txt.append('        }')
             gedd_txt.append('    }')
-            gedd_txt.append('    %sMap.clear();' % (o))
             gedd_txt.append('')
         gedd_txt.append("    // Clean up Queue's MemRef Linked Lists")
         gedd_txt.append('    destroyQueueMemRefLists();')
@@ -1402,7 +1425,8 @@ class ObjectTrackerSubcommand(Subcommand):
         if self.wsi == 'Win32':
             instance_extensions=[('msg_callback_get_proc_addr', []),
                                   ('wsi_enabled',
-                                  ['vkGetPhysicalDeviceSurfaceSupportKHR',
+                                  ['vkDestroySurfaceKHR',
+                                   'vkGetPhysicalDeviceSurfaceSupportKHR',
                                    'vkGetPhysicalDeviceSurfaceCapabilitiesKHR',
                                    'vkGetPhysicalDeviceSurfaceFormatsKHR',
                                    'vkGetPhysicalDeviceSurfacePresentModesKHR',
@@ -1411,45 +1435,26 @@ class ObjectTrackerSubcommand(Subcommand):
         elif self.wsi == 'Android':
             instance_extensions=[('msg_callback_get_proc_addr', []),
                                   ('wsi_enabled',
-                                  ['vkGetPhysicalDeviceSurfaceSupportKHR',
+                                  ['vkDestroySurfaceKHR',
+                                   'vkGetPhysicalDeviceSurfaceSupportKHR',
                                    'vkGetPhysicalDeviceSurfaceCapabilitiesKHR',
                                    'vkGetPhysicalDeviceSurfaceFormatsKHR',
-                                   'vkGetPhysicalDeviceSurfacePresentModesKHR'])]
-        elif self.wsi == 'Xcb':
+                                   'vkGetPhysicalDeviceSurfacePresentModesKHR',
+                                   'vkCreateAndroidSurfaceKHR'])]
+        elif self.wsi == 'Xcb' or self.wsi == 'Xlib' or self.wsi == 'Wayland' or self.wsi == 'Mir':
             instance_extensions=[('msg_callback_get_proc_addr', []),
                                   ('wsi_enabled',
-                                  ['vkGetPhysicalDeviceSurfaceSupportKHR',
+                                  ['vkDestroySurfaceKHR',
+                                   'vkGetPhysicalDeviceSurfaceSupportKHR',
                                    'vkGetPhysicalDeviceSurfaceCapabilitiesKHR',
                                    'vkGetPhysicalDeviceSurfaceFormatsKHR',
                                    'vkGetPhysicalDeviceSurfacePresentModesKHR',
                                    'vkCreateXcbSurfaceKHR',
-                                   'vkCreateAndroidSurfaceKHR',
-                                   'vkGetPhysicalDeviceXcbPresentationSupportKHR'])]
-        elif self.wsi == 'Xlib':
-            instance_extensions=[('msg_callback_get_proc_addr', []),
-                                  ('wsi_enabled',
-                                  ['vkGetPhysicalDeviceSurfaceSupportKHR',
-                                   'vkGetPhysicalDeviceSurfaceCapabilitiesKHR',
-                                   'vkGetPhysicalDeviceSurfaceFormatsKHR',
-                                   'vkGetPhysicalDeviceSurfacePresentModesKHR',
+                                   'vkGetPhysicalDeviceXcbPresentationSupportKHR',
                                    'vkCreateXlibSurfaceKHR',
-                                   'vkGetPhysicalDeviceXlibPresentationSupportKHR'])]
-        elif self.wsi == 'Wayland':
-            instance_extensions=[('msg_callback_get_proc_addr', []),
-                                  ('wsi_enabled',
-                                  ['vkGetPhysicalDeviceSurfaceSupportKHR',
-                                   'vkGetPhysicalDeviceSurfaceCapabilitiesKHR',
-                                   'vkGetPhysicalDeviceSurfaceFormatsKHR',
-                                   'vkGetPhysicalDeviceSurfacePresentModesKHR',
+                                   'vkGetPhysicalDeviceXlibPresentationSupportKHR',
                                    'vkCreateWaylandSurfaceKHR',
-                                   'vkGetPhysicalDeviceWaylandPresentationSupportKHR'])]
-        elif self.wsi == 'Mir':
-            instance_extensions=[('msg_callback_get_proc_addr', []),
-                                  ('wsi_enabled',
-                                  ['vkGetPhysicalDeviceSurfaceSupportKHR',
-                                   'vkGetPhysicalDeviceSurfaceCapabilitiesKHR',
-                                   'vkGetPhysicalDeviceSurfaceFormatsKHR',
-                                   'vkGetPhysicalDeviceSurfacePresentModesKHR',
+                                   'vkGetPhysicalDeviceWaylandPresentationSupportKHR',
                                    'vkCreateMirSurfaceKHR',
                                    'vkGetPhysicalDeviceMirPresentationSupportKHR'])]
         else:
@@ -1720,7 +1725,8 @@ class UniqueObjectsSubcommand(Subcommand):
                       'vkAcquireNextImageKHR', 'vkQueuePresentKHR'])]
         if self.wsi == 'Win32':
             instance_extensions=[('wsi_enabled',
-                                  ['vkGetPhysicalDeviceSurfaceSupportKHR',
+                                  ['vkDestroySurfaceKHR',
+                                   'vkGetPhysicalDeviceSurfaceSupportKHR',
                                    'vkGetPhysicalDeviceSurfaceCapabilitiesKHR',
                                    'vkGetPhysicalDeviceSurfaceFormatsKHR',
                                    'vkGetPhysicalDeviceSurfacePresentModesKHR',
@@ -1728,43 +1734,28 @@ class UniqueObjectsSubcommand(Subcommand):
                                    ])]
         elif self.wsi == 'Android':
             instance_extensions=[('wsi_enabled',
-                                  ['vkGetPhysicalDeviceSurfaceSupportKHR',
+                                  ['vkDestroySurfaceKHR',
+                                   'vkGetPhysicalDeviceSurfaceSupportKHR',
                                    'vkGetPhysicalDeviceSurfaceCapabilitiesKHR',
                                    'vkGetPhysicalDeviceSurfaceFormatsKHR',
-                                   'vkGetPhysicalDeviceSurfacePresentModesKHR'])]
-        elif self.wsi == 'Xcb':
+                                   'vkGetPhysicalDeviceSurfacePresentModesKHR',
+                                   'vkCreateAndroidSurfaceKHR'])]
+        elif self.wsi == 'Xcb' or self.wsi == 'Xlib' or self.wsi == 'Wayland' or self.wsi == 'Mir':
             instance_extensions=[('wsi_enabled',
-                                  ['vkGetPhysicalDeviceSurfaceSupportKHR',
+                                  ['vkDestroySurfaceKHR',
+                                   'vkGetPhysicalDeviceSurfaceSupportKHR',
                                    'vkGetPhysicalDeviceSurfaceCapabilitiesKHR',
                                    'vkGetPhysicalDeviceSurfaceFormatsKHR',
                                    'vkGetPhysicalDeviceSurfacePresentModesKHR',
                                    'vkCreateXcbSurfaceKHR',
-                                   'vkCreateAndroidSurfaceKHR'
-                                   ])]
-        elif self.wsi == 'Xlib':
-            instance_extensions=[('wsi_enabled',
-                                  ['vkGetPhysicalDeviceSurfaceSupportKHR',
-                                   'vkGetPhysicalDeviceSurfaceCapabilitiesKHR',
-                                   'vkGetPhysicalDeviceSurfaceFormatsKHR',
-                                   'vkGetPhysicalDeviceSurfacePresentModesKHR',
-                                   'vkCreateXlibSurfaceKHR'
-                                   ])]
-        elif self.wsi == 'Wayland':
-            instance_extensions=[('wsi_enabled',
-                                  ['vkGetPhysicalDeviceSurfaceSupportKHR',
-                                   'vkGetPhysicalDeviceSurfaceCapabilitiesKHR',
-                                   'vkGetPhysicalDeviceSurfaceFormatsKHR',
-                                   'vkGetPhysicalDeviceSurfacePresentModesKHR',
-                                   'vkCreateWaylandSurfaceKHR'
-                                   ])]
-        else: #Mir
-            instance_extensions=[('wsi_enabled',
-                                  ['vkGetPhysicalDeviceSurfaceSupportKHR',
-                                   'vkGetPhysicalDeviceSurfaceCapabilitiesKHR',
-                                   'vkGetPhysicalDeviceSurfaceFormatsKHR',
-                                   'vkGetPhysicalDeviceSurfacePresentModesKHR',
+                                   'vkCreateXlibSurfaceKHR',
+                                   'vkCreateWaylandSurfaceKHR',
                                    'vkCreateMirSurfaceKHR'
                                    ])]
+        else:
+            print('Error: Undefined DisplayServer')
+            instance_extensions=[]
+
         body = [self._generate_dispatch_entrypoints("VK_LAYER_EXPORT"),
                 self._generate_layer_gpa_function(extensions,
                                                   instance_extensions)]
