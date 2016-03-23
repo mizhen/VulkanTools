@@ -59,7 +59,6 @@ void trim_debug_send_all_calls()
     TRIM_WRITE_OBJECT_PACKETS(Queue);
     TRIM_WRITE_OBJECT_PACKETS(DeviceMemory);
     TRIM_WRITE_OBJECT_PACKETS(CommandPool);
-//    TRIM_WRITE_OBJECT_PACKETS(CommandBuffer);
     TRIM_WRITE_OBJECT_PACKETS(Image);
     TRIM_WRITE_OBJECT_PACKETS(ImageView);
     TRIM_WRITE_OBJECT_PACKETS(Buffer);
@@ -77,6 +76,7 @@ void trim_debug_send_all_calls()
     TRIM_WRITE_OBJECT_PACKETS(Fence);
     TRIM_WRITE_OBJECT_PACKETS(Event);
     TRIM_WRITE_OBJECT_PACKETS(QueryPool);
+    TRIM_WRITE_OBJECT_PACKETS(CommandBuffer);
 }
 
 //===============================================
@@ -142,8 +142,8 @@ TRIM_MARK_OBJECT_REFERENCE(Device)
 TRIM_ADD_OBJECT_CALL(CommandPool)
 TRIM_MARK_OBJECT_REFERENCE(CommandPool)
 
-//TRIM_ADD_OBJECT_CALL(CommandBuffer)
-//TRIM_MARK_OBJECT_REFERENCE(CommandBuffer)
+TRIM_ADD_OBJECT_CALL(CommandBuffer)
+TRIM_MARK_OBJECT_REFERENCE(CommandBuffer)
 
 TRIM_ADD_OBJECT_CALL(DescriptorPool)
 TRIM_MARK_OBJECT_REFERENCE(DescriptorPool)
