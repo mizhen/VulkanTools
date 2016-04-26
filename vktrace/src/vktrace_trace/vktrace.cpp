@@ -366,6 +366,7 @@ int main(int argc, char* argv[])
             // call CreateProcess to launch the application
             procStarted = vktrace_process_spawn(&procInfo);
         }
+
         if (procStarted == FALSE)
         {
             vktrace_LogError("Failed to setup remote process.");
@@ -378,10 +379,13 @@ int main(int argc, char* argv[])
                 return -1;
             }
 
-            if (isServerMode == FALSE) {
+            if (isServerMode == FALSE)
+            {
                 // create watchdog thread to monitor existence of remote process
                 if (g_settings.program != NULL)
+                {
                     procInfo.watchdogThread = vktrace_platform_create_thread(Process_RunWatchdogThread, &procInfo);
+                }
 
 #if defined(PLATFORM_LINUX)
                 // Sync wait for local threads and remote process to complete.
