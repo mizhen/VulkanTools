@@ -3,24 +3,18 @@
  * Copyright (C) 2015-2016 LunarG, Inc.
  * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  * Author: Jon Ashburn <jon@lunarg.com>
  * Author: Peter Lohrmann <peterl@valvesoftware.com>
  */
@@ -32,6 +26,38 @@
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+// Environment variables
+// These are needed because Windows may not have getenv available.
+// See the Windows man page for getenv to find out why.
+
+#if defined(_WIN32)
+static inline char *vktrace_layer_getenv(const char *name)
+{
+    char *retVal;
+    DWORD valSize;
+    valSize = GetEnvironmentVariableA(name, NULL, 0); 
+    // valSize DOES include the null terminator, so for any set variable
+    // will always be at least 1. If it's 0, the variable wasn't set.
+    if (valSize == 0)
+        return NULL;
+    retVal = (char *)malloc(valSize);
+    GetEnvironmentVariableA(name, retVal, valSize);
+    return retVal;
+}
+
+static inline void vktrace_layer_free_getenv(const char *val)
+{
+    free((void *)val);
+}
+#else
+static inline char *vktrace_layer_getenv(const char *name)
+{
+    return getenv(name);
+}
+
+static inline void vktrace_layer_free_getenv(const char *val) { }
 #endif
 
 VKTRACER_LEAVE _Unload(void);
@@ -54,14 +80,14 @@ void loggingCallback(VktraceLogLevel level, const char* pMessage)
 {
     switch(level)
     {
-    case VKTRACE_LOG_ALWAYS: printf("%s\n", pMessage); break;
-    case VKTRACE_LOG_DEBUG: printf("Debug: %s\n", pMessage); break;
-    case VKTRACE_LOG_ERROR: printf("Error: %s\n", pMessage); break;
-    case VKTRACE_LOG_WARNING: printf("Warning: %s\n", pMessage); break;
-    case VKTRACE_LOG_VERBOSE: printf("Verbose: %s\n", pMessage); break;
+    case VKTRACE_LOG_DEBUG: printf("vktrace debug: %s\n", pMessage); break;
+    case VKTRACE_LOG_ERROR: printf("vktrace error: %s\n", pMessage); break;
+    case VKTRACE_LOG_WARNING: printf("vktrace warning: %s\n", pMessage); break;
+    case VKTRACE_LOG_VERBOSE: printf("vktrace info: %s\n", pMessage); break;
     default:
         printf("%s\n", pMessage); break;
     }
+    fflush(stdout);
 
     if (vktrace_trace_get_trace_file() != NULL)
     {
@@ -93,8 +119,24 @@ VKTRACER_ENTRY _Load(void)
     // only do the hooking and networking if the tracer is NOT loaded by vktrace
     if (vktrace_is_loaded_into_vktrace() == FALSE)
     {
+        char *verbosity;
         vktrace_LogSetCallback(loggingCallback);
-        vktrace_LogSetLevel(VKTRACE_LOG_LEVEL_MAXIMUM);
+        verbosity = vktrace_layer_getenv("_VK_TRACE_VERBOSITY");
+        if (verbosity && !strcmp(verbosity, "quiet"))
+            vktrace_LogSetLevel(VKTRACE_LOG_NONE);
+        else if (verbosity && !strcmp(verbosity, "warnings"))
+            vktrace_LogSetLevel(VKTRACE_LOG_WARNING);
+        else if (verbosity && !strcmp(verbosity, "full"))
+            vktrace_LogSetLevel(VKTRACE_LOG_VERBOSE);
+#ifdef _DEBUG
+        else if (verbosity && !strcmp(verbosity, "debug"))
+            vktrace_LogSetLevel(VKTRACE_LOG_DEBUG);
+#endif
+        else
+            // Either verbosity=="errors", or it wasn't specified
+            vktrace_LogSetLevel(VKTRACE_LOG_ERROR);
+
+        vktrace_layer_free_getenv(verbosity);
 
         vktrace_LogVerbose("vktrace_lib library loaded into PID %d", vktrace_get_pid());
         atexit(TrapExit);

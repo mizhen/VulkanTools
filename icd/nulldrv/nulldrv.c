@@ -3,23 +3,17 @@
  * Copyright (C) 2015-2016 Valve Corporation
  * Copyright (C) 2015-2016 LunarG, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice and this permission notice shall be included
- * in all copies or substantial portions of the Software.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  * Author: Cody Northrop <cody@lunarg.com>
  * Author: David Pinedo <david@lunarg.com>
@@ -43,14 +37,18 @@
     #define NULLDRV_LOG_FUNC do { } while (0)
 #endif
 
-static const VkExtensionProperties nulldrv_instance_extensions[NULLDRV_EXT_COUNT] = {
+static const VkExtensionProperties nulldrv_instance_extensions[NULLDRV_INST_EXT_COUNT] = {
     {
         .extensionName = VK_KHR_SURFACE_EXTENSION_NAME,
         .specVersion = VK_KHR_SURFACE_SPEC_VERSION,
-    }
+    },
+    {
+        .extensionName = VK_KHR_XCB_SURFACE_EXTENSION_NAME,
+        .specVersion = VK_KHR_XCB_SURFACE_SPEC_VERSION,
+    },
 };
 
-const VkExtensionProperties nulldrv_device_exts[1] = {
+const VkExtensionProperties nulldrv_device_exts[NULLDRV_DEV_EXT_COUNT] = {
     {
         .extensionName = VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         .specVersion = VK_KHR_SWAPCHAIN_SPEC_VERSION,
@@ -156,18 +154,18 @@ static VkResult dev_create_queues(struct nulldrv_dev *dev,
     return VK_SUCCESS;
 }
 
-static enum nulldrv_ext_type nulldrv_gpu_lookup_extension(
+static enum nulldrv_dev_ext_type nulldrv_gpu_lookup_extension(
         const struct nulldrv_gpu *gpu,
         const char* extensionName)
 {
-    enum nulldrv_ext_type type;
+    enum nulldrv_dev_ext_type type;
 
     for (type = 0; type < ARRAY_SIZE(nulldrv_device_exts); type++) {
         if (strcmp(nulldrv_device_exts[type].extensionName, extensionName) == 0)
             break;
     }
 
-    assert(type < NULLDRV_EXT_COUNT || type == NULLDRV_EXT_INVALID);
+    assert(type < NULLDRV_DEV_EXT_COUNT || type == NULLDRV_DEV_EXT_INVALID);
 
     return type;
 }
@@ -205,11 +203,10 @@ static VkResult nulldrv_dev_create(struct nulldrv_gpu *gpu,
         return VK_ERROR_OUT_OF_HOST_MEMORY;
 
     for (i = 0; i < info->enabledExtensionCount; i++) {
-        const enum nulldrv_ext_type ext = nulldrv_gpu_lookup_extension(
-                    gpu,
-                    info->ppEnabledExtensionNames[i]);
+        const enum nulldrv_dev_ext_type ext = nulldrv_gpu_lookup_extension(
+                    gpu, info->ppEnabledExtensionNames[i]);
 
-        if (ext == NULLDRV_EXT_INVALID)
+        if (ext == NULLDRV_DEV_EXT_INVALID)
             return VK_ERROR_EXTENSION_NOT_PRESENT;
 
         dev->exts[ext] = true;
@@ -729,6 +726,20 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
     VkSurfaceCapabilitiesKHR*                pSurfaceCapabilities)
 {
     NULLDRV_LOG_FUNC;
+
+    pSurfaceCapabilities->minImageCount = 1;
+    pSurfaceCapabilities->maxImageCount = 0;  /* any number of images! */
+    pSurfaceCapabilities->currentExtent.width = -1;
+    pSurfaceCapabilities->currentExtent.height = -1;
+    pSurfaceCapabilities->minImageExtent.width = 1;
+    pSurfaceCapabilities->minImageExtent.height = 1;
+    pSurfaceCapabilities->maxImageExtent.width = 1024;
+    pSurfaceCapabilities->maxImageExtent.height = 1024;
+    pSurfaceCapabilities->maxImageArrayLayers = 1;
+    pSurfaceCapabilities->supportedTransforms = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    pSurfaceCapabilities->currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    pSurfaceCapabilities->supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    pSurfaceCapabilities->supportedUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
     return VK_SUCCESS;
 }
@@ -1361,7 +1372,7 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties(
 {
     NULLDRV_LOG_FUNC;
 
-    pProperties->apiVersion = VK_API_VERSION;
+    pProperties->apiVersion = VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION);
     pProperties->driverVersion = 0; // Appropriate that the nulldrv have 0's
     pProperties->vendorID = 0;
     pProperties->deviceID = 0;
@@ -1379,8 +1390,8 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFeatures(
 {
     NULLDRV_LOG_FUNC;
 
-    /* TODO: fill out features */
-    memset(pFeatures, 0, sizeof(*pFeatures));
+    /* nulldrv "implements" all vulkan features -- by doing nothing */
+    memset(pFeatures, VK_TRUE, sizeof(*pFeatures));
 }
 
 VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFormatProperties(
@@ -1432,7 +1443,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateDeviceLayerProperties(
         uint32_t*                                   pPropertyCount,
         VkLayerProperties*                          pProperties)
 {
-    // TODO: Fill in with real data
+    *pPropertyCount = 0;
     return VK_SUCCESS;
 }
 
@@ -1444,23 +1455,24 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(
     uint32_t copy_size;
 
     if (pProperties == NULL) {
-        *pPropertyCount = NULLDRV_EXT_COUNT;
+        *pPropertyCount = NULLDRV_INST_EXT_COUNT;
         return VK_SUCCESS;
     }
 
-    copy_size = *pPropertyCount < NULLDRV_EXT_COUNT ? *pPropertyCount : NULLDRV_EXT_COUNT;
+    copy_size = *pPropertyCount < NULLDRV_INST_EXT_COUNT ? *pPropertyCount : NULLDRV_INST_EXT_COUNT;
     memcpy(pProperties, nulldrv_instance_extensions, copy_size * sizeof(VkExtensionProperties));
     *pPropertyCount = copy_size;
-    if (copy_size < NULLDRV_EXT_COUNT) {
+    if (copy_size < NULLDRV_INST_EXT_COUNT) {
         return VK_INCOMPLETE;
     }
     return VK_SUCCESS;
 }
+
 VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(
         uint32_t*                                   pPropertyCount,
         VkLayerProperties*                          pProperties)
 {
-    // TODO: Fill in with real data
+    *pPropertyCount = 0;
     return VK_SUCCESS;
 }
 

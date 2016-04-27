@@ -3,24 +3,17 @@
  * Copyright (c) 2015-2016 Valve Corporation
  * Copyright (c) 2015-2016 LunarG, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and/or associated documentation files (the "Materials"), to
- * deal in the Materials without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Materials, and to permit persons to whom the Materials are
- * furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice(s) and this permission notice shall be included in
- * all copies or substantial portions of the Materials.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- *
- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
- * USE OR OTHER DEALINGS IN THE MATERIALS.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  * Author: Courtney Goeltzenleuchter <courtney@LunarG.com>
  * Author: David Pinedo <david@lunarg.com>
@@ -455,10 +448,6 @@ static void app_dev_init(struct app_dev *dev, struct app_gpu *gpu) {
         .ppEnabledExtensionNames = NULL,
     };
     VkResult U_ASSERT_ONLY err;
-    // Extensions to enable
-    static const char *known_extensions[] = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    };
 
     uint32_t count = 0;
 
@@ -508,33 +497,14 @@ static void app_dev_init(struct app_dev *dev, struct app_gpu *gpu) {
 
     fflush(stdout);
 
-    uint32_t enabled_extension_count = 0;
-    uint32_t known_extension_count = ARRAY_SIZE(known_extensions);
-
-    for (uint32_t i = 0; i < known_extension_count; i++) {
-        VkBool32 extension_found = 0;
-        for (uint32_t j = 0; j < gpu->device_extension_count; j++) {
-            VkExtensionProperties *ext_prop = &gpu->device_extensions[j];
-            if (!strcmp(known_extensions[i], ext_prop->extensionName)) {
-
-                extension_found = 1;
-                enabled_extension_count++;
-            }
-        }
-        if (!extension_found) {
-            printf("Cannot find extension: %s\n", known_extensions[i]);
-            ERR_EXIT(VK_ERROR_EXTENSION_NOT_PRESENT);
-        }
-    }
-
     /* request all queues */
     info.queueCreateInfoCount = gpu->queue_count;
     info.pQueueCreateInfos = gpu->queue_reqs;
 
     info.enabledLayerCount = 0;
     info.ppEnabledLayerNames = NULL;
-    info.enabledExtensionCount = enabled_extension_count;
-    info.ppEnabledExtensionNames = (const char *const *)known_extensions;
+    info.enabledExtensionCount = 0;
+    info.ppEnabledExtensionNames = NULL;
     dev->gpu = gpu;
     err = vkCreateDevice(gpu->obj, &info, NULL, &dev->obj);
     if (err)
@@ -579,7 +549,7 @@ static void app_create_instance(struct app_instance *inst) {
         .applicationVersion = 1,
         .pEngineName = APP_SHORT_NAME,
         .engineVersion = 1,
-        .apiVersion = VK_MAKE_VERSION(1, 0, 0),
+        .apiVersion = VK_API_VERSION_1_0,
     };
     VkInstanceCreateInfo inst_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -591,30 +561,7 @@ static void app_create_instance(struct app_instance *inst) {
         .ppEnabledExtensionNames = NULL,
     };
     VkResult U_ASSERT_ONLY err;
-    // Global Extensions to enable
-    static char *known_extensions[] = {
-        VK_KHR_SURFACE_EXTENSION_NAME,
-#ifdef VK_USE_PLATFORM_ANDROID_KHR
-        VK_KHR_ANDROID_SURFACE_EXTENSION_NAME,
-#endif
-#ifdef VK_USE_PLATFORM_MIR_KHR
-        VK_KHR_MIR_SURFACE_EXTENSION_NAME,
-#endif
-#ifdef VK_USE_PLATFORM_WAYLAND_KHR
-        VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME,
-#endif
-#ifdef VK_USE_PLATFORM_WIN32_KHR
-        VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
-#endif
-#ifdef VK_USE_PLATFORM_XCB_KHR
-        VK_KHR_XCB_SURFACE_EXTENSION_NAME,
-#endif
-#ifdef VK_USE_PLATFORM_XLIB_KHR
-        VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
-#endif
-    };
 
-    uint32_t global_extension_count = 0;
     uint32_t count = 0;
 
     /* Scan layers */
@@ -663,24 +610,6 @@ static void app_create_instance(struct app_instance *inst) {
     app_get_global_layer_extensions(NULL, &inst->global_extension_count,
                                     &inst->global_extensions);
 
-    for (uint32_t i = 0; i < ARRAY_SIZE(known_extensions); i++) {
-        VkBool32 extension_found = 0;
-        for (uint32_t j = 0; j < inst->global_extension_count; j++) {
-            VkExtensionProperties *extension_prop = &inst->global_extensions[j];
-            if (!strcmp(known_extensions[i], extension_prop->extensionName)) {
-
-                extension_found = 1;
-                global_extension_count++;
-            }
-        }
-        if (!extension_found) {
-            printf("Cannot find extension: %s\n", known_extensions[i]);
-            ERR_EXIT(VK_ERROR_EXTENSION_NOT_PRESENT);
-        }
-    }
-
-    inst_info.enabledExtensionCount = global_extension_count;
-    inst_info.ppEnabledExtensionNames = (const char *const *)known_extensions;
 
     VkDebugReportCallbackCreateInfoEXT dbg_info;
     memset(&dbg_info, 0, sizeof(dbg_info));
@@ -1178,9 +1107,9 @@ int main(int argc, char **argv) {
         ConsoleEnlarge();
 #endif
 
-    major = VK_API_VERSION >> 22;
-    minor = (VK_API_VERSION >> 12) & 0x3ff;
-    patch = VK_API_VERSION & 0xfff;
+    major = VK_API_VERSION_1_0 >> 22;
+    minor = (VK_API_VERSION_1_0 >> 12) & 0x3ff;
+    patch = VK_HEADER_VERSION & 0xfff;
     printf("===========\n");
     printf("VULKAN INFO\n");
     printf("===========\n\n");

@@ -4,24 +4,11 @@
  * Copyright (c) 2015-2016 LunarG, Inc.
  * Copyright (c) 2015-2016 Google, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and/or associated documentation files (the "Materials"), to
- * deal in the Materials without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Materials, and to permit persons to whom the Materials are
- * furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice(s) and this permission notice shall be included in
- * all copies or substantial portions of the Materials.
- *
- * THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- *
- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
- * USE OR OTHER DEALINGS IN THE MATERIALS.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Author: Chia-I Wu <olvaffe@gmail.com>
  * Author: Chris Forbes <chrisf@ijw.co.nz>
@@ -32,7 +19,11 @@
  * Author: Tony Barbour <tony@LunarG.com>
  */
 
+#ifdef ANDROID
+#include "vulkan_wrapper.h"
+#else
 #include <vulkan/vulkan.h>
+#endif
 #include "test_common.h"
 #include "vkrenderframework.h"
 #include "vk_layer_config.h"
@@ -81,9 +72,7 @@ struct vktriangle_vs_uniform {
 };
 
 static const char bindStateVertShaderText[] =
-    "#version 400\n"
-    "#extension GL_ARB_separate_shader_objects : require\n"
-    "#extension GL_ARB_shading_language_420pack : require\n"
+    "#version 450\n"
     "vec2 vertices[3];\n"
     "out gl_PerVertex {\n"
     "    vec4 gl_Position;\n"
@@ -96,9 +85,7 @@ static const char bindStateVertShaderText[] =
     "}\n";
 
 static const char bindStateFragShaderText[] =
-    "#version 400\n"
-    "#extension GL_ARB_separate_shader_objects: require\n"
-    "#extension GL_ARB_shading_language_420pack: require\n"
+    "#version 450\n"
     "\n"
     "layout(location = 0) out vec4 uFragColor;\n"
     "void main(){\n"
@@ -131,8 +118,8 @@ class ErrorMonitor {
     }
 
     void SetDesiredFailureMsg(VkFlags msgFlags, const char *msgString) {
+        // also discard all collected messages to this point
         test_platform_thread_lock_mutex(&m_mutex);
-        m_desiredMsg.clear();
         m_failureMsg.clear();
         m_otherMsgs.clear();
         m_desiredMsg = msgString;
@@ -150,6 +137,9 @@ class ErrorMonitor {
         string errorString(msgString);
         if (msgFlags & m_msgFlags) {
             if (errorString.find(m_desiredMsg) != string::npos) {
+                if (m_msgFound) { /* if multiple matches, don't lose all but the last! */
+                    m_otherMsgs.push_back(m_failureMsg);
+                }
                 m_failureMsg = errorString;
                 m_msgFound = VK_TRUE;
                 result = VK_TRUE;
@@ -174,6 +164,31 @@ class ErrorMonitor {
         cout << "Other error messages logged for this test were:" << endl;
         for (auto iter = otherMsgs.begin(); iter != otherMsgs.end(); iter++) {
             cout << "     " << *iter << endl;
+        }
+    }
+
+    /* helpers */
+
+    void ExpectSuccess() {
+        // match anything
+        SetDesiredFailureMsg(~0u, "");
+    }
+
+    void VerifyFound() {
+        // Not seeing the desired message is a failure. /Before/ throwing, dump
+        // any other messages.
+        if (!DesiredMsgFound()) {
+            DumpFailureMsgs();
+            FAIL() << "Did not receive expected error '" << m_desiredMsg << "'";
+        }
+    }
+
+    void VerifyNotFound() {
+        // ExpectSuccess() configured us to match anything. Any error is a
+        // failure.
+        if (DesiredMsgFound()) {
+            DumpFailureMsgs();
+            FAIL() << "Expected to succeed but got error: " << GetFailureMsg();
         }
     }
 
@@ -263,17 +278,17 @@ class VkLayerTest : public VkRenderFramework {
         // Use Threading layer first to protect others from
         // ThreadCommandBufferCollision test
         instance_layer_names.push_back("VK_LAYER_GOOGLE_threading");
+        instance_layer_names.push_back("VK_LAYER_LUNARG_parameter_validation");
         instance_layer_names.push_back("VK_LAYER_LUNARG_object_tracker");
-        instance_layer_names.push_back("VK_LAYER_LUNARG_mem_tracker");
-        instance_layer_names.push_back("VK_LAYER_LUNARG_draw_state");
+        instance_layer_names.push_back("VK_LAYER_LUNARG_core_validation");
         instance_layer_names.push_back("VK_LAYER_LUNARG_device_limits");
         instance_layer_names.push_back("VK_LAYER_LUNARG_image");
         instance_layer_names.push_back("VK_LAYER_GOOGLE_unique_objects");
 
         device_layer_names.push_back("VK_LAYER_GOOGLE_threading");
+        device_layer_names.push_back("VK_LAYER_LUNARG_parameter_validation");
         device_layer_names.push_back("VK_LAYER_LUNARG_object_tracker");
-        device_layer_names.push_back("VK_LAYER_LUNARG_mem_tracker");
-        device_layer_names.push_back("VK_LAYER_LUNARG_draw_state");
+        device_layer_names.push_back("VK_LAYER_LUNARG_core_validation");
         device_layer_names.push_back("VK_LAYER_LUNARG_device_limits");
         device_layer_names.push_back("VK_LAYER_LUNARG_image");
         device_layer_names.push_back("VK_LAYER_GOOGLE_unique_objects");
@@ -284,7 +299,7 @@ class VkLayerTest : public VkRenderFramework {
         this->app_info.applicationVersion = 1;
         this->app_info.pEngineName = "unittest";
         this->app_info.engineVersion = 1;
-        this->app_info.apiVersion = VK_MAKE_VERSION(1, 0, 0);
+        this->app_info.apiVersion = VK_API_VERSION_1_0;
 
         m_errorMonitor = new ErrorMonitor;
         InitFramework(instance_layer_names, device_layer_names,
@@ -376,9 +391,20 @@ void VkLayerTest::VKTriangleTest(const char *vertShaderText,
     pipelineobj.AddShader(&ps);
     if (failMask & BsoFailLineWidth) {
         pipelineobj.MakeDynamic(VK_DYNAMIC_STATE_LINE_WIDTH);
+        VkPipelineInputAssemblyStateCreateInfo ia_state = {};
+        ia_state.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        ia_state.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+        pipelineobj.SetInputAssembly(&ia_state);
     }
     if (failMask & BsoFailDepthBias) {
         pipelineobj.MakeDynamic(VK_DYNAMIC_STATE_DEPTH_BIAS);
+        VkPipelineRasterizationStateCreateInfo rs_state = {};
+        rs_state.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rs_state.depthBiasEnable = VK_TRUE;
+        rs_state.lineWidth = 1.0f;
+        pipelineobj.SetRasterization(&rs_state);
     }
     // Viewport and scissors must stay in synch or other errors will occur than
     // the ones we want
@@ -394,6 +420,10 @@ void VkLayerTest::VKTriangleTest(const char *vertShaderText,
     }
     if (failMask & BsoFailBlend) {
         pipelineobj.MakeDynamic(VK_DYNAMIC_STATE_BLEND_CONSTANTS);
+        VkPipelineColorBlendAttachmentState att_state = {};
+        att_state.dstAlphaBlendFactor = VK_BLEND_FACTOR_CONSTANT_COLOR;
+        att_state.blendEnable = VK_TRUE;
+        pipelineobj.AddColorAttachment(0, &att_state);
     }
     if (failMask & BsoFailDepthBounds) {
         pipelineobj.MakeDynamic(VK_DYNAMIC_STATE_DEPTH_BOUNDS);
@@ -456,6 +486,9 @@ void VkLayerTest::GenericDrawPreparation(VkCommandBufferObj *commandBuffer,
     ds_ci.depthWriteEnable = VK_TRUE;
     ds_ci.depthCompareOp = VK_COMPARE_OP_NEVER;
     ds_ci.depthBoundsTestEnable = VK_FALSE;
+    if (failMask & BsoFailDepthBounds) {
+        ds_ci.depthBoundsTestEnable = VK_TRUE;
+    }
     ds_ci.stencilTestEnable = VK_TRUE;
     ds_ci.front = stencil;
     ds_ci.back = stencil;
@@ -518,10 +551,7 @@ TEST_F(VkLayerTest, CallResetCommandBufferBeforeCompletion)
     // Introduce failure by calling begin again before checking fence
     vkResetCommandBuffer(m_commandBuffer->handle(), 0);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Resetting CB (0xaddress) before it has completed. You must check CB flag before.'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CallBeginCommandBufferBeforeCompletion)
@@ -574,13 +604,10 @@ TEST_F(VkLayerTest, CallBeginCommandBufferBeforeCompletion)
     // Introduce failure by calling BCB again before checking fence
     vkBeginCommandBuffer(m_commandBuffer->handle(), &info);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Calling vkBeginCommandBuffer() on an active CB (0xaddress) before it has completed'";
-        m_errorMonitor->DumpFailureMsgs();
-
-    }
+    m_errorMonitor->VerifyFound();
 }
 #endif
+
 TEST_F(VkLayerTest, MapMemWithoutHostVisibleBit) {
     VkResult err;
     bool pass;
@@ -652,87 +679,10 @@ TEST_F(VkLayerTest, MapMemWithoutHostVisibleBit) {
     err = vkMapMemory(m_device->device(), mem, 0, VK_WHOLE_SIZE, 0,
                       &mappedAddress);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Error received did not match "
-                  "expected error message from vkMapMemory in MemTracker'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyImage(m_device->device(), image, NULL);
 }
-
-// TODO : Is this test still valid. Not sure it is with updates to memory
-// binding model
-//  Verify and delete the test of fix the check
-// TEST_F(VkLayerTest, FreeBoundMemory)
-//{
-//    VkResult        err;
-//
-//    m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_WARNING_BIT_EXT,
-//        "Freeing memory object while it still has references");
-//
-//    ASSERT_NO_FATAL_FAILURE(InitState());
-
-//    // Create an image, allocate memory, free it, and then try to bind it
-//    VkImage               image;
-//    VkDeviceMemory        mem;
-//    VkMemoryRequirements  mem_reqs;
-//
-//    const VkFormat tex_format      = VK_FORMAT_B8G8R8A8_UNORM;
-//    const int32_t  tex_width       = 32;
-//    const int32_t  tex_height      = 32;
-//
-//    const VkImageCreateInfo image_create_info = {
-//        .sType           = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-//        .pNext           = NULL,
-//        .imageType       = VK_IMAGE_TYPE_2D,
-//        .format          = tex_format,
-//        .extent          = { tex_width, tex_height, 1 },
-//        .mipLevels       = 1,
-//        .arraySize       = 1,
-//        .samples         = VK_SAMPLE_COUNT_1_BIT,
-//        .tiling          = VK_IMAGE_TILING_LINEAR,
-//        .usage           = VK_IMAGE_USAGE_SAMPLED_BIT,
-//        .flags           = 0,
-//    };
-//    VkMemoryAllocateInfo mem_alloc = {
-//        .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-//        .pNext           = NULL,
-//        .allocationSize  = 0,
-//        .memoryTypeIndex = 0,
-//    };
-//
-//    err = vkCreateImage(m_device->device(), &image_create_info, NULL, &image);
-//    ASSERT_VK_SUCCESS(err);
-//
-//    err = vkGetImageMemoryRequirements(m_device->device(),
-//                          image,
-//                          &mem_reqs);
-//    ASSERT_VK_SUCCESS(err);
-//
-//    mem_alloc.allocationSize = mem_reqs.size;
-//
-//    err = m_device->phy().set_memory_type(mem_reqs.memoryTypeBits, &mem_alloc,
-//    0);
-//    ASSERT_VK_SUCCESS(err);
-//
-//    // allocate memory
-//    err = vkAllocateMemory(m_device->device(), &mem_alloc, NULL, &mem);
-//    ASSERT_VK_SUCCESS(err);
-//
-//    // Bind memory to Image object
-//    err = vkBindImageMemory(m_device->device(), image, mem, 0);
-//    ASSERT_VK_SUCCESS(err);
-//
-//    // Introduce validation failure, free memory while still bound to object
-//    vkFreeMemory(m_device->device(), mem, NULL);
-//
-//    if (!m_errorMonitor->DesiredMsgFound()) {
-//        FAIL() << "Did not receive Warning 'Freeing memory object while it
-//        still has references'");
-//        m_errorMonitor->DumpFailureMsgs();
-//    }
-//}
 
 TEST_F(VkLayerTest, RebindMemory) {
     VkResult err;
@@ -802,10 +752,7 @@ TEST_F(VkLayerTest, RebindMemory) {
     // the same image object
     err = vkBindImageMemory(m_device->device(), image, mem2, 0);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error when rebinding memory to an object";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyImage(m_device->device(), image, NULL);
     vkFreeMemory(m_device->device(), mem1, NULL);
@@ -849,34 +796,24 @@ TEST_F(VkLayerTest, SubmitSignaledFence) {
     vkQueueSubmit(m_device->m_queue, 1, &submit_info, testFence.handle());
     vkQueueWaitIdle(m_device->m_queue);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'VkQueueSubmit with fence in "
-                  "SIGNALED_STATE'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
-
+// This is a positive test. We used to expect error in this case but spec now
+// allows it
 TEST_F(VkLayerTest, ResetUnsignaledFence) {
+    m_errorMonitor->ExpectSuccess();
     vk_testing::Fence testFence;
     VkFenceCreateInfo fenceInfo = {};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.pNext = NULL;
 
-    // TODO: verify that this matches layer
-    m_errorMonitor->SetDesiredFailureMsg(
-        VK_DEBUG_REPORT_WARNING_BIT_EXT,
-        "submitted to VkResetFences in UNSIGNALED STATE");
-
     ASSERT_NO_FATAL_FAILURE(InitState());
     testFence.init(*m_device, fenceInfo);
     VkFence fences[1] = {testFence.handle()};
-    vkResetFences(m_device->device(), 1, fences);
+    VkResult result = vkResetFences(m_device->device(), 1, fences);
+    ASSERT_VK_SUCCESS(result);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'VkResetFences with fence in "
-                  "UNSIGNALED_STATE'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyNotFound();
 }
 
 /* TODO: Update for changes due to bug-14075 tiling across render passes */
@@ -925,10 +862,7 @@ TEST_F(VkLayerTest, InvalidUsageBits)
     };
     vkCreateDepthStencilView(m_device->device(), &dsvci, NULL, &dsv);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Error received was not 'Invalid usage flag for image...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 #endif // 0
 #endif // MEM_TRACKER_TESTS
@@ -1004,12 +938,7 @@ TEST_F(VkLayerTest, PipelineNotBound) {
     vkCmdBindPipeline(m_commandBuffer->GetBufferHandle(),
                       VK_PIPELINE_BIND_POINT_GRAPHICS, badPipeline);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL()
-            << "Error received was not 'Invalid VkPipeline Object 0xbaadb1be'"
-            << endl;
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
@@ -1078,11 +1007,7 @@ TEST_F(VkLayerTest, BindInvalidMemory) {
     // This may very well return an error.
     (void)err;
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Invalid VkDeviceMemory Object "
-                  "0x<handle>'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyImage(m_device->device(), image, NULL);
 }
@@ -1150,10 +1075,7 @@ TEST_F(VkLayerTest, BindMemoryToDestroyedObject) {
     // This may very well return an error.
     (void)err;
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Invalid VkImage Object 0x<handle>'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkFreeMemory(m_device->device(), mem, NULL);
 }
@@ -1161,6 +1083,866 @@ TEST_F(VkLayerTest, BindMemoryToDestroyedObject) {
 #endif // OBJ_TRACKER_TESTS
 
 #if DRAW_STATE_TESTS
+
+// This is a positive test.  No errors should be generated.
+TEST_F(VkLayerTest, TwoQueueSubmitsSeparateQueuesWithSemaphoreAndOneFenceQWI) {
+
+    TEST_DESCRIPTION("Two command buffers, each in a separate QueueSubmit call "
+        "submitted on separate queues followed by a QueueWaitIdle.");
+
+    if (m_device->queue_props->queueCount < 2)
+        return;
+
+    m_errorMonitor->ExpectSuccess();
+
+    VkSemaphore semaphore;
+    VkSemaphoreCreateInfo semaphore_create_info{};
+    semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    vkCreateSemaphore(m_device->device(), &semaphore_create_info, nullptr,
+        &semaphore);
+
+    VkCommandPool command_pool;
+    VkCommandPoolCreateInfo pool_create_info{};
+    pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pool_create_info.queueFamilyIndex = m_device->graphics_queue_node_index_;
+    pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    vkCreateCommandPool(m_device->device(), &pool_create_info, nullptr,
+        &command_pool);
+
+    VkCommandBuffer command_buffer[2];
+    VkCommandBufferAllocateInfo command_buffer_allocate_info{};
+    command_buffer_allocate_info.sType =
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    command_buffer_allocate_info.commandPool = command_pool;
+    command_buffer_allocate_info.commandBufferCount = 2;
+    command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    vkAllocateCommandBuffers(m_device->device(), &command_buffer_allocate_info,
+        command_buffer);
+
+    VkQueue queue = VK_NULL_HANDLE;
+    vkGetDeviceQueue(m_device->device(), m_device->graphics_queue_node_index_,
+        1, &queue);
+
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[0], &begin_info);
+
+        vkCmdPipelineBarrier(command_buffer[0],
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
+            0, nullptr, 0, nullptr);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[0], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[0]);
+    }
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[1], &begin_info);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[1], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[1]);
+    }
+    {
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[0];
+        submit_info.signalSemaphoreCount = 1;
+        submit_info.pSignalSemaphores = &semaphore;
+        vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+    }
+    {
+        VkPipelineStageFlags flags[]{VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[1];
+        submit_info.waitSemaphoreCount = 1;
+        submit_info.pWaitSemaphores = &semaphore;
+        submit_info.pWaitDstStageMask = flags;
+        vkQueueSubmit(m_device->m_queue, 1, &submit_info, VK_NULL_HANDLE);
+    }
+
+    vkQueueWaitIdle(m_device->m_queue);
+
+    vkDestroySemaphore(m_device->device(), semaphore, nullptr);
+    vkFreeCommandBuffers(m_device->device(), command_pool, 2,
+        &command_buffer[0]);
+    vkDestroyCommandPool(m_device->device(), command_pool, NULL);
+
+    m_errorMonitor->VerifyNotFound();
+}
+
+// This is a positive test.  No errors should be generated.
+TEST_F(VkLayerTest, TwoQueueSubmitsSeparateQueuesWithSemaphoreAndOneFenceQWIFence) {
+
+    TEST_DESCRIPTION("Two command buffers, each in a separate QueueSubmit call "
+                     "submitted on separate queues, the second having a fence"
+                     "followed by a QueueWaitIdle.");
+
+    if (m_device->queue_props->queueCount < 2)
+        return;
+
+    m_errorMonitor->ExpectSuccess();
+
+    VkFence fence;
+    VkFenceCreateInfo fence_create_info{};
+    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    vkCreateFence(m_device->device(), &fence_create_info, nullptr, &fence);
+
+    VkSemaphore semaphore;
+    VkSemaphoreCreateInfo semaphore_create_info{};
+    semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    vkCreateSemaphore(m_device->device(), &semaphore_create_info, nullptr,
+                      &semaphore);
+
+    VkCommandPool command_pool;
+    VkCommandPoolCreateInfo pool_create_info{};
+    pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pool_create_info.queueFamilyIndex = m_device->graphics_queue_node_index_;
+    pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    vkCreateCommandPool(m_device->device(), &pool_create_info, nullptr,
+                        &command_pool);
+
+    VkCommandBuffer command_buffer[2];
+    VkCommandBufferAllocateInfo command_buffer_allocate_info{};
+    command_buffer_allocate_info.sType =
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    command_buffer_allocate_info.commandPool = command_pool;
+    command_buffer_allocate_info.commandBufferCount = 2;
+    command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    vkAllocateCommandBuffers(m_device->device(), &command_buffer_allocate_info,
+                             command_buffer);
+
+    VkQueue queue = VK_NULL_HANDLE;
+    vkGetDeviceQueue(m_device->device(), m_device->graphics_queue_node_index_,
+                     1, &queue);
+
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[0], &begin_info);
+
+        vkCmdPipelineBarrier(command_buffer[0],
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
+                             0, nullptr, 0, nullptr);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[0], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[0]);
+    }
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[1], &begin_info);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[1], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[1]);
+    }
+    {
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[0];
+        submit_info.signalSemaphoreCount = 1;
+        submit_info.pSignalSemaphores = &semaphore;
+        vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+    }
+    {
+        VkPipelineStageFlags flags[]{VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[1];
+        submit_info.waitSemaphoreCount = 1;
+        submit_info.pWaitSemaphores = &semaphore;
+        submit_info.pWaitDstStageMask = flags;
+        vkQueueSubmit(m_device->m_queue, 1, &submit_info, fence);
+    }
+
+    vkQueueWaitIdle(m_device->m_queue);
+
+    vkDestroyFence(m_device->device(), fence, nullptr);
+    vkDestroySemaphore(m_device->device(), semaphore, nullptr);
+    vkFreeCommandBuffers(m_device->device(), command_pool, 2,
+                         &command_buffer[0]);
+    vkDestroyCommandPool(m_device->device(), command_pool, NULL);
+
+    m_errorMonitor->VerifyNotFound();
+}
+
+// This is a positive test.  No errors should be generated.
+TEST_F(VkLayerTest,
+       TwoQueueSubmitsSeparateQueuesWithSemaphoreAndOneFenceTwoWFF) {
+
+    TEST_DESCRIPTION(
+        "Two command buffers, each in a separate QueueSubmit call "
+        "submitted on separate queues, the second having a fence"
+        "followed by two consecutive WaitForFences calls on the same fence.");
+
+    if (m_device->queue_props->queueCount < 2)
+        return;
+
+    m_errorMonitor->ExpectSuccess();
+
+    VkFence fence;
+    VkFenceCreateInfo fence_create_info{};
+    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    vkCreateFence(m_device->device(), &fence_create_info, nullptr, &fence);
+
+    VkSemaphore semaphore;
+    VkSemaphoreCreateInfo semaphore_create_info{};
+    semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    vkCreateSemaphore(m_device->device(), &semaphore_create_info, nullptr,
+                      &semaphore);
+
+    VkCommandPool command_pool;
+    VkCommandPoolCreateInfo pool_create_info{};
+    pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pool_create_info.queueFamilyIndex = m_device->graphics_queue_node_index_;
+    pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    vkCreateCommandPool(m_device->device(), &pool_create_info, nullptr,
+                        &command_pool);
+
+    VkCommandBuffer command_buffer[2];
+    VkCommandBufferAllocateInfo command_buffer_allocate_info{};
+    command_buffer_allocate_info.sType =
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    command_buffer_allocate_info.commandPool = command_pool;
+    command_buffer_allocate_info.commandBufferCount = 2;
+    command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    vkAllocateCommandBuffers(m_device->device(), &command_buffer_allocate_info,
+                             command_buffer);
+
+    VkQueue queue = VK_NULL_HANDLE;
+    vkGetDeviceQueue(m_device->device(), m_device->graphics_queue_node_index_,
+                     1, &queue);
+
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[0], &begin_info);
+
+        vkCmdPipelineBarrier(command_buffer[0],
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
+                             0, nullptr, 0, nullptr);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[0], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[0]);
+    }
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[1], &begin_info);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[1], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[1]);
+    }
+    {
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[0];
+        submit_info.signalSemaphoreCount = 1;
+        submit_info.pSignalSemaphores = &semaphore;
+        vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+    }
+    {
+        VkPipelineStageFlags flags[]{VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[1];
+        submit_info.waitSemaphoreCount = 1;
+        submit_info.pWaitSemaphores = &semaphore;
+        submit_info.pWaitDstStageMask = flags;
+        vkQueueSubmit(m_device->m_queue, 1, &submit_info, fence);
+    }
+
+    vkWaitForFences(m_device->device(), 1, &fence, VK_TRUE, UINT64_MAX);
+    vkWaitForFences(m_device->device(), 1, &fence, VK_TRUE, UINT64_MAX);
+
+    vkDestroyFence(m_device->device(), fence, nullptr);
+    vkDestroySemaphore(m_device->device(), semaphore, nullptr);
+    vkFreeCommandBuffers(m_device->device(), command_pool, 2,
+                         &command_buffer[0]);
+    vkDestroyCommandPool(m_device->device(), command_pool, NULL);
+
+    m_errorMonitor->VerifyNotFound();
+}
+
+// This is a positive test.  No errors should be generated.
+TEST_F(VkLayerTest, TwoQueueSubmitsSeparateQueuesWithSemaphoreAndOneFence) {
+
+    TEST_DESCRIPTION("Two command buffers, each in a separate QueueSubmit call "
+                     "submitted on separate queues, the second having a fence, "
+                     "followed by a WaitForFences call.");
+
+    if (m_device->queue_props->queueCount < 2)
+        return;
+
+    m_errorMonitor->ExpectSuccess();
+
+    VkFence fence;
+    VkFenceCreateInfo fence_create_info{};
+    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    vkCreateFence(m_device->device(), &fence_create_info, nullptr, &fence);
+
+    VkSemaphore semaphore;
+    VkSemaphoreCreateInfo semaphore_create_info{};
+    semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    vkCreateSemaphore(m_device->device(), &semaphore_create_info, nullptr,
+                      &semaphore);
+
+    VkCommandPool command_pool;
+    VkCommandPoolCreateInfo pool_create_info{};
+    pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pool_create_info.queueFamilyIndex = m_device->graphics_queue_node_index_;
+    pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    vkCreateCommandPool(m_device->device(), &pool_create_info, nullptr,
+                        &command_pool);
+
+    VkCommandBuffer command_buffer[2];
+    VkCommandBufferAllocateInfo command_buffer_allocate_info{};
+    command_buffer_allocate_info.sType =
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    command_buffer_allocate_info.commandPool = command_pool;
+    command_buffer_allocate_info.commandBufferCount = 2;
+    command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    vkAllocateCommandBuffers(m_device->device(), &command_buffer_allocate_info,
+                             command_buffer);
+
+    VkQueue queue = VK_NULL_HANDLE;
+    vkGetDeviceQueue(m_device->device(), m_device->graphics_queue_node_index_,
+                     1, &queue);
+
+
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[0], &begin_info);
+
+        vkCmdPipelineBarrier(command_buffer[0],
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
+                             0, nullptr, 0, nullptr);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[0], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[0]);
+    }
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[1], &begin_info);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[1], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[1]);
+    }
+    {
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[0];
+        submit_info.signalSemaphoreCount = 1;
+        submit_info.pSignalSemaphores = &semaphore;
+        vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+    }
+    {
+        VkPipelineStageFlags flags[]{VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[1];
+        submit_info.waitSemaphoreCount = 1;
+        submit_info.pWaitSemaphores = &semaphore;
+        submit_info.pWaitDstStageMask = flags;
+        vkQueueSubmit(m_device->m_queue, 1, &submit_info, fence);
+    }
+
+    vkWaitForFences(m_device->device(), 1, &fence, VK_TRUE, UINT64_MAX);
+
+    vkDestroyFence(m_device->device(), fence, nullptr);
+    vkDestroySemaphore(m_device->device(), semaphore, nullptr);
+    vkFreeCommandBuffers(m_device->device(), command_pool, 2,
+                         &command_buffer[0]);
+    vkDestroyCommandPool(m_device->device(), command_pool, NULL);
+
+    m_errorMonitor->VerifyNotFound();
+}
+
+// This is a positive test.  No errors should be generated.
+TEST_F(VkLayerTest, TwoQueueSubmitsOneQueueWithSemaphoreAndOneFence) {
+
+    TEST_DESCRIPTION("Two command buffers, each in a separate QueueSubmit call "
+                     "on the same queue, sharing a signal/wait semaphore, the "
+                     "second having a fence, "
+                     "followed by a WaitForFences call.");
+
+    m_errorMonitor->ExpectSuccess();
+
+    VkFence fence;
+    VkFenceCreateInfo fence_create_info{};
+    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    vkCreateFence(m_device->device(), &fence_create_info, nullptr, &fence);
+
+    VkSemaphore semaphore;
+    VkSemaphoreCreateInfo semaphore_create_info{};
+    semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    vkCreateSemaphore(m_device->device(), &semaphore_create_info, nullptr,
+                      &semaphore);
+
+    VkCommandPool command_pool;
+    VkCommandPoolCreateInfo pool_create_info{};
+    pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pool_create_info.queueFamilyIndex = m_device->graphics_queue_node_index_;
+    pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    vkCreateCommandPool(m_device->device(), &pool_create_info, nullptr,
+                        &command_pool);
+
+    VkCommandBuffer command_buffer[2];
+    VkCommandBufferAllocateInfo command_buffer_allocate_info{};
+    command_buffer_allocate_info.sType =
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    command_buffer_allocate_info.commandPool = command_pool;
+    command_buffer_allocate_info.commandBufferCount = 2;
+    command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    vkAllocateCommandBuffers(m_device->device(), &command_buffer_allocate_info,
+                             command_buffer);
+
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[0], &begin_info);
+
+        vkCmdPipelineBarrier(command_buffer[0],
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
+                             0, nullptr, 0, nullptr);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[0], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[0]);
+    }
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[1], &begin_info);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[1], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[1]);
+    }
+    {
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[0];
+        submit_info.signalSemaphoreCount = 1;
+        submit_info.pSignalSemaphores = &semaphore;
+        vkQueueSubmit(m_device->m_queue, 1, &submit_info, VK_NULL_HANDLE);
+    }
+    {
+        VkPipelineStageFlags flags[]{VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[1];
+        submit_info.waitSemaphoreCount = 1;
+        submit_info.pWaitSemaphores = &semaphore;
+        submit_info.pWaitDstStageMask = flags;
+        vkQueueSubmit(m_device->m_queue, 1, &submit_info, fence);
+    }
+
+    vkWaitForFences(m_device->device(), 1, &fence, VK_TRUE, UINT64_MAX);
+
+    vkDestroyFence(m_device->device(), fence, nullptr);
+    vkDestroySemaphore(m_device->device(), semaphore, nullptr);
+    vkFreeCommandBuffers(m_device->device(), command_pool, 2,
+                         &command_buffer[0]);
+    vkDestroyCommandPool(m_device->device(), command_pool, NULL);
+
+    m_errorMonitor->VerifyNotFound();
+}
+
+// This is a positive test.  No errors should be generated.
+TEST_F(VkLayerTest, TwoQueueSubmitsOneQueueNullQueueSubmitWithFence) {
+
+    TEST_DESCRIPTION(
+        "Two command buffers, each in a separate QueueSubmit call "
+        "on the same queue, no fences, followed by a third QueueSubmit with NO "
+        "SubmitInfos but with a fence, followed by a WaitForFences call.");
+
+    m_errorMonitor->ExpectSuccess();
+
+    VkFence fence;
+    VkFenceCreateInfo fence_create_info{};
+    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    vkCreateFence(m_device->device(), &fence_create_info, nullptr, &fence);
+
+    VkCommandPool command_pool;
+    VkCommandPoolCreateInfo pool_create_info{};
+    pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pool_create_info.queueFamilyIndex = m_device->graphics_queue_node_index_;
+    pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    vkCreateCommandPool(m_device->device(), &pool_create_info, nullptr,
+                        &command_pool);
+
+    VkCommandBuffer command_buffer[2];
+    VkCommandBufferAllocateInfo command_buffer_allocate_info{};
+    command_buffer_allocate_info.sType =
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    command_buffer_allocate_info.commandPool = command_pool;
+    command_buffer_allocate_info.commandBufferCount = 2;
+    command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    vkAllocateCommandBuffers(m_device->device(), &command_buffer_allocate_info,
+                             command_buffer);
+
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[0], &begin_info);
+
+        vkCmdPipelineBarrier(command_buffer[0],
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
+                             0, nullptr, 0, nullptr);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[0], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[0]);
+    }
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[1], &begin_info);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[1], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[1]);
+    }
+    {
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[0];
+        submit_info.signalSemaphoreCount = 0;
+        submit_info.pSignalSemaphores = VK_NULL_HANDLE;
+        vkQueueSubmit(m_device->m_queue, 1, &submit_info, VK_NULL_HANDLE);
+    }
+    {
+        VkPipelineStageFlags flags[]{VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[1];
+        submit_info.waitSemaphoreCount = 0;
+        submit_info.pWaitSemaphores = VK_NULL_HANDLE;
+        submit_info.pWaitDstStageMask = flags;
+        vkQueueSubmit(m_device->m_queue, 1, &submit_info, VK_NULL_HANDLE);
+    }
+
+    vkQueueSubmit(m_device->m_queue, 0, NULL, fence);
+
+    vkWaitForFences(m_device->device(), 1, &fence, VK_TRUE, UINT64_MAX);
+
+    vkDestroyFence(m_device->device(), fence, nullptr);
+    vkFreeCommandBuffers(m_device->device(), command_pool, 2,
+                         &command_buffer[0]);
+    vkDestroyCommandPool(m_device->device(), command_pool, NULL);
+
+    m_errorMonitor->VerifyNotFound();
+}
+
+// This is a positive test.  No errors should be generated.
+TEST_F(VkLayerTest, TwoQueueSubmitsOneQueueOneFence) {
+
+    TEST_DESCRIPTION("Two command buffers, each in a separate QueueSubmit call "
+                     "on the same queue, the second having a fence, followed "
+                     "by a WaitForFences call.");
+
+    m_errorMonitor->ExpectSuccess();
+
+    VkFence fence;
+    VkFenceCreateInfo fence_create_info{};
+    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    vkCreateFence(m_device->device(), &fence_create_info, nullptr, &fence);
+
+    VkCommandPool command_pool;
+    VkCommandPoolCreateInfo pool_create_info{};
+    pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pool_create_info.queueFamilyIndex = m_device->graphics_queue_node_index_;
+    pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    vkCreateCommandPool(m_device->device(), &pool_create_info, nullptr,
+                        &command_pool);
+
+    VkCommandBuffer command_buffer[2];
+    VkCommandBufferAllocateInfo command_buffer_allocate_info{};
+    command_buffer_allocate_info.sType =
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    command_buffer_allocate_info.commandPool = command_pool;
+    command_buffer_allocate_info.commandBufferCount = 2;
+    command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    vkAllocateCommandBuffers(m_device->device(), &command_buffer_allocate_info,
+                             command_buffer);
+
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[0], &begin_info);
+
+        vkCmdPipelineBarrier(command_buffer[0],
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
+                             0, nullptr, 0, nullptr);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[0], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[0]);
+    }
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[1], &begin_info);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[1], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[1]);
+    }
+    {
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[0];
+        submit_info.signalSemaphoreCount = 0;
+        submit_info.pSignalSemaphores = VK_NULL_HANDLE;
+        vkQueueSubmit(m_device->m_queue, 1, &submit_info, VK_NULL_HANDLE);
+    }
+    {
+        VkPipelineStageFlags flags[]{VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &command_buffer[1];
+        submit_info.waitSemaphoreCount = 0;
+        submit_info.pWaitSemaphores = VK_NULL_HANDLE;
+        submit_info.pWaitDstStageMask = flags;
+        vkQueueSubmit(m_device->m_queue, 1, &submit_info, fence);
+    }
+
+    vkWaitForFences(m_device->device(), 1, &fence, VK_TRUE, UINT64_MAX);
+
+    vkDestroyFence(m_device->device(), fence, nullptr);
+    vkFreeCommandBuffers(m_device->device(), command_pool, 2,
+                         &command_buffer[0]);
+    vkDestroyCommandPool(m_device->device(), command_pool, NULL);
+
+    m_errorMonitor->VerifyNotFound();
+}
+
+// This is a positive test.  No errors should be generated.
+TEST_F(VkLayerTest, TwoSubmitInfosWithSemaphoreOneQueueSubmitsOneFence) {
+
+    TEST_DESCRIPTION(
+        "Two command buffers each in a separate SubmitInfo sent in a single "
+        "QueueSubmit call followed by a WaitForFences call.");
+
+    m_errorMonitor->ExpectSuccess();
+
+    VkFence fence;
+    VkFenceCreateInfo fence_create_info{};
+    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    vkCreateFence(m_device->device(), &fence_create_info, nullptr, &fence);
+
+    VkSemaphore semaphore;
+    VkSemaphoreCreateInfo semaphore_create_info{};
+    semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    vkCreateSemaphore(m_device->device(), &semaphore_create_info, nullptr,
+                      &semaphore);
+
+    VkCommandPool command_pool;
+    VkCommandPoolCreateInfo pool_create_info{};
+    pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    pool_create_info.queueFamilyIndex = m_device->graphics_queue_node_index_;
+    pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    vkCreateCommandPool(m_device->device(), &pool_create_info, nullptr,
+                        &command_pool);
+
+    VkCommandBuffer command_buffer[2];
+    VkCommandBufferAllocateInfo command_buffer_allocate_info{};
+    command_buffer_allocate_info.sType =
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    command_buffer_allocate_info.commandPool = command_pool;
+    command_buffer_allocate_info.commandBufferCount = 2;
+    command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    vkAllocateCommandBuffers(m_device->device(), &command_buffer_allocate_info,
+                             command_buffer);
+
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[0], &begin_info);
+
+        vkCmdPipelineBarrier(command_buffer[0],
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr,
+                             0, nullptr, 0, nullptr);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[0], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[0]);
+    }
+    {
+        VkCommandBufferBeginInfo begin_info{};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(command_buffer[1], &begin_info);
+
+        VkViewport viewport{};
+        viewport.maxDepth = 1.0f;
+        viewport.minDepth = 0.0f;
+        viewport.width = 512;
+        viewport.height = 512;
+        viewport.x = 0;
+        viewport.y = 0;
+        vkCmdSetViewport(command_buffer[1], 0, 1, &viewport);
+        vkEndCommandBuffer(command_buffer[1]);
+    }
+    {
+        VkSubmitInfo submit_info[2];
+        VkPipelineStageFlags flags[]{VK_PIPELINE_STAGE_ALL_COMMANDS_BIT};
+
+        submit_info[0].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info[0].pNext = NULL;
+        submit_info[0].commandBufferCount = 1;
+        submit_info[0].pCommandBuffers = &command_buffer[0];
+        submit_info[0].signalSemaphoreCount = 1;
+        submit_info[0].pSignalSemaphores = &semaphore;
+        submit_info[0].waitSemaphoreCount = 0;
+        submit_info[0].pWaitSemaphores = NULL;
+        submit_info[0].pWaitDstStageMask = 0;
+
+        submit_info[1].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info[1].pNext = NULL;
+        submit_info[1].commandBufferCount = 1;
+        submit_info[1].pCommandBuffers = &command_buffer[1];
+        submit_info[1].waitSemaphoreCount = 1;
+        submit_info[1].pWaitSemaphores = &semaphore;
+        submit_info[1].pWaitDstStageMask = flags;
+        submit_info[1].signalSemaphoreCount = 0;
+        submit_info[1].pSignalSemaphores = NULL;
+        vkQueueSubmit(m_device->m_queue, 2, &submit_info[0], fence);
+    }
+
+    vkWaitForFences(m_device->device(), 1, &fence, VK_TRUE, UINT64_MAX);
+
+    vkDestroyFence(m_device->device(), fence, nullptr);
+    vkFreeCommandBuffers(m_device->device(), command_pool, 2,
+                         &command_buffer[0]);
+    vkDestroyCommandPool(m_device->device(), command_pool, NULL);
+
+    m_errorMonitor->VerifyNotFound();
+}
+
 TEST_F(VkLayerTest, LineWidthStateNotBound) {
     m_errorMonitor->SetDesiredFailureMsg(
         VK_DEBUG_REPORT_ERROR_BIT_EXT,
@@ -1172,11 +1954,7 @@ TEST_F(VkLayerTest, LineWidthStateNotBound) {
     VKTriangleTest(bindStateVertShaderText, bindStateFragShaderText,
                    BsoFailLineWidth);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Dynamic line width state not set for "
-                  "this command buffer'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, DepthBiasStateNotBound) {
@@ -1190,11 +1968,7 @@ TEST_F(VkLayerTest, DepthBiasStateNotBound) {
     VKTriangleTest(bindStateVertShaderText, bindStateFragShaderText,
                    BsoFailDepthBias);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Dynamic depth bias state not set for "
-                  "this command buffer'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 // Disable these two tests until we can sort out how to track multiple layer
@@ -1210,11 +1984,7 @@ TEST_F(VkLayerTest, ViewportStateNotBound) {
     VKTriangleTest(bindStateVertShaderText, bindStateFragShaderText,
                    BsoFailViewport);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not recieve Error 'Dynamic scissor state not set for "
-                  "this command buffer'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, ScissorStateNotBound) {
@@ -1228,17 +1998,13 @@ TEST_F(VkLayerTest, ScissorStateNotBound) {
     VKTriangleTest(bindStateVertShaderText, bindStateFragShaderText,
                    BsoFailScissor);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not recieve Error ' Expected: 'Dynamic scissor state "
-                  "not set for this command buffer'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, BlendStateNotBound) {
     m_errorMonitor->SetDesiredFailureMsg(
         VK_DEBUG_REPORT_ERROR_BIT_EXT,
-        "Dynamic blend object state not set for this command buffer");
+        "Dynamic blend constants state not set for this command buffer");
 
     TEST_DESCRIPTION("Simple Draw Call that validates failure when a blend "
                      "state object is not bound beforehand");
@@ -1246,11 +2012,7 @@ TEST_F(VkLayerTest, BlendStateNotBound) {
     VKTriangleTest(bindStateVertShaderText, bindStateFragShaderText,
                    BsoFailBlend);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not recieve Error 'Dynamic blend object state not set "
-                  "for this command buffer'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, DepthBoundsStateNotBound) {
@@ -1264,11 +2026,7 @@ TEST_F(VkLayerTest, DepthBoundsStateNotBound) {
     VKTriangleTest(bindStateVertShaderText, bindStateFragShaderText,
                    BsoFailDepthBounds);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Dynamic depth bounds state not set "
-                  "for this command buffer'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, StencilReadMaskNotSet) {
@@ -1284,11 +2042,7 @@ TEST_F(VkLayerTest, StencilReadMaskNotSet) {
     VKTriangleTest(bindStateVertShaderText, bindStateFragShaderText,
                    BsoFailStencilReadMask);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Dynamic stencil read mask state not "
-                  "set for this command buffer'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, StencilWriteMaskNotSet) {
@@ -1304,11 +2058,7 @@ TEST_F(VkLayerTest, StencilWriteMaskNotSet) {
     VKTriangleTest(bindStateVertShaderText, bindStateFragShaderText,
                    BsoFailStencilWriteMask);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Dynamic stencil write mask state not "
-                  "set for this command buffer'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, StencilReferenceNotSet) {
@@ -1322,11 +2072,7 @@ TEST_F(VkLayerTest, StencilReferenceNotSet) {
     VKTriangleTest(bindStateVertShaderText, bindStateFragShaderText,
                    BsoFailStencilReference);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Dynamic stencil reference state not "
-                  "set for this command buffer'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CommandBufferTwoSubmits) {
@@ -1375,11 +2121,7 @@ TEST_F(VkLayerTest, CommandBufferTwoSubmits) {
     // submitted once
     err = vkQueueSubmit(m_device->m_queue, 1, &submit_info, testFence.handle());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'CB (0xaddress) was created w/ "
-                  "VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT set...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, AllocDescriptorFromEmptyPool) {
@@ -1440,11 +2182,7 @@ TEST_F(VkLayerTest, AllocDescriptorFromEmptyPool) {
     err = vkAllocateDescriptorSets(m_device->device(), &alloc_info,
                                    &descriptorSet);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Unable to allocate 1 descriptors of "
-                  "type VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
     vkDestroyDescriptorPool(m_device->device(), ds_pool, NULL);
@@ -1509,76 +2247,99 @@ TEST_F(VkLayerTest, FreeDescriptorFromOneShotPool) {
     ASSERT_VK_SUCCESS(err);
 
     err = vkFreeDescriptorSets(m_device->device(), ds_pool, 1, &descriptorSet);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'It is invalid to call "
-                  "vkFreeDescriptorSets() with a pool created with...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
     vkDestroyDescriptorPool(m_device->device(), ds_pool, NULL);
 }
 
 TEST_F(VkLayerTest, InvalidDescriptorPool) {
-    // TODO : Simple check for bad object should be added to ObjectTracker to
-    // catch this case
-    //   The DS check for this is after driver has been called to validate DS
-    //   internal data struct
-    // Attempt to clear DS Pool with bad object
-    /*
-        m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
-            "Unable to find pool node for pool 0xbaad6001 specified in
-       vkResetDescriptorPool() call");
-
-        VkDescriptorPool badPool = (VkDescriptorPool)0xbaad6001;
-        vkResetDescriptorPool(device(), badPool);
-
-        if (!m_errorMonitor->DesiredMsgFound()) {
-            FAIL() << "Did not receive Error 'Unable to find pool node for pool
-       0xbaad6001 specified in vkResetDescriptorPool() call'";
-            m_errorMonitor->DumpFailureMsgs();
-        }*/
+    // Attempt to clear Descriptor Pool with bad object.
+    // ObjectTracker should catch this.
+    m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
+                                         "Invalid VkDescriptorPool Object 0xbaad6001");
+    VkDescriptorPool badPool = (VkDescriptorPool)0xbaad6001;
+    vkResetDescriptorPool(device(), badPool, 0);
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, InvalidDescriptorSet) {
-    // TODO : Simple check for bad object should be added to ObjectTracker to
-    // catch this case
-    //   The DS check for this is after driver has been called to validate DS
-    //   internal data struct
+    // Attempt to bind an invalid Descriptor Set to a valid Command Buffer
+    // ObjectTracker should catch this.
     // Create a valid cmd buffer
-    // call vkCmdBindDescriptorSets w/ false DS
+    // call vkCmdBindDescriptorSets w/ false Descriptor Set
+    VkDescriptorSet badSet = (VkDescriptorSet)0xbaad6001;
+    VkResult err;
+    m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
+                                         "Invalid VkDescriptorSet Object 0xbaad6001");
+
+    ASSERT_NO_FATAL_FAILURE(InitState());
+
+    VkDescriptorSetLayoutBinding layout_bindings[1] = {};
+    layout_bindings[0].binding = 0;
+    layout_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    layout_bindings[0].descriptorCount = 1;
+    layout_bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    layout_bindings[0].pImmutableSamplers = NULL;
+
+    VkDescriptorSetLayout descriptor_set_layout;
+    VkDescriptorSetLayoutCreateInfo dslci = {};
+    dslci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    dslci.pNext = NULL;
+    dslci.bindingCount = 1;
+    dslci.pBindings = layout_bindings;
+    err = vkCreateDescriptorSetLayout(device(), &dslci, NULL, &descriptor_set_layout);
+    ASSERT_VK_SUCCESS(err);
+
+    VkPipelineLayout pipeline_layout;
+    VkPipelineLayoutCreateInfo plci = {};
+    plci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    plci.pNext = NULL;
+    plci.setLayoutCount = 1;
+    plci.pSetLayouts = &descriptor_set_layout;
+    err = vkCreatePipelineLayout(device(), &plci, NULL, &pipeline_layout);
+    ASSERT_VK_SUCCESS(err);
+
+    BeginCommandBuffer();
+    vkCmdBindDescriptorSets(m_commandBuffer->GetBufferHandle(), VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            pipeline_layout, 0, 1, &badSet, 0, NULL);
+    m_errorMonitor->VerifyFound();
+    EndCommandBuffer();
+    vkDestroyPipelineLayout(device(), pipeline_layout, NULL);
+    vkDestroyDescriptorSetLayout(device(), descriptor_set_layout, NULL);
 }
 
 TEST_F(VkLayerTest, InvalidDescriptorSetLayout) {
-    // TODO : Simple check for bad object should be added to ObjectTracker to
-    // catch this case
-    //   The DS check for this is after driver has been called to validate DS
-    //   internal data struct
+    // Attempt to create a Pipeline Layout with an invalid Descriptor Set Layout.
+    // ObjectTracker should catch this.
+    VkDescriptorSetLayout bad_layout = (VkDescriptorSetLayout)0xbaad6001;
+    m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
+                                         "Invalid VkDescriptorSetLayout Object 0xbaad6001");
+
+    VkPipelineLayout pipeline_layout;
+    VkPipelineLayoutCreateInfo plci = {};
+    plci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    plci.pNext = NULL;
+    plci.setLayoutCount = 1;
+    plci.pSetLayouts = &bad_layout;
+    vkCreatePipelineLayout(device(), &plci, NULL, &pipeline_layout);
+
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, InvalidPipeline) {
-    // TODO : Simple check for bad object should be added to ObjectTracker to
-    // catch this case
-    //   The DS check for this is after driver has been called to validate DS
-    //   internal data struct
+    // Attempt to bind an invalid Pipeline to a valid Command Buffer
+    // ObjectTracker should catch this.
     // Create a valid cmd buffer
     // call vkCmdBindPipeline w/ false Pipeline
-    //
-    //    m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
-    //        "Attempt to bind Pipeline ");
-    //
-    //    ASSERT_NO_FATAL_FAILURE(InitState());
-    //    VkCommandBufferObj commandBuffer(m_device);
-    //    BeginCommandBuffer();
-    //    VkPipeline badPipeline = (VkPipeline)0xbaadb1be;
-    //    vkCmdBindPipeline(commandBuffer.GetBufferHandle(),
-    //    VK_PIPELINE_BIND_POINT_GRAPHICS, badPipeline);
-    //
-    //    if (!m_errorMonitor->DesiredMsgFound()) {
-    //        FAIL() << "Did not receive Error 'Attempt to bind Pipeline
-    //        0xbaadb1be that doesn't exist!'";
-    //        m_errorMonitor->DumpFailureMsgs();
-    //    }
+    VkPipeline bad_pipeline = (VkPipeline)0xbaad6001;
+    m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
+                                         "Invalid VkPipeline Object 0xbaad6001");
+    ASSERT_NO_FATAL_FAILURE(InitState());
+    BeginCommandBuffer();
+    vkCmdBindPipeline(m_commandBuffer->GetBufferHandle(),
+                      VK_PIPELINE_BIND_POINT_GRAPHICS, bad_pipeline);
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, DescriptorSetNotUpdated) {
@@ -1586,7 +2347,6 @@ TEST_F(VkLayerTest, DescriptorSetNotUpdated) {
     // CommandBuffer
     VkResult err;
 
-    // TODO: verify that this matches layer
     m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_WARNING_BIT_EXT,
                                          " bound but it was never updated. ");
 
@@ -1649,7 +2409,7 @@ TEST_F(VkLayerTest, DescriptorSetNotUpdated) {
 
     VkShaderObj vs(m_device, bindStateVertShaderText,
                    VK_SHADER_STAGE_VERTEX_BIT, this);
-    //  TODO - We shouldn't need a fragment shader but add it to be able to run
+    //  We shouldn't need a fragment shader but add it to be able to run
     //  on more devices
     VkShaderObj fs(m_device, bindStateFragShaderText,
                    VK_SHADER_STAGE_FRAGMENT_BIT, this);
@@ -1657,6 +2417,7 @@ TEST_F(VkLayerTest, DescriptorSetNotUpdated) {
     VkPipelineObj pipe(m_device);
     pipe.AddShader(&vs);
     pipe.AddShader(&fs);
+    pipe.AddColorAttachment();
     pipe.CreateVKPipeline(pipeline_layout, renderPass());
 
     BeginCommandBuffer();
@@ -1666,11 +2427,7 @@ TEST_F(VkLayerTest, DescriptorSetNotUpdated) {
                             VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0,
                             1, &descriptorSet, 0, NULL);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not recieve Warning 'DS <blah> bound but it was never "
-                  "updated. You may want to either update it or not bind it.'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
@@ -1742,11 +2499,7 @@ TEST_F(VkLayerTest, InvalidBufferViewObject) {
 
     vkUpdateDescriptorSets(m_device->device(), 1, &descriptor_write, 0, NULL);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Attempt to update descriptor with "
-                  "invalid bufferView'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
     vkDestroyDescriptorPool(m_device->device(), ds_pool, NULL);
@@ -1855,12 +2608,7 @@ TEST_F(VkLayerTest, InvalidDynamicOffsetCases) {
     vkCmdBindDescriptorSets(m_commandBuffer->GetBufferHandle(),
                             VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0,
                             1, &descriptorSet, 0, NULL);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Error received was not 'descriptorSet #0 (0x<ADDR>) "
-                  "requires 1 dynamicOffsets, but only 0 dynamicOffsets are "
-                  "left in pDynamicOffsets array...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
     uint32_t pDynOff[2] = {512, 756};
     // Now cause error b/c too many dynOffsets in array for # of dyn descriptors
     m_errorMonitor->SetDesiredFailureMsg(
@@ -1869,20 +2617,14 @@ TEST_F(VkLayerTest, InvalidDynamicOffsetCases) {
     vkCmdBindDescriptorSets(m_commandBuffer->GetBufferHandle(),
                             VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0,
                             1, &descriptorSet, 2, pDynOff);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Error received was not 'Attempting to bind 1 descriptorSets "
-                  "with 1 dynamic descriptors, but dynamicOffsetCount is 0...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
     // Finally cause error due to dynamicOffset being too big
     m_errorMonitor->SetDesiredFailureMsg(
         VK_DEBUG_REPORT_ERROR_BIT_EXT,
         " from its update, this oversteps its buffer (");
     // Create PSO to be used for draw-time errors below
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "out gl_PerVertex { \n"
         "    vec4 gl_Position;\n"
@@ -1891,9 +2633,7 @@ TEST_F(VkLayerTest, InvalidDynamicOffsetCases) {
         "   gl_Position = vec4(1);\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out vec4 x;\n"
         "layout(set=0) layout(binding=0) uniform foo { int x; int y; } bar;\n"
@@ -1916,12 +2656,7 @@ TEST_F(VkLayerTest, InvalidDynamicOffsetCases) {
                             VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0,
                             1, &descriptorSet, 1, pDynOff);
     Draw(1, 0, 0, 0);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Error received was not 'VkDescriptorSet (0x<ADDR>) bound as "
-                  "set #0 has dynamic offset 512. Combined with offet 0 and "
-                  "range 1024 from its update, this oversteps...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
     vkDestroyDescriptorPool(m_device->device(), ds_pool, NULL);
@@ -1954,11 +2689,7 @@ TEST_F(VkLayerTest, InvalidPushConstants) {
     err = vkCreatePipelineLayout(m_device->device(), &pipeline_layout_ci, NULL,
                                  &pipeline_layout);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Error received was not 'vkCreatePipelineLayout() call has "
-                  "push constants with offset 0...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
     // Now cause errors due to size 0 and non-4 byte aligned size
     pc_range.size = 0;
     m_errorMonitor->SetDesiredFailureMsg(
@@ -1966,22 +2697,14 @@ TEST_F(VkLayerTest, InvalidPushConstants) {
         "vkCreatePipelineLayout() call has push constant index 0 with size 0");
     err = vkCreatePipelineLayout(m_device->device(), &pipeline_layout_ci, NULL,
                                  &pipeline_layout);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Error received was not 'vkCreatePipelineLayout() call has "
-                  "push constant index 0 with size 0...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
     pc_range.size = 1;
     m_errorMonitor->SetDesiredFailureMsg(
         VK_DEBUG_REPORT_ERROR_BIT_EXT,
         "vkCreatePipelineLayout() call has push constant index 0 with size 1");
     err = vkCreatePipelineLayout(m_device->device(), &pipeline_layout_ci, NULL,
                                  &pipeline_layout);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Error received was not 'vkCreatePipelineLayout() call has "
-                  "push constant index 0 with size 0...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
     // Cause error due to bad size in vkCmdPushConstants() call
     m_errorMonitor->SetDesiredFailureMsg(
         VK_DEBUG_REPORT_ERROR_BIT_EXT,
@@ -1994,11 +2717,7 @@ TEST_F(VkLayerTest, InvalidPushConstants) {
     BeginCommandBuffer();
     vkCmdPushConstants(m_commandBuffer->GetBufferHandle(), pipeline_layout,
                        VK_SHADER_STAGE_VERTEX_BIT, 0, 0xFFFFFFFFu, NULL);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Error received was not 'vkCmdPushConstants() call has push "
-                  "constants with offset 0...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
     vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
 }
 
@@ -2269,9 +2988,7 @@ TEST_F(VkLayerTest, DescriptorSetCompatibility) {
 
     // Create PSO to be used for draw-time errors below
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "out gl_PerVertex {\n"
         "    vec4 gl_Position;\n"
@@ -2280,9 +2997,7 @@ TEST_F(VkLayerTest, DescriptorSetCompatibility) {
         "   gl_Position = vec4(1);\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out vec4 x;\n"
         "layout(set=0) layout(binding=0) uniform foo { int x; int y; } bar;\n"
@@ -2319,23 +3034,16 @@ TEST_F(VkLayerTest, DescriptorSetCompatibility) {
                             VK_PIPELINE_BIND_POINT_GRAPHICS,
                             (VkPipelineLayout)((size_t)0xbaadb1be), 0, 1,
                             &descriptorSet[0], 0, NULL);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive correct error msg when attempting to bind "
-                  "descriptorSets with invalid VkPipelineLayout.";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
     // 2. layoutIndex exceeds # of layouts in layout
     m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
                                          " attempting to bind set to index 1");
     vkCmdBindDescriptorSets(m_commandBuffer->GetBufferHandle(),
                             VK_PIPELINE_BIND_POINT_GRAPHICS, single_pipe_layout,
                             0, 2, &descriptorSet[0], 0, NULL);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive correct error msg when attempting to bind "
-                  "descriptorSet to index 1 when pipelineLayout only has index "
-                  "0.";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
     vkDestroyPipelineLayout(m_device->device(), single_pipe_layout, NULL);
     // 3. Pipeline setLayout[0] has 2 descriptors, but set being bound has 5
     // descriptors
@@ -2345,12 +3053,8 @@ TEST_F(VkLayerTest, DescriptorSetCompatibility) {
     vkCmdBindDescriptorSets(
         m_commandBuffer->GetBufferHandle(), VK_PIPELINE_BIND_POINT_GRAPHICS,
         pipe_layout_one_desc, 0, 1, &descriptorSet[0], 0, NULL);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive correct error msg when attempting to bind "
-                  "descriptorSet w/ 5 descriptors to pipelineLayout with only "
-                  "2 descriptors.";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
     vkDestroyPipelineLayout(m_device->device(), pipe_layout_one_desc, NULL);
     // 4. same # of descriptors but mismatch in type
     m_errorMonitor->SetDesiredFailureMsg(
@@ -2359,12 +3063,8 @@ TEST_F(VkLayerTest, DescriptorSetCompatibility) {
     vkCmdBindDescriptorSets(
         m_commandBuffer->GetBufferHandle(), VK_PIPELINE_BIND_POINT_GRAPHICS,
         pipe_layout_five_samp, 0, 1, &descriptorSet[0], 0, NULL);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive correct error msg when attempting to bind "
-                  "UNIFORM_BUFFER descriptorSet to pipelineLayout with "
-                  "overlapping SAMPLER type.";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
     vkDestroyPipelineLayout(m_device->device(), pipe_layout_five_samp, NULL);
     // 5. same # of descriptors but mismatch in stageFlags
     m_errorMonitor->SetDesiredFailureMsg(
@@ -2373,12 +3073,8 @@ TEST_F(VkLayerTest, DescriptorSetCompatibility) {
     vkCmdBindDescriptorSets(
         m_commandBuffer->GetBufferHandle(), VK_PIPELINE_BIND_POINT_GRAPHICS,
         pipe_layout_fs_only, 0, 1, &descriptorSet[0], 0, NULL);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive correct error msg when attempting to bind "
-                  "UNIFORM_BUFFER descriptorSet with ALL stageFlags to "
-                  "pipelineLayout with FS-only stageFlags.";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
     // Cause INFO messages due to disturbing previously bound Sets
     // First bind sets 0 & 1
     vkCmdBindDescriptorSets(m_commandBuffer->GetBufferHandle(),
@@ -2391,11 +3087,8 @@ TEST_F(VkLayerTest, DescriptorSetCompatibility) {
     vkCmdBindDescriptorSets(
         m_commandBuffer->GetBufferHandle(), VK_PIPELINE_BIND_POINT_GRAPHICS,
         pipe_layout_bad_set0, 1, 1, &descriptorSet[1], 0, NULL);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive correct info msg when binding Set1 w/ "
-                  "pipelineLayout that should disturb Set0.";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
     vkCmdBindDescriptorSets(m_commandBuffer->GetBufferHandle(),
                             VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0,
                             2, &descriptorSet[0], 0, NULL);
@@ -2406,11 +3099,8 @@ TEST_F(VkLayerTest, DescriptorSetCompatibility) {
     vkCmdBindDescriptorSets(m_commandBuffer->GetBufferHandle(),
                             VK_PIPELINE_BIND_POINT_GRAPHICS,
                             pipe_layout_fs_only, 0, 1, &ds0_fs_only, 0, NULL);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive correct info msg when re-binding Set0 w/ "
-                  "pipelineLayout that should disturb Set1.";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
     // Cause draw-time errors due to PSO incompatibilities
     // 1. Error due to not binding required set (we actually use same code as
     // above to disturb set0)
@@ -2424,11 +3114,8 @@ TEST_F(VkLayerTest, DescriptorSetCompatibility) {
         VK_DEBUG_REPORT_ERROR_BIT_EXT,
         " uses set #0 but that set is not bound.");
     Draw(1, 0, 0, 0);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive correct error msg when attempting draw "
-                  "requiring Set0 but Set0 is not bound.";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
     vkDestroyPipelineLayout(m_device->device(), pipe_layout_bad_set0, NULL);
     // 2. Error due to bound set not being compatible with PSO's
     // VkPipelineLayout (diff stageFlags in this case)
@@ -2439,11 +3126,8 @@ TEST_F(VkLayerTest, DescriptorSetCompatibility) {
         VK_DEBUG_REPORT_ERROR_BIT_EXT,
         " bound as set #0 is not compatible with ");
     Draw(1, 0, 0, 0);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive correct error msg when attempted draw where "
-                  "bound Set0 layout is not compatible PSO Set0 layout.";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
     // Remaining clean-up
     vkDestroyPipelineLayout(m_device->device(), pipe_layout_fs_only, NULL);
     for (uint32_t i = 0; i < NUM_LAYOUTS; ++i) {
@@ -2467,11 +3151,7 @@ TEST_F(VkLayerTest, NoBeginCommandBuffer) {
     // Call EndCommandBuffer() w/o calling BeginCommandBuffer()
     vkEndCommandBuffer(commandBuffer.GetBufferHandle());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not recieve Error 'You must call vkBeginCommandBuffer() "
-                  "before this call to vkEndCommandBuffer()'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, SecondaryCommandBufferNullRenderpass) {
@@ -2506,12 +3186,7 @@ TEST_F(VkLayerTest, SecondaryCommandBufferNullRenderpass) {
     // The error should be caught by validation of the BeginCommandBuffer call
     vkBeginCommandBuffer(draw_cmd, &cmd_buf_info);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkBeginCommandBuffer(): Secondary "
-                  "Command Buffers (0x<ADDR>) must specify a valid renderpass "
-                  "parameter.'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
     vkFreeCommandBuffers(m_device->device(), m_commandPool, 1, &draw_cmd);
 }
 
@@ -2541,21 +3216,15 @@ TEST_F(VkLayerTest, CommandBufferResetErrors) {
     vkBeginCommandBuffer(commandBuffer.GetBufferHandle(), &cmd_buf_info);
     // Can't re-begin. This should trigger error
     vkBeginCommandBuffer(commandBuffer.GetBufferHandle(), &cmd_buf_info);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Cannot call Begin on CB (0x<ADDR>) "
-                  "in the RECORDING state...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
     m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
                                          "Attempt to reset command buffer ");
     VkCommandBufferResetFlags flags = 0; // Don't care about flags for this test
     // Reset attempt will trigger error due to incorrect CommandPool state
     vkResetCommandBuffer(commandBuffer.GetBufferHandle(), flags);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Attempt to reset command buffer "
-                  "(0x<ADDR>) created from command pool...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
     m_errorMonitor->SetDesiredFailureMsg(
         VK_DEBUG_REPORT_ERROR_BIT_EXT,
         " attempts to implicitly reset cmdBuffer created from ");
@@ -2563,11 +3232,7 @@ TEST_F(VkLayerTest, CommandBufferResetErrors) {
     vkEndCommandBuffer(commandBuffer.GetBufferHandle());
     // Now attempting to Begin will implicitly reset, which triggers error
     vkBeginCommandBuffer(commandBuffer.GetBufferHandle(), &cmd_buf_info);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Call to vkBeginCommandBuffer() on "
-                  "command buffer (0x<ADDR>) attempts to implicitly reset...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, InvalidPipelineCreateState) {
@@ -2676,11 +3341,7 @@ TEST_F(VkLayerTest, InvalidPipelineCreateState) {
     err = vkCreateGraphicsPipelines(m_device->device(), pipelineCache, 1,
                                     &gp_ci, NULL, &pipeline);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Invalid Pipeline CreateInfo State: "
-                  "Vtx Shader required'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyPipelineCache(m_device->device(), pipelineCache, NULL);
     vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
@@ -2819,11 +3480,7 @@ VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     err = vkCreateGraphicsPipelines(m_device->device(), pipelineCache, 1,
 &gp_ci, NULL, &pipeline);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Invalid Pipeline CreateInfo State:
-VK_PRIMITIVE_TOPOLOGY_PATCH primitive...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyPipelineCache(m_device->device(), pipelineCache, NULL);
     vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
@@ -2833,7 +3490,6 @@ VK_PRIMITIVE_TOPOLOGY_PATCH primitive...'";
 */
 // Set scissor and viewport counts to different numbers
 TEST_F(VkLayerTest, PSOViewportScissorCountMismatch) {
-    // Attempt to Create Gfx Pipeline w/o a VS
     VkResult err;
 
     m_errorMonitor->SetDesiredFailureMsg(
@@ -2918,7 +3574,7 @@ TEST_F(VkLayerTest, PSOViewportScissorCountMismatch) {
                    VK_SHADER_STAGE_VERTEX_BIT, this);
     VkShaderObj fs(m_device, bindStateFragShaderText,
                    VK_SHADER_STAGE_FRAGMENT_BIT,
-                   this); // TODO - We shouldn't need a fragment shader
+                   this); // We shouldn't need a fragment shader
                           // but add it to be able to run on more devices
     shaderStages[0] = vs.GetStageCreateInfo();
     shaderStages[1] = fs.GetStageCreateInfo();
@@ -2945,11 +3601,7 @@ TEST_F(VkLayerTest, PSOViewportScissorCountMismatch) {
     err = vkCreateGraphicsPipelines(m_device->device(), pipelineCache, 1,
                                     &gp_ci, NULL, &pipeline);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Gfx Pipeline viewport count (1) must "
-                  "match scissor count (0).'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyPipelineCache(m_device->device(), pipelineCache, NULL);
     vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
@@ -3035,7 +3687,7 @@ TEST_F(VkLayerTest, PSOViewportStateNotSet) {
                    VK_SHADER_STAGE_VERTEX_BIT, this);
     VkShaderObj fs(m_device, bindStateFragShaderText,
                    VK_SHADER_STAGE_FRAGMENT_BIT,
-                   this); // TODO - We shouldn't need a fragment shader
+                   this); // We shouldn't need a fragment shader
                           // but add it to be able to run on more devices
     shaderStages[0] = vs.GetStageCreateInfo();
     shaderStages[1] = fs.GetStageCreateInfo();
@@ -3074,11 +3726,7 @@ TEST_F(VkLayerTest, PSOViewportStateNotSet) {
     err = vkCreateGraphicsPipelines(m_device->device(), pipelineCache, 1,
                                     &gp_ci, NULL, &pipeline);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Gfx Pipeline pViewportState is null. "
-                  "Even if...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyPipelineCache(m_device->device(), pipelineCache, NULL);
     vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
@@ -3171,7 +3819,7 @@ TEST_F(VkLayerTest, PSOViewportCountWithoutDataAndDynScissorMismatch) {
                    VK_SHADER_STAGE_VERTEX_BIT, this);
     VkShaderObj fs(m_device, bindStateFragShaderText,
                    VK_SHADER_STAGE_FRAGMENT_BIT,
-                   this); // TODO - We shouldn't need a fragment shader
+                   this); // We shouldn't need a fragment shader
                           // but add it to be able to run on more devices
     shaderStages[0] = vs.GetStageCreateInfo();
     shaderStages[1] = fs.GetStageCreateInfo();
@@ -3192,9 +3840,15 @@ TEST_F(VkLayerTest, PSOViewportCountWithoutDataAndDynScissorMismatch) {
     rs_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rs_ci.pNext = nullptr;
 
+    VkPipelineColorBlendAttachmentState att = {};
+    att.blendEnable = VK_FALSE;
+    att.colorWriteMask = 0xf;
+
     VkPipelineColorBlendStateCreateInfo cb_ci = {};
     cb_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     cb_ci.pNext = nullptr;
+    cb_ci.attachmentCount = 1;
+    cb_ci.pAttachments = &att;
 
     VkGraphicsPipelineCreateInfo gp_ci = {};
     gp_ci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -3222,11 +3876,7 @@ TEST_F(VkLayerTest, PSOViewportCountWithoutDataAndDynScissorMismatch) {
     err = vkCreateGraphicsPipelines(m_device->device(), pipelineCache, 1,
                                     &gp_ci, NULL, &pipeline);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not recieve Error 'Gfx Pipeline viewportCount is 1, but "
-                  "pViewports is NULL...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     // Now hit second fail case where we set scissor w/ different count than PSO
     // First need to successfully create the PSO from above by setting
@@ -3249,11 +3899,7 @@ TEST_F(VkLayerTest, PSOViewportCountWithoutDataAndDynScissorMismatch) {
     vkCmdSetScissor(m_commandBuffer->GetBufferHandle(), 0, 2, scissors);
     Draw(1, 0, 0, 0);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Dynamic scissorCount from "
-                  "vkCmdSetScissor() is 2, but PSO scissorCount is 1...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyPipelineCache(m_device->device(), pipelineCache, NULL);
     vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
@@ -3347,7 +3993,7 @@ TEST_F(VkLayerTest, PSOScissorCountWithoutDataAndDynViewportMismatch) {
                    VK_SHADER_STAGE_VERTEX_BIT, this);
     VkShaderObj fs(m_device, bindStateFragShaderText,
                    VK_SHADER_STAGE_FRAGMENT_BIT,
-                   this); // TODO - We shouldn't need a fragment shader
+                   this); // We shouldn't need a fragment shader
                           // but add it to be able to run on more devices
     shaderStages[0] = vs.GetStageCreateInfo();
     shaderStages[1] = fs.GetStageCreateInfo();
@@ -3368,9 +4014,15 @@ TEST_F(VkLayerTest, PSOScissorCountWithoutDataAndDynViewportMismatch) {
     rs_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rs_ci.pNext = nullptr;
 
+    VkPipelineColorBlendAttachmentState att = {};
+    att.blendEnable = VK_FALSE;
+    att.colorWriteMask = 0xf;
+
     VkPipelineColorBlendStateCreateInfo cb_ci = {};
     cb_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     cb_ci.pNext = nullptr;
+    cb_ci.attachmentCount = 1;
+    cb_ci.pAttachments = &att;
 
     VkGraphicsPipelineCreateInfo gp_ci = {};
     gp_ci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -3398,11 +4050,7 @@ TEST_F(VkLayerTest, PSOScissorCountWithoutDataAndDynViewportMismatch) {
     err = vkCreateGraphicsPipelines(m_device->device(), pipelineCache, 1,
                                     &gp_ci, NULL, &pipeline);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not recieve Error 'Gfx Pipeline scissorCount is 1, but "
-                  "pScissors is NULL...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     // Now hit second fail case where we set scissor w/ different count than PSO
     // First need to successfully create the PSO from above by setting
@@ -3425,11 +4073,200 @@ TEST_F(VkLayerTest, PSOScissorCountWithoutDataAndDynViewportMismatch) {
     vkCmdSetViewport(m_commandBuffer->GetBufferHandle(), 0, 2, viewports);
     Draw(1, 0, 0, 0);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Dynamic viewportCount from "
-                  "vkCmdSetViewport() is 2, but PSO viewportCount is 1...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
+    vkDestroyPipelineCache(m_device->device(), pipelineCache, NULL);
+    vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
+    vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
+    vkDestroyDescriptorPool(m_device->device(), ds_pool, NULL);
+}
+
+TEST_F(VkLayerTest, PSOLineWidthInvalid) {
+    VkResult err;
+
+    m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
+                                         "Attempt to set lineWidth to 0");
+
+    ASSERT_NO_FATAL_FAILURE(InitState());
+    ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
+
+    VkDescriptorPoolSize ds_type_count = {};
+    ds_type_count.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    ds_type_count.descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo ds_pool_ci = {};
+    ds_pool_ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    ds_pool_ci.maxSets = 1;
+    ds_pool_ci.poolSizeCount = 1;
+    ds_pool_ci.pPoolSizes = &ds_type_count;
+
+    VkDescriptorPool ds_pool;
+    err =
+        vkCreateDescriptorPool(m_device->device(), &ds_pool_ci, NULL, &ds_pool);
+    ASSERT_VK_SUCCESS(err);
+
+    VkDescriptorSetLayoutBinding dsl_binding = {};
+    dsl_binding.binding = 0;
+    dsl_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    dsl_binding.descriptorCount = 1;
+    dsl_binding.stageFlags = VK_SHADER_STAGE_ALL;
+
+    VkDescriptorSetLayoutCreateInfo ds_layout_ci = {};
+    ds_layout_ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    ds_layout_ci.bindingCount = 1;
+    ds_layout_ci.pBindings = &dsl_binding;
+
+    VkDescriptorSetLayout ds_layout;
+    err = vkCreateDescriptorSetLayout(m_device->device(), &ds_layout_ci, NULL,
+                                      &ds_layout);
+    ASSERT_VK_SUCCESS(err);
+
+    VkDescriptorSet descriptorSet;
+    VkDescriptorSetAllocateInfo alloc_info = {};
+    alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    alloc_info.descriptorSetCount = 1;
+    alloc_info.descriptorPool = ds_pool;
+    alloc_info.pSetLayouts = &ds_layout;
+    err = vkAllocateDescriptorSets(m_device->device(), &alloc_info,
+                                   &descriptorSet);
+    ASSERT_VK_SUCCESS(err);
+
+    VkPipelineLayoutCreateInfo pipeline_layout_ci = {};
+    pipeline_layout_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipeline_layout_ci.setLayoutCount = 1;
+    pipeline_layout_ci.pSetLayouts = &ds_layout;
+
+    VkPipelineLayout pipeline_layout;
+    err = vkCreatePipelineLayout(m_device->device(), &pipeline_layout_ci, NULL,
+                                 &pipeline_layout);
+    ASSERT_VK_SUCCESS(err);
+
+    VkPipelineViewportStateCreateInfo vp_state_ci = {};
+    vp_state_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    vp_state_ci.scissorCount = 1;
+    vp_state_ci.pScissors = NULL;
+    vp_state_ci.viewportCount = 1;
+    vp_state_ci.pViewports = NULL;
+
+    VkDynamicState dynamic_states[3] = {VK_DYNAMIC_STATE_VIEWPORT,
+                                        VK_DYNAMIC_STATE_SCISSOR,
+                                        VK_DYNAMIC_STATE_LINE_WIDTH};
+    // Set scissor as dynamic to avoid that error
+    VkPipelineDynamicStateCreateInfo dyn_state_ci = {};
+    dyn_state_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dyn_state_ci.dynamicStateCount = 2;
+    dyn_state_ci.pDynamicStates = dynamic_states;
+
+    VkPipelineShaderStageCreateInfo shaderStages[2];
+    memset(&shaderStages, 0, 2 * sizeof(VkPipelineShaderStageCreateInfo));
+
+    VkShaderObj vs(m_device, bindStateVertShaderText,
+                   VK_SHADER_STAGE_VERTEX_BIT, this);
+    VkShaderObj fs(m_device, bindStateFragShaderText,
+                   VK_SHADER_STAGE_FRAGMENT_BIT,
+                   this); // TODO - We shouldn't need a fragment shader
+                          // but add it to be able to run on more devices
+    shaderStages[0] = vs.GetStageCreateInfo();
+    shaderStages[1] = fs.GetStageCreateInfo();
+
+    VkPipelineVertexInputStateCreateInfo vi_ci = {};
+    vi_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vi_ci.pNext = nullptr;
+    vi_ci.vertexBindingDescriptionCount = 0;
+    vi_ci.pVertexBindingDescriptions = nullptr;
+    vi_ci.vertexAttributeDescriptionCount = 0;
+    vi_ci.pVertexAttributeDescriptions = nullptr;
+
+    VkPipelineInputAssemblyStateCreateInfo ia_ci = {};
+    ia_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    ia_ci.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+
+    VkPipelineRasterizationStateCreateInfo rs_ci = {};
+    rs_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rs_ci.pNext = nullptr;
+
+    // Check too low (line width of 0.0f).
+    rs_ci.lineWidth = 0.0f;
+
+    VkPipelineColorBlendAttachmentState att = {};
+    att.blendEnable = VK_FALSE;
+    att.colorWriteMask = 0xf;
+
+    VkPipelineColorBlendStateCreateInfo cb_ci = {};
+    cb_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    cb_ci.pNext = nullptr;
+    cb_ci.attachmentCount = 1;
+    cb_ci.pAttachments = &att;
+
+    VkGraphicsPipelineCreateInfo gp_ci = {};
+    gp_ci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    gp_ci.stageCount = 2;
+    gp_ci.pStages = shaderStages;
+    gp_ci.pVertexInputState = &vi_ci;
+    gp_ci.pInputAssemblyState = &ia_ci;
+    gp_ci.pViewportState = &vp_state_ci;
+    gp_ci.pRasterizationState = &rs_ci;
+    gp_ci.pColorBlendState = &cb_ci;
+    gp_ci.pDynamicState = &dyn_state_ci;
+    gp_ci.flags = VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT;
+    gp_ci.layout = pipeline_layout;
+    gp_ci.renderPass = renderPass();
+
+    VkPipelineCacheCreateInfo pc_ci = {};
+    pc_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+
+    VkPipeline pipeline;
+    VkPipelineCache pipelineCache;
+
+    err =
+        vkCreatePipelineCache(m_device->device(), &pc_ci, NULL, &pipelineCache);
+    ASSERT_VK_SUCCESS(err);
+    err = vkCreateGraphicsPipelines(m_device->device(), pipelineCache, 1,
+                                    &gp_ci, NULL, &pipeline);
+
+    m_errorMonitor->VerifyFound();
+
+    m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
+                                         "Attempt to set lineWidth to 65536");
+
+    // Check too high (line width of 65536.0f).
+    rs_ci.lineWidth = 65536.0f;
+
+    err =
+        vkCreatePipelineCache(m_device->device(), &pc_ci, NULL, &pipelineCache);
+    ASSERT_VK_SUCCESS(err);
+    err = vkCreateGraphicsPipelines(m_device->device(), pipelineCache, 1,
+                                    &gp_ci, NULL, &pipeline);
+
+    m_errorMonitor->VerifyFound();
+
+    m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
+                                         "Attempt to set lineWidth to 0");
+
+    dyn_state_ci.dynamicStateCount = 3;
+
+    rs_ci.lineWidth = 1.0f;
+
+    err =
+        vkCreatePipelineCache(m_device->device(), &pc_ci, NULL, &pipelineCache);
+    ASSERT_VK_SUCCESS(err);
+    err = vkCreateGraphicsPipelines(m_device->device(), pipelineCache, 1,
+                                    &gp_ci, NULL, &pipeline);
+    BeginCommandBuffer();
+    vkCmdBindPipeline(m_commandBuffer->GetBufferHandle(),
+                      VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    // Check too low with dynamic setting.
+    vkCmdSetLineWidth(m_commandBuffer->GetBufferHandle(), 0.0f);
+    m_errorMonitor->VerifyFound();
+
+    m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
+                                         "Attempt to set lineWidth to 65536");
+
+    // Check too high with dynamic setting.
+    vkCmdSetLineWidth(m_commandBuffer->GetBufferHandle(), 65536.0f);
+    m_errorMonitor->VerifyFound();
+    EndCommandBuffer();
 
     vkDestroyPipelineCache(m_device->device(), pipelineCache, NULL);
     vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
@@ -3452,11 +4289,7 @@ TEST_F(VkLayerTest, NullRenderPass) {
     vkCmdBeginRenderPass(m_commandBuffer->GetBufferHandle(), NULL,
                          VK_SUBPASS_CONTENTS_INLINE);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'You cannot use a NULL RenderPass "
-                  "object in vkCmdBeginRenderPass()'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, RenderPassWithinRenderPass) {
@@ -3480,11 +4313,7 @@ TEST_F(VkLayerTest, RenderPassWithinRenderPass) {
     vkCmdBeginRenderPass(m_commandBuffer->GetBufferHandle(), &rp_begin,
                          VK_SUBPASS_CONTENTS_INLINE);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'It is invalid to issue this call "
-                  "inside an active render pass...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, FillBufferWithinRenderPass) {
@@ -3505,11 +4334,7 @@ TEST_F(VkLayerTest, FillBufferWithinRenderPass) {
 
     m_commandBuffer->FillBuffer(dstBuffer.handle(), 0, 4, 0x11111111);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'It is invalid to issue this call "
-                  "inside an active render pass...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, UpdateBufferWithinRenderPass) {
@@ -3535,11 +4360,7 @@ TEST_F(VkLayerTest, UpdateBufferWithinRenderPass) {
     vkCmdUpdateBuffer(m_commandBuffer->GetBufferHandle(), dstBuffer.handle(),
                       dstOffset, dataSize, pData);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'It is invalid to issue this call "
-                  "inside an active render pass...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, ClearColorImageWithinRenderPass) {
@@ -3584,11 +4405,7 @@ TEST_F(VkLayerTest, ClearColorImageWithinRenderPass) {
     vkCmdClearColorImage(m_commandBuffer->GetBufferHandle(), dstImage.handle(),
                          VK_IMAGE_LAYOUT_GENERAL, &clear_color, 1, &range);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'It is invalid to issue this call "
-                  "inside an active render pass...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, ClearDepthStencilImageWithinRenderPass) {
@@ -3625,11 +4442,7 @@ TEST_F(VkLayerTest, ClearDepthStencilImageWithinRenderPass) {
         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, &clear_value, 1,
         &range);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'It is invalid to issue this call "
-                  "inside an active render pass...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, ClearColorAttachmentsOutsideRenderPass) {
@@ -3659,20 +4472,32 @@ TEST_F(VkLayerTest, ClearColorAttachmentsOutsideRenderPass) {
     vkCmdClearAttachments(m_commandBuffer->GetBufferHandle(), 1,
                           &color_attachment, 1, &clear_rect);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCmdClearAttachments: This call "
-                  "must be issued inside an active render pass.'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
-TEST_F(VkLayerTest, InvalidDynamicStateObject) {
-    // Create a valid cmd buffer
-    // call vkCmdBindDynamicStateObject w/ false DS Obj
-    // TODO : Simple check for bad object should be added to ObjectTracker to
-    // catch this case
-    //   The DS check for this is after driver has been called to validate DS
-    //   internal data struct
+TEST_F(VkLayerTest, BufferMemoryBarrierNoBuffer) {
+    // Try to add a buffer memory barrier with no buffer.
+    m_errorMonitor->SetDesiredFailureMsg(
+        VK_DEBUG_REPORT_ERROR_BIT_EXT,
+        "required parameter pBufferMemoryBarriers[i].buffer specified as VK_NULL_HANDLE");
+
+    ASSERT_NO_FATAL_FAILURE(InitState());
+    BeginCommandBuffer();
+
+    VkBufferMemoryBarrier buf_barrier = {};
+    buf_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    buf_barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+    buf_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    buf_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    buf_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    buf_barrier.buffer = VK_NULL_HANDLE;
+    buf_barrier.offset = 0;
+    buf_barrier.size = VK_WHOLE_SIZE;
+    vkCmdPipelineBarrier(m_commandBuffer->GetBufferHandle(),
+            VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+            0, 0, nullptr, 1, &buf_barrier, 0, nullptr);
+
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, IdxBufferAlignmentError) {
@@ -3705,11 +4530,7 @@ TEST_F(VkLayerTest, IdxBufferAlignmentError) {
     vkCmdBindIndexBuffer(m_commandBuffer->GetBufferHandle(), ib, 7,
                          VK_INDEX_TYPE_UINT16);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCmdBindIndexBuffer() offset (0x7) "
-                  "does not fall on ...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyBuffer(m_device->device(), ib, NULL);
 }
@@ -3718,7 +4539,7 @@ TEST_F(VkLayerTest, InvalidQueueFamilyIndex) {
     // Create an out-of-range queueFamilyIndex
     m_errorMonitor->SetDesiredFailureMsg(
         VK_DEBUG_REPORT_ERROR_BIT_EXT,
-        "vkCreateBuffer has QueueFamilyIndex greater than");
+        "queueFamilyIndex 777, must have been given when the device was created.");
 
     ASSERT_NO_FATAL_FAILURE(InitState());
     ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
@@ -3730,15 +4551,12 @@ TEST_F(VkLayerTest, InvalidQueueFamilyIndex) {
     // Introduce failure by specifying invalid queue_family_index
     uint32_t qfi = 777;
     buffCI.pQueueFamilyIndices = &qfi;
+    buffCI.sharingMode = VK_SHARING_MODE_CONCURRENT; // qfi only matters in CONCURRENT mode
 
     VkBuffer ib;
     vkCreateBuffer(m_device->device(), &buffCI, NULL, &ib);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCreateBuffer() has "
-        "QueueFamilyIndex greater than...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, ExecuteCommandsPrimaryCB) {
@@ -3757,11 +4575,7 @@ TEST_F(VkLayerTest, ExecuteCommandsPrimaryCB) {
     VkCommandBuffer primCB = m_commandBuffer->GetBufferHandle();
     vkCmdExecuteCommands(m_commandBuffer->GetBufferHandle(), 1, &primCB);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCmdExecuteCommands() called w/ "
-                  "Primary Cmd Buffer '";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, DSTypeMismatch) {
@@ -3855,12 +4669,7 @@ TEST_F(VkLayerTest, DSTypeMismatch) {
 
     vkUpdateDescriptorSets(m_device->device(), 1, &descriptor_write, 0, NULL);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Write descriptor update has "
-                  "descriptor type VK_DESCRIPTOR_TYPE_SAMPLER that does not "
-                  "match...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroySampler(m_device->device(), sampler, NULL);
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
@@ -3961,12 +4770,7 @@ TEST_F(VkLayerTest, DSUpdateOutOfBounds) {
 
     vkUpdateDescriptorSets(m_device->device(), 1, &descriptor_write, 0, NULL);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Descriptor update type of "
-                  "VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET is out of bounds for "
-                  "matching binding...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroySampler(m_device->device(), sampler, NULL);
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
@@ -4065,11 +4869,7 @@ TEST_F(VkLayerTest, InvalidDSUpdateIndex) {
 
     vkUpdateDescriptorSets(m_device->device(), 1, &descriptor_write, 0, NULL);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Descriptor Set <blah> does not have "
-                  "binding to match update binding '";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroySampler(m_device->device(), sampler, NULL);
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
@@ -4166,10 +4966,7 @@ TEST_F(VkLayerTest, InvalidDSUpdateStruct) {
 
     vkUpdateDescriptorSets(m_device->device(), 1, &descriptor_write, 0, NULL);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Unexpected UPDATE struct of type '";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroySampler(m_device->device(), sampler, NULL);
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
@@ -4248,11 +5045,7 @@ TEST_F(VkLayerTest, SampleDescriptorUpdateError) {
 
     vkUpdateDescriptorSets(m_device->device(), 1, &descriptor_write, 0, NULL);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Attempt to update descriptor with "
-                  "invalid sampler...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
     vkDestroyDescriptorPool(m_device->device(), ds_pool, NULL);
@@ -4353,11 +5146,7 @@ TEST_F(VkLayerTest, ImageViewDescriptorUpdateError) {
 
     vkUpdateDescriptorSets(m_device->device(), 1, &descriptor_write, 0, NULL);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Attempt to update descriptor with "
-                  "invalid imageView...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroySampler(m_device->device(), sampler, NULL);
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
@@ -4473,12 +5262,7 @@ TEST_F(VkLayerTest, CopyDescriptorUpdateErrors) {
     copy_ds_update.descriptorCount = 1; // copy 1 descriptor
     vkUpdateDescriptorSets(m_device->device(), 0, NULL, 1, &copy_ds_update);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Copy descriptor update index 0, "
-                  "update count #1, has src update descriptor "
-                  "type_DESCRIPTOR_TYPE_SAMPLER'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
     // Now perform a copy update that fails due to binding out of bounds
     m_errorMonitor->SetDesiredFailureMsg(
         VK_DEBUG_REPORT_ERROR_BIT_EXT,
@@ -4493,11 +5277,7 @@ TEST_F(VkLayerTest, CopyDescriptorUpdateErrors) {
     copy_ds_update.descriptorCount = 1; // copy 1 descriptor
     vkUpdateDescriptorSets(m_device->device(), 0, NULL, 1, &copy_ds_update);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Copy descriptor update 0 has "
-                  "srcBinding 3 which is out of bounds...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     // Now perform a copy update that fails due to binding out of bounds
     m_errorMonitor->SetDesiredFailureMsg(
@@ -4514,11 +5294,7 @@ TEST_F(VkLayerTest, CopyDescriptorUpdateErrors) {
         5; // ERROR copy 5 descriptors (out of bounds for layout)
     vkUpdateDescriptorSets(m_device->device(), 0, NULL, 1, &copy_ds_update);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Copy descriptor src update is out of "
-                  "bounds for matching binding 1...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroySampler(m_device->device(), sampler, NULL);
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
@@ -4603,8 +5379,107 @@ TEST_F(VkLayerTest, NumSamplesMismatch) {
                    VK_SHADER_STAGE_VERTEX_BIT, this);
     VkShaderObj fs(m_device, bindStateFragShaderText,
                    VK_SHADER_STAGE_FRAGMENT_BIT,
-                   this); //  TODO - We shouldn't need a fragment shader
+                   this); // We shouldn't need a fragment shader
                           // but add it to be able to run on more devices
+    VkPipelineObj pipe(m_device);
+    pipe.AddShader(&vs);
+    pipe.AddShader(&fs);
+    pipe.AddColorAttachment();
+    pipe.SetMSAA(&pipe_ms_state_ci);
+    pipe.CreateVKPipeline(pipeline_layout, renderPass());
+
+    BeginCommandBuffer();
+    vkCmdBindPipeline(m_commandBuffer->GetBufferHandle(),
+                      VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.handle());
+
+    m_errorMonitor->VerifyFound();
+
+    vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
+    vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
+    vkDestroyDescriptorPool(m_device->device(), ds_pool, NULL);
+}
+#ifdef ADD_BACK_IN_WHEN_CHECK_IS_BACK // TODO : Re-enable when GH256 fixed
+TEST_F(VkLayerTest, NumBlendAttachMismatch) {
+    // Create Pipeline where the number of blend attachments doesn't match the
+    // number of color attachments.  In this case, we don't add any color
+    // blend attachments even though we have a color attachment.
+    VkResult err;
+
+    m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
+        "Mismatch between blend state attachment");
+
+    ASSERT_NO_FATAL_FAILURE(InitState());
+    ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
+    VkDescriptorPoolSize ds_type_count = {};
+    ds_type_count.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    ds_type_count.descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo ds_pool_ci = {};
+    ds_pool_ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    ds_pool_ci.pNext = NULL;
+    ds_pool_ci.maxSets = 1;
+    ds_pool_ci.poolSizeCount = 1;
+    ds_pool_ci.pPoolSizes = &ds_type_count;
+
+    VkDescriptorPool ds_pool;
+    err =
+        vkCreateDescriptorPool(m_device->device(), &ds_pool_ci, NULL, &ds_pool);
+    ASSERT_VK_SUCCESS(err);
+
+    VkDescriptorSetLayoutBinding dsl_binding = {};
+    dsl_binding.binding = 0;
+    dsl_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    dsl_binding.descriptorCount = 1;
+    dsl_binding.stageFlags = VK_SHADER_STAGE_ALL;
+    dsl_binding.pImmutableSamplers = NULL;
+
+    VkDescriptorSetLayoutCreateInfo ds_layout_ci = {};
+    ds_layout_ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    ds_layout_ci.pNext = NULL;
+    ds_layout_ci.bindingCount = 1;
+    ds_layout_ci.pBindings = &dsl_binding;
+
+    VkDescriptorSetLayout ds_layout;
+    err = vkCreateDescriptorSetLayout(m_device->device(), &ds_layout_ci, NULL,
+        &ds_layout);
+    ASSERT_VK_SUCCESS(err);
+
+    VkDescriptorSet descriptorSet;
+    VkDescriptorSetAllocateInfo alloc_info = {};
+    alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    alloc_info.descriptorSetCount = 1;
+    alloc_info.descriptorPool = ds_pool;
+    alloc_info.pSetLayouts = &ds_layout;
+    err = vkAllocateDescriptorSets(m_device->device(), &alloc_info,
+        &descriptorSet);
+    ASSERT_VK_SUCCESS(err);
+
+    VkPipelineMultisampleStateCreateInfo pipe_ms_state_ci = {};
+    pipe_ms_state_ci.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    pipe_ms_state_ci.pNext = NULL;
+    pipe_ms_state_ci.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    pipe_ms_state_ci.sampleShadingEnable = 0;
+    pipe_ms_state_ci.minSampleShading = 1.0;
+    pipe_ms_state_ci.pSampleMask = NULL;
+
+    VkPipelineLayoutCreateInfo pipeline_layout_ci = {};
+    pipeline_layout_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipeline_layout_ci.pNext = NULL;
+    pipeline_layout_ci.setLayoutCount = 1;
+    pipeline_layout_ci.pSetLayouts = &ds_layout;
+
+    VkPipelineLayout pipeline_layout;
+    err = vkCreatePipelineLayout(m_device->device(), &pipeline_layout_ci, NULL,
+        &pipeline_layout);
+    ASSERT_VK_SUCCESS(err);
+
+    VkShaderObj vs(m_device, bindStateVertShaderText,
+        VK_SHADER_STAGE_VERTEX_BIT, this);
+    VkShaderObj fs(m_device, bindStateFragShaderText,
+        VK_SHADER_STAGE_FRAGMENT_BIT,
+        this); // We shouldn't need a fragment shader
+               // but add it to be able to run on more devices
     VkPipelineObj pipe(m_device);
     pipe.AddShader(&vs);
     pipe.AddShader(&fs);
@@ -4613,24 +5488,20 @@ TEST_F(VkLayerTest, NumSamplesMismatch) {
 
     BeginCommandBuffer();
     vkCmdBindPipeline(m_commandBuffer->GetBufferHandle(),
-                      VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.handle());
+        VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.handle());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not recieve Error 'Num samples mismatch!...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
     vkDestroyDescriptorPool(m_device->device(), ds_pool, NULL);
 }
-
+#endif //ADD_BACK_IN_WHEN_CHECK_IS_BACK
 TEST_F(VkLayerTest, ClearCmdNoDraw) {
     // Create CommandBuffer where we add ClearCmd for FB Color attachment prior
     // to issuing a Draw
     VkResult err;
 
-    // TODO: verify that this matches layer
     m_errorMonitor->SetDesiredFailureMsg(
         VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT,
         "vkCmdClearAttachments() issued on CB object ");
@@ -4704,7 +5575,7 @@ TEST_F(VkLayerTest, ClearCmdNoDraw) {
 
     VkShaderObj vs(m_device, bindStateVertShaderText,
                    VK_SHADER_STAGE_VERTEX_BIT, this);
-    //  TODO - We shouldn't need a fragment shader but add it to be able to run
+    //  We shouldn't need a fragment shader but add it to be able to run
     //  on more devices
     VkShaderObj fs(m_device, bindStateFragShaderText,
                    VK_SHADER_STAGE_FRAGMENT_BIT, this);
@@ -4733,11 +5604,7 @@ TEST_F(VkLayerTest, ClearCmdNoDraw) {
     vkCmdClearAttachments(m_commandBuffer->GetBufferHandle(), 1,
                           &color_attachment, 1, &clear_rect);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCommandClearAttachments() issued "
-                  "on CB object...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
@@ -4823,11 +5690,12 @@ TEST_F(VkLayerTest, VtxBufferBadIndex) {
                    VK_SHADER_STAGE_VERTEX_BIT, this);
     VkShaderObj fs(m_device, bindStateFragShaderText,
                    VK_SHADER_STAGE_FRAGMENT_BIT,
-                   this); //  TODO - We shouldn't need a fragment shader
+                   this); // We shouldn't need a fragment shader
                           // but add it to be able to run on more devices
     VkPipelineObj pipe(m_device);
     pipe.AddShader(&vs);
     pipe.AddShader(&fs);
+    pipe.AddColorAttachment();
     pipe.SetMSAA(&pipe_ms_state_ci);
     pipe.SetViewport(m_viewports);
     pipe.SetScissor(m_scissors);
@@ -4843,11 +5711,7 @@ TEST_F(VkLayerTest, VtxBufferBadIndex) {
     BindVertexBuffer(&vbo, (VkDeviceSize)0, 1); // VBO idx 1, but no VBO in PSO
     Draw(1, 0, 0, 0);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Vtx Buffer Index 0 was bound, but no "
-                  "vtx buffers are attached to PSO.'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyPipelineLayout(m_device->device(), pipeline_layout, NULL);
     vkDestroyDescriptorSetLayout(m_device->device(), ds_layout, NULL);
@@ -4920,11 +5784,7 @@ TEST_F(VkLayerTest, ThreadCommandBufferCollision) {
 
     m_errorMonitor->SetBailout(NULL);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'THREADING ERROR' from using one "
-                  "VkCommandBufferObj in two threads";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyEvent(device(), event, NULL);
 }
@@ -4954,10 +5814,7 @@ TEST_F(VkLayerTest, InvalidSPIRVCodeSize) {
     moduleCreateInfo.flags = 0;
     vkCreateShaderModule(m_device->device(), &moduleCreateInfo, NULL, &module);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not recieive Error 'Shader is not SPIR-V'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, InvalidSPIRVMagic) {
@@ -4982,10 +5839,7 @@ TEST_F(VkLayerTest, InvalidSPIRVMagic) {
     moduleCreateInfo.flags = 0;
     vkCreateShaderModule(m_device->device(), &moduleCreateInfo, NULL, &module);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not recieive Error 'Shader is not SPIR-V'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, InvalidSPIRVVersion) {
@@ -5011,10 +5865,7 @@ TEST_F(VkLayerTest, InvalidSPIRVVersion) {
     moduleCreateInfo.flags = 0;
     vkCreateShaderModule(m_device->device(), &moduleCreateInfo, NULL, &module);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not recieive Error 'Shader is not SPIR-V'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineVertexOutputNotConsumed) {
@@ -5025,9 +5876,7 @@ TEST_F(VkLayerTest, CreatePipelineVertexOutputNotConsumed) {
     ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out float x;\n"
         "out gl_PerVertex {\n"
@@ -5038,9 +5887,7 @@ TEST_F(VkLayerTest, CreatePipelineVertexOutputNotConsumed) {
         "   x = 0;\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out vec4 color;\n"
         "void main(){\n"
@@ -5061,10 +5908,7 @@ TEST_F(VkLayerTest, CreatePipelineVertexOutputNotConsumed) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Warning 'not consumed by fragment shader'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineFragmentInputNotProvided) {
@@ -5075,9 +5919,7 @@ TEST_F(VkLayerTest, CreatePipelineFragmentInputNotProvided) {
     ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "out gl_PerVertex {\n"
         "    vec4 gl_Position;\n"
@@ -5086,9 +5928,7 @@ TEST_F(VkLayerTest, CreatePipelineFragmentInputNotProvided) {
         "   gl_Position = vec4(1);\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) in float x;\n"
         "layout(location=0) out vec4 color;\n"
@@ -5110,10 +5950,7 @@ TEST_F(VkLayerTest, CreatePipelineFragmentInputNotProvided) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'not written by vertex shader'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineFragmentInputNotProvidedInBlock) {
@@ -5124,9 +5961,7 @@ TEST_F(VkLayerTest, CreatePipelineFragmentInputNotProvidedInBlock) {
     ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "out gl_PerVertex {\n"
         "    vec4 gl_Position;\n"
@@ -5136,8 +5971,6 @@ TEST_F(VkLayerTest, CreatePipelineFragmentInputNotProvidedInBlock) {
         "}\n";
     char const *fsSource =
         "#version 450\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
         "\n"
         "in block { layout(location=0) float x; } ins;\n"
         "layout(location=0) out vec4 color;\n"
@@ -5159,10 +5992,7 @@ TEST_F(VkLayerTest, CreatePipelineFragmentInputNotProvidedInBlock) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'not written by vertex shader'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineVsFsTypeMismatchArraySize) {
@@ -5175,9 +6005,7 @@ TEST_F(VkLayerTest, CreatePipelineVsFsTypeMismatchArraySize) {
     ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out float x[2];\n"
         "out gl_PerVertex {\n"
@@ -5188,9 +6016,7 @@ TEST_F(VkLayerTest, CreatePipelineVsFsTypeMismatchArraySize) {
         "   gl_Position = vec4(1);\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) in float x[3];\n"
         "layout(location=0) out vec4 color;\n"
@@ -5212,12 +6038,7 @@ TEST_F(VkLayerTest, CreatePipelineVsFsTypeMismatchArraySize) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        m_errorMonitor->DumpFailureMsgs();
-        FAIL() << "Did not receive Error 'Type mismatch on location 0.0: 'ptr to "
-                  "output arr[2] of float32' vs 'ptr to input arr[3] of "
-                  "float32''";
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineVsFsTypeMismatch) {
@@ -5228,9 +6049,7 @@ TEST_F(VkLayerTest, CreatePipelineVsFsTypeMismatch) {
     ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out int x;\n"
         "out gl_PerVertex {\n"
@@ -5241,9 +6060,7 @@ TEST_F(VkLayerTest, CreatePipelineVsFsTypeMismatch) {
         "   gl_Position = vec4(1);\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) in float x;\n" /* VS writes int */
         "layout(location=0) out vec4 color;\n"
@@ -5265,10 +6082,7 @@ TEST_F(VkLayerTest, CreatePipelineVsFsTypeMismatch) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Type mismatch on location 0'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineVsFsTypeMismatchInBlock) {
@@ -5280,8 +6094,6 @@ TEST_F(VkLayerTest, CreatePipelineVsFsTypeMismatchInBlock) {
 
     char const *vsSource =
         "#version 450\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
         "\n"
         "out block { layout(location=0) int x; } outs;\n"
         "out gl_PerVertex {\n"
@@ -5293,8 +6105,6 @@ TEST_F(VkLayerTest, CreatePipelineVsFsTypeMismatchInBlock) {
         "}\n";
     char const *fsSource =
         "#version 450\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
         "\n"
         "in block { layout(location=0) float x; } ins;\n" /* VS writes int */
         "layout(location=0) out vec4 color;\n"
@@ -5316,10 +6126,7 @@ TEST_F(VkLayerTest, CreatePipelineVsFsTypeMismatchInBlock) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        m_errorMonitor->DumpFailureMsgs();
-        FAIL() << "Did not receive Error 'Type mismatch on location 0'";
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineVsFsMismatchByLocation) {
@@ -5331,8 +6138,6 @@ TEST_F(VkLayerTest, CreatePipelineVsFsMismatchByLocation) {
 
     char const *vsSource =
         "#version 450\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
         "\n"
         "out block { layout(location=1) float x; } outs;\n"
         "out gl_PerVertex {\n"
@@ -5344,8 +6149,6 @@ TEST_F(VkLayerTest, CreatePipelineVsFsMismatchByLocation) {
         "}\n";
     char const *fsSource =
         "#version 450\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
         "\n"
         "in block { layout(location=0) float x; } ins;\n"
         "layout(location=0) out vec4 color;\n"
@@ -5367,10 +6170,7 @@ TEST_F(VkLayerTest, CreatePipelineVsFsMismatchByLocation) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        m_errorMonitor->DumpFailureMsgs();
-        FAIL() << "Did not receive Error 'location 0.0 which is not written by vertex shader'";
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineVsFsMismatchByComponent) {
@@ -5382,8 +6182,6 @@ TEST_F(VkLayerTest, CreatePipelineVsFsMismatchByComponent) {
 
     char const *vsSource =
         "#version 450\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
         "\n"
         "out block { layout(location=0, component=0) float x; } outs;\n"
         "out gl_PerVertex {\n"
@@ -5395,8 +6193,6 @@ TEST_F(VkLayerTest, CreatePipelineVsFsMismatchByComponent) {
         "}\n";
     char const *fsSource =
         "#version 450\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
         "\n"
         "in block { layout(location=0, component=1) float x; } ins;\n"
         "layout(location=0) out vec4 color;\n"
@@ -5418,10 +6214,7 @@ TEST_F(VkLayerTest, CreatePipelineVsFsMismatchByComponent) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        m_errorMonitor->DumpFailureMsgs();
-        FAIL() << "Did not receive Error 'location 0.1 which is not written by vertex shader'";
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineAttribNotConsumed) {
@@ -5439,9 +6232,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribNotConsumed) {
     input_attrib.format = VK_FORMAT_R32_SFLOAT;
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "out gl_PerVertex {\n"
         "    vec4 gl_Position;\n"
@@ -5450,9 +6241,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribNotConsumed) {
         "   gl_Position = vec4(1);\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out vec4 color;\n"
         "void main(){\n"
@@ -5476,10 +6265,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribNotConsumed) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Warning 'location 0 not consumed by VS'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineAttribLocationMismatch) {
@@ -5497,9 +6283,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribLocationMismatch) {
     input_attrib.format = VK_FORMAT_R32_SFLOAT;
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=1) in float x;\n"
         "out gl_PerVertex {\n"
@@ -5509,9 +6293,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribLocationMismatch) {
         "   gl_Position = vec4(x);\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out vec4 color;\n"
         "void main(){\n"
@@ -5535,10 +6317,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribLocationMismatch) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        m_errorMonitor->DumpFailureMsgs();
-        FAIL() << "Did not receive Warning 'location 0 not consumed by VS'";
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineAttribNotProvided) {
@@ -5550,9 +6329,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribNotProvided) {
     ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) in vec4 x;\n" /* not provided */
         "out gl_PerVertex {\n"
@@ -5562,9 +6339,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribNotProvided) {
         "   gl_Position = x;\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out vec4 color;\n"
         "void main(){\n"
@@ -5585,11 +6360,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribNotProvided) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'VS consumes input at location 0 but "
-                  "not provided'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineAttribTypeMismatch) {
@@ -5608,9 +6379,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribTypeMismatch) {
     input_attrib.format = VK_FORMAT_R32_SFLOAT;
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) in int x;\n" /* attrib provided float */
         "out gl_PerVertex {\n"
@@ -5620,9 +6389,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribTypeMismatch) {
         "   gl_Position = vec4(x);\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out vec4 color;\n"
         "void main(){\n"
@@ -5646,15 +6413,54 @@ TEST_F(VkLayerTest, CreatePipelineAttribTypeMismatch) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'location 0 does not match VS input "
-                  "type'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+}
+
+TEST_F(VkLayerTest, CreatePipelineDuplicateStage) {
+    m_errorMonitor->SetDesiredFailureMsg(
+        VK_DEBUG_REPORT_ERROR_BIT_EXT,
+        "Multiple shaders provided for stage VK_SHADER_STAGE_VERTEX_BIT");
+
+    ASSERT_NO_FATAL_FAILURE(InitState());
+    ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
+
+    char const *vsSource =
+        "#version 450\n"
+        "\n"
+        "out gl_PerVertex {\n"
+        "    vec4 gl_Position;\n"
+        "};\n"
+        "void main(){\n"
+        "   gl_Position = vec4(1);\n"
+        "}\n";
+    char const *fsSource =
+        "#version 450\n"
+        "\n"
+        "layout(location=0) out vec4 color;\n"
+        "void main(){\n"
+        "   color = vec4(1);\n"
+        "}\n";
+
+    VkShaderObj vs(m_device, vsSource, VK_SHADER_STAGE_VERTEX_BIT, this);
+    VkShaderObj fs(m_device, fsSource, VK_SHADER_STAGE_FRAGMENT_BIT, this);
+
+    VkPipelineObj pipe(m_device);
+    pipe.AddColorAttachment();
+    pipe.AddShader(&vs);
+    pipe.AddShader(&vs);
+    pipe.AddShader(&fs);
+
+    VkDescriptorSetObj descriptorSet(m_device);
+    descriptorSet.AppendDummy();
+    descriptorSet.CreateVKDescriptorSet(m_commandBuffer);
+
+    pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
+
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineAttribMatrixType) {
-    m_errorMonitor->SetDesiredFailureMsg(~0u, "");
+    m_errorMonitor->ExpectSuccess();
 
     ASSERT_NO_FATAL_FAILURE(InitState());
     ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
@@ -5671,9 +6477,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribMatrixType) {
     }
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) in mat2x4 x;\n"
         "out gl_PerVertex {\n"
@@ -5683,9 +6487,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribMatrixType) {
         "   gl_Position = x[0] + x[1];\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out vec4 color;\n"
         "void main(){\n"
@@ -5710,16 +6512,12 @@ TEST_F(VkLayerTest, CreatePipelineAttribMatrixType) {
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
     /* expect success */
-    if (m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Expected to succeed but: "
-               << m_errorMonitor->GetFailureMsg();
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyNotFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineAttribArrayType)
 {
-    m_errorMonitor->SetDesiredFailureMsg(~0u, "");
+    m_errorMonitor->ExpectSuccess();
 
     ASSERT_NO_FATAL_FAILURE(InitState());
     ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
@@ -5736,9 +6534,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribArrayType)
     }
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) in vec4 x[2];\n"
         "out gl_PerVertex {\n"
@@ -5748,9 +6544,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribArrayType)
         "   gl_Position = x[0] + x[1];\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out vec4 color;\n"
         "void main(){\n"
@@ -5774,11 +6568,304 @@ TEST_F(VkLayerTest, CreatePipelineAttribArrayType)
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Expected to succeed but: " <<
-m_errorMonitor->GetFailureMsg();
-        m_errorMonitor->DumpFailureMsgs();
+    m_errorMonitor->VerifyNotFound();
+}
+
+TEST_F(VkLayerTest, CreatePipelineSimplePositive)
+{
+    m_errorMonitor->ExpectSuccess();
+
+    ASSERT_NO_FATAL_FAILURE(InitState());
+    ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
+
+    char const *vsSource =
+        "#version 450\n"
+        "out gl_PerVertex {\n"
+        "    vec4 gl_Position;\n"
+        "};\n"
+        "void main(){\n"
+        "   gl_Position = vec4(0);\n"
+        "}\n";
+    char const *fsSource =
+        "#version 450\n"
+        "\n"
+        "layout(location=0) out vec4 color;\n"
+        "void main(){\n"
+        "   color = vec4(1);\n"
+        "}\n";
+
+    VkShaderObj vs(m_device, vsSource, VK_SHADER_STAGE_VERTEX_BIT, this);
+    VkShaderObj fs(m_device, fsSource, VK_SHADER_STAGE_FRAGMENT_BIT, this);
+
+    VkPipelineObj pipe(m_device);
+    pipe.AddColorAttachment();
+    pipe.AddShader(&vs);
+    pipe.AddShader(&fs);
+
+    VkDescriptorSetObj descriptorSet(m_device);
+    descriptorSet.AppendDummy();
+    descriptorSet.CreateVKDescriptorSet(m_commandBuffer);
+
+    pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
+
+    m_errorMonitor->VerifyNotFound();
+}
+
+TEST_F(VkLayerTest, CreatePipelineRelaxedTypeMatch)
+{
+    m_errorMonitor->ExpectSuccess();
+
+    // VK 1.0.8 Specification, 14.1.3 "Additionally,..." block
+
+    ASSERT_NO_FATAL_FAILURE(InitState());
+    ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
+
+    char const *vsSource =
+        "#version 450\n"
+        "out gl_PerVertex {\n"
+        "    vec4 gl_Position;\n"
+        "};\n"
+        "layout(location=0) out vec3 x;\n"
+        "layout(location=1) out ivec3 y;\n"
+        "layout(location=2) out vec3 z;\n"
+        "void main(){\n"
+        "   gl_Position = vec4(0);\n"
+        "   x = vec3(0); y = ivec3(0); z = vec3(0);\n"
+        "}\n";
+    char const *fsSource =
+        "#version 450\n"
+        "\n"
+        "layout(location=0) out vec4 color;\n"
+        "layout(location=0) in float x;\n"
+        "layout(location=1) flat in int y;\n"
+        "layout(location=2) in vec2 z;\n"
+        "void main(){\n"
+        "   color = vec4(1 + x + y + z.x);\n"
+        "}\n";
+
+    VkShaderObj vs(m_device, vsSource, VK_SHADER_STAGE_VERTEX_BIT, this);
+    VkShaderObj fs(m_device, fsSource, VK_SHADER_STAGE_FRAGMENT_BIT, this);
+
+    VkPipelineObj pipe(m_device);
+    pipe.AddColorAttachment();
+    pipe.AddShader(&vs);
+    pipe.AddShader(&fs);
+
+    VkDescriptorSetObj descriptorSet(m_device);
+    descriptorSet.AppendDummy();
+    descriptorSet.CreateVKDescriptorSet(m_commandBuffer);
+
+    pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
+
+    m_errorMonitor->VerifyNotFound();
+}
+
+TEST_F(VkLayerTest, CreatePipelineTessPerVertex)
+{
+    m_errorMonitor->ExpectSuccess();
+
+    ASSERT_NO_FATAL_FAILURE(InitState());
+    ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
+
+    if (!m_device->phy().features().tessellationShader) {
+        printf("Device does not support tessellation shaders; skipped.\n");
+        return;
     }
+
+    char const *vsSource =
+        "#version 450\n"
+        "void main(){}\n";
+    char const *tcsSource =
+        "#version 450\n"
+        "layout(location=0) out int x[];\n"
+        "layout(vertices=3) out;\n"
+        "void main(){\n"
+        "   gl_TessLevelOuter[0] = gl_TessLevelOuter[1] = gl_TessLevelOuter[2] = 1;\n"
+        "   gl_TessLevelInner[0] = 1;\n"
+        "   x[gl_InvocationID] = gl_InvocationID;\n"
+        "}\n";
+    char const *tesSource =
+        "#version 450\n"
+        "layout(triangles, equal_spacing, cw) in;\n"
+        "layout(location=0) in int x[];\n"
+        "out gl_PerVertex { vec4 gl_Position; };\n"
+        "void main(){\n"
+        "   gl_Position.xyz = gl_TessCoord;\n"
+        "   gl_Position.w = x[0] + x[1] + x[2];\n"
+        "}\n";
+    char const *fsSource =
+        "#version 450\n"
+        "layout(location=0) out vec4 color;\n"
+        "void main(){\n"
+        "   color = vec4(1);\n"
+        "}\n";
+
+    VkShaderObj vs(m_device, vsSource, VK_SHADER_STAGE_VERTEX_BIT, this);
+    VkShaderObj tcs(m_device, tcsSource, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, this);
+    VkShaderObj tes(m_device, tesSource, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, this);
+    VkShaderObj fs(m_device, fsSource, VK_SHADER_STAGE_FRAGMENT_BIT, this);
+
+    VkPipelineInputAssemblyStateCreateInfo iasci{
+        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        nullptr,
+        0,
+        VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
+        VK_FALSE};
+
+    VkPipelineTessellationStateCreateInfo tsci{
+        VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,
+        nullptr,
+        0,
+        3};
+
+    VkPipelineObj pipe(m_device);
+    pipe.SetInputAssembly(&iasci);
+    pipe.SetTessellation(&tsci);
+    pipe.AddColorAttachment();
+    pipe.AddShader(&vs);
+    pipe.AddShader(&tcs);
+    pipe.AddShader(&tes);
+    pipe.AddShader(&fs);
+
+    VkDescriptorSetObj descriptorSet(m_device);
+    descriptorSet.AppendDummy();
+    descriptorSet.CreateVKDescriptorSet(m_commandBuffer);
+
+    pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
+
+    m_errorMonitor->VerifyNotFound();
+}
+
+TEST_F(VkLayerTest, CreatePipelineGeometryInputBlockPositive)
+{
+    m_errorMonitor->ExpectSuccess();
+
+    ASSERT_NO_FATAL_FAILURE(InitState());
+    ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
+
+    if (!m_device->phy().features().geometryShader) {
+        printf("Device does not support geometry shaders; skipped.\n");
+        return;
+    }
+
+    char const *vsSource =
+        "#version 450\n"
+        "layout(location=0) out VertexData { vec4 x; } vs_out;\n"
+        "void main(){\n"
+        "   vs_out.x = vec4(1);\n"
+        "}\n";
+    char const *gsSource =
+        "#version 450\n"
+        "layout(triangles) in;\n"
+        "layout(triangle_strip, max_vertices=3) out;\n"
+        "layout(location=0) in VertexData { vec4 x; } gs_in[];\n"
+        "out gl_PerVertex { vec4 gl_Position; };\n"
+        "void main() {\n"
+        "   gl_Position = gs_in[0].x;\n"
+        "   EmitVertex();\n"
+        "}\n";
+    char const *fsSource =
+        "#version 450\n"
+        "layout(location=0) out vec4 color;\n"
+        "void main(){\n"
+        "   color = vec4(1);\n"
+        "}\n";
+
+    VkShaderObj vs(m_device, vsSource, VK_SHADER_STAGE_VERTEX_BIT, this);
+    VkShaderObj gs(m_device, gsSource, VK_SHADER_STAGE_GEOMETRY_BIT, this);
+    VkShaderObj fs(m_device, fsSource, VK_SHADER_STAGE_FRAGMENT_BIT, this);
+
+    VkPipelineObj pipe(m_device);
+    pipe.AddColorAttachment();
+    pipe.AddShader(&vs);
+    pipe.AddShader(&gs);
+    pipe.AddShader(&fs);
+
+    VkDescriptorSetObj descriptorSet(m_device);
+    descriptorSet.AppendDummy();
+    descriptorSet.CreateVKDescriptorSet(m_commandBuffer);
+
+    pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
+
+    m_errorMonitor->VerifyNotFound();
+}
+
+TEST_F(VkLayerTest, CreatePipelineTessPatchDecorationMismatch)
+{
+    m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
+                                         "is per-vertex in tessellation control shader stage "
+                                         "but per-patch in tessellation evaluation shader stage");
+
+    ASSERT_NO_FATAL_FAILURE(InitState());
+    ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
+
+    if (!m_device->phy().features().tessellationShader) {
+        printf("Device does not support tessellation shaders; skipped.\n");
+        return;
+    }
+
+    char const *vsSource =
+        "#version 450\n"
+        "void main(){}\n";
+    char const *tcsSource =
+        "#version 450\n"
+        "layout(location=0) out int x[];\n"
+        "layout(vertices=3) out;\n"
+        "void main(){\n"
+        "   gl_TessLevelOuter[0] = gl_TessLevelOuter[1] = gl_TessLevelOuter[2] = 1;\n"
+        "   gl_TessLevelInner[0] = 1;\n"
+        "   x[gl_InvocationID] = gl_InvocationID;\n"
+        "}\n";
+    char const *tesSource =
+        "#version 450\n"
+        "layout(triangles, equal_spacing, cw) in;\n"
+        "layout(location=0) patch in int x;\n"
+        "out gl_PerVertex { vec4 gl_Position; };\n"
+        "void main(){\n"
+        "   gl_Position.xyz = gl_TessCoord;\n"
+        "   gl_Position.w = x;\n"
+        "}\n";
+    char const *fsSource =
+        "#version 450\n"
+        "layout(location=0) out vec4 color;\n"
+        "void main(){\n"
+        "   color = vec4(1);\n"
+        "}\n";
+
+    VkShaderObj vs(m_device, vsSource, VK_SHADER_STAGE_VERTEX_BIT, this);
+    VkShaderObj tcs(m_device, tcsSource, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT, this);
+    VkShaderObj tes(m_device, tesSource, VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, this);
+    VkShaderObj fs(m_device, fsSource, VK_SHADER_STAGE_FRAGMENT_BIT, this);
+
+    VkPipelineInputAssemblyStateCreateInfo iasci{
+        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        nullptr,
+        0,
+        VK_PRIMITIVE_TOPOLOGY_PATCH_LIST,
+        VK_FALSE};
+
+    VkPipelineTessellationStateCreateInfo tsci{
+        VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,
+        nullptr,
+        0,
+        3};
+
+    VkPipelineObj pipe(m_device);
+    pipe.SetInputAssembly(&iasci);
+    pipe.SetTessellation(&tsci);
+    pipe.AddColorAttachment();
+    pipe.AddShader(&vs);
+    pipe.AddShader(&tcs);
+    pipe.AddShader(&tes);
+    pipe.AddShader(&fs);
+
+    VkDescriptorSetObj descriptorSet(m_device);
+    descriptorSet.AppendDummy();
+    descriptorSet.CreateVKDescriptorSet(m_commandBuffer);
+
+    pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
+
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineAttribBindingConflict) {
@@ -5798,9 +6885,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribBindingConflict) {
     input_attrib.format = VK_FORMAT_R32_SFLOAT;
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) in float x;\n" /* attrib provided float */
         "out gl_PerVertex {\n"
@@ -5810,9 +6895,7 @@ TEST_F(VkLayerTest, CreatePipelineAttribBindingConflict) {
         "   gl_Position = vec4(x);\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out vec4 color;\n"
         "void main(){\n"
@@ -5836,11 +6919,74 @@ TEST_F(VkLayerTest, CreatePipelineAttribBindingConflict) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Duplicate vertex input binding "
-                  "descriptions for binding 0'";
-        m_errorMonitor->DumpFailureMsgs();
+    m_errorMonitor->VerifyFound();
+}
+
+TEST_F(VkLayerTest, CreatePipeline64BitAttributesPositive) {
+    m_errorMonitor->ExpectSuccess();
+
+    ASSERT_NO_FATAL_FAILURE(InitState());
+    ASSERT_NO_FATAL_FAILURE(InitRenderTarget());
+
+    if (!m_device->phy().features().tessellationShader) {
+        printf("Device does not support 64bit vertex attributes; skipped.\n");
+        return;
     }
+
+    VkVertexInputBindingDescription input_bindings[1];
+    memset(input_bindings, 0, sizeof(input_bindings));
+
+    VkVertexInputAttributeDescription input_attribs[4];
+    memset(input_attribs, 0, sizeof(input_attribs));
+    input_attribs[0].location = 0;
+    input_attribs[0].offset = 0;
+    input_attribs[0].format = VK_FORMAT_R64G64B64A64_SFLOAT;
+    input_attribs[1].location = 2;
+    input_attribs[1].offset = 32;
+    input_attribs[1].format = VK_FORMAT_R64G64B64A64_SFLOAT;
+    input_attribs[2].location = 4;
+    input_attribs[2].offset = 64;
+    input_attribs[2].format = VK_FORMAT_R64G64B64A64_SFLOAT;
+    input_attribs[3].location = 6;
+    input_attribs[3].offset = 96;
+    input_attribs[3].format = VK_FORMAT_R64G64B64A64_SFLOAT;
+
+    char const *vsSource =
+        "#version 450\n"
+        "\n"
+        "layout(location=0) in dmat4 x;\n"
+        "out gl_PerVertex {\n"
+        "    vec4 gl_Position;\n"
+        "};\n"
+        "void main(){\n"
+        "   gl_Position = vec4(x[0][0]);\n"
+        "}\n";
+    char const *fsSource =
+        "#version 450\n"
+        "\n"
+        "layout(location=0) out vec4 color;\n"
+        "void main(){\n"
+        "   color = vec4(1);\n"
+        "}\n";
+
+    VkShaderObj vs(m_device, vsSource, VK_SHADER_STAGE_VERTEX_BIT, this);
+    VkShaderObj fs(m_device, fsSource, VK_SHADER_STAGE_FRAGMENT_BIT, this);
+
+    VkPipelineObj pipe(m_device);
+    pipe.AddColorAttachment();
+    pipe.AddShader(&vs);
+    pipe.AddShader(&fs);
+
+    pipe.AddVertexInputBindings(input_bindings, 1);
+    pipe.AddVertexInputAttribs(input_attribs, 4);
+
+    VkDescriptorSetObj descriptorSet(m_device);
+    descriptorSet.AppendDummy();
+    descriptorSet.CreateVKDescriptorSet(m_commandBuffer);
+
+    pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
+
+    m_errorMonitor->VerifyNotFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineFragmentOutputNotWritten) {
@@ -5850,9 +6996,7 @@ TEST_F(VkLayerTest, CreatePipelineFragmentOutputNotWritten) {
     ASSERT_NO_FATAL_FAILURE(InitState());
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "out gl_PerVertex {\n"
         "    vec4 gl_Position;\n"
@@ -5861,9 +7005,7 @@ TEST_F(VkLayerTest, CreatePipelineFragmentOutputNotWritten) {
         "   gl_Position = vec4(1);\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "void main(){\n"
         "}\n";
@@ -5885,14 +7027,10 @@ TEST_F(VkLayerTest, CreatePipelineFragmentOutputNotWritten) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Attachment 0 not written by FS'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineFragmentOutputNotConsumed) {
-    // TODO: verify that this matches layer
     m_errorMonitor->SetDesiredFailureMsg(
         VK_DEBUG_REPORT_WARNING_BIT_EXT,
         "FS writes to output location 1 with no matching attachment");
@@ -5900,9 +7038,7 @@ TEST_F(VkLayerTest, CreatePipelineFragmentOutputNotConsumed) {
     ASSERT_NO_FATAL_FAILURE(InitState());
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "out gl_PerVertex {\n"
         "    vec4 gl_Position;\n"
@@ -5911,9 +7047,7 @@ TEST_F(VkLayerTest, CreatePipelineFragmentOutputNotConsumed) {
         "   gl_Position = vec4(1);\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out vec4 x;\n"
         "layout(location=1) out vec4 y;\n" /* no matching attachment for this */
@@ -5940,11 +7074,7 @@ TEST_F(VkLayerTest, CreatePipelineFragmentOutputNotConsumed) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'FS writes to output location 1 with "
-                  "no matching attachment'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineFragmentOutputTypeMismatch) {
@@ -5954,9 +7084,7 @@ TEST_F(VkLayerTest, CreatePipelineFragmentOutputTypeMismatch) {
     ASSERT_NO_FATAL_FAILURE(InitState());
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "out gl_PerVertex {\n"
         "    vec4 gl_Position;\n"
@@ -5965,9 +7093,7 @@ TEST_F(VkLayerTest, CreatePipelineFragmentOutputTypeMismatch) {
         "   gl_Position = vec4(1);\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out ivec4 x;\n" /* not UNORM */
         "void main(){\n"
@@ -5991,10 +7117,7 @@ TEST_F(VkLayerTest, CreatePipelineFragmentOutputTypeMismatch) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'does not match FS output type'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelineUniformBlockNotProvided) {
@@ -6004,9 +7127,7 @@ TEST_F(VkLayerTest, CreatePipelineUniformBlockNotProvided) {
     ASSERT_NO_FATAL_FAILURE(InitState());
 
     char const *vsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "out gl_PerVertex {\n"
         "    vec4 gl_Position;\n"
@@ -6015,9 +7136,7 @@ TEST_F(VkLayerTest, CreatePipelineUniformBlockNotProvided) {
         "   gl_Position = vec4(1);\n"
         "}\n";
     char const *fsSource =
-        "#version 400\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
+        "#version 450\n"
         "\n"
         "layout(location=0) out vec4 x;\n"
         "layout(set=0) layout(binding=0) uniform foo { int x; int y; } bar;\n"
@@ -6041,13 +7160,7 @@ TEST_F(VkLayerTest, CreatePipelineUniformBlockNotProvided) {
 
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
-    /* should have generated an error -- pipeline layout does not
-     * provide a uniform buffer in 0.0
-     */
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'not declared in pipeline layout'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, CreatePipelinePushConstantsNotInLayout) {
@@ -6058,8 +7171,6 @@ TEST_F(VkLayerTest, CreatePipelinePushConstantsNotInLayout) {
 
     char const *vsSource =
         "#version 450\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
         "\n"
         "layout(push_constant, std430) uniform foo { float x; } consts;\n"
         "out gl_PerVertex {\n"
@@ -6070,8 +7181,6 @@ TEST_F(VkLayerTest, CreatePipelinePushConstantsNotInLayout) {
         "}\n";
     char const *fsSource =
         "#version 450\n"
-        "#extension GL_ARB_separate_shader_objects: require\n"
-        "#extension GL_ARB_shading_language_420pack: require\n"
         "\n"
         "layout(location=0) out vec4 x;\n"
         "void main(){\n"
@@ -6095,16 +7204,13 @@ TEST_F(VkLayerTest, CreatePipelinePushConstantsNotInLayout) {
     pipe.CreateVKPipeline(descriptorSet.GetPipelineLayout(), renderPass());
 
     /* should have generated an error -- no push constant ranges provided! */
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'not declared in pipeline layout'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 #endif // SHADER_CHECKER_TESTS
 
 #if DEVICE_LIMITS_TESTS
-TEST_F(VkLayerTest, CreateImageLimitsViolationWidth) {
+TEST_F(VkLayerTest, CreateImageLimitsViolationMaxWidth) {
     m_errorMonitor->SetDesiredFailureMsg(
         VK_DEBUG_REPORT_ERROR_BIT_EXT,
         "CreateImage extents exceed allowable limits for format");
@@ -6137,11 +7243,43 @@ TEST_F(VkLayerTest, CreateImageLimitsViolationWidth) {
     image_create_info.extent.width = 65536;
     vkCreateImage(m_device->device(), &image_create_info, NULL, &image);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'CreateImage extents exceed allowable "
-                  "limits for format'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+}
+
+TEST_F(VkLayerTest, CreateImageLimitsViolationMinWidth) {
+    m_errorMonitor->SetDesiredFailureMsg(
+        VK_DEBUG_REPORT_ERROR_BIT_EXT,
+        "CreateImage extents is 0 for at least one required dimension");
+
+    ASSERT_NO_FATAL_FAILURE(InitState());
+
+    // Create an image
+    VkImage image;
+
+    const VkFormat tex_format = VK_FORMAT_B8G8R8A8_UNORM;
+    const int32_t tex_width = 32;
+    const int32_t tex_height = 32;
+
+    VkImageCreateInfo image_create_info = {};
+    image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    image_create_info.pNext = NULL;
+    image_create_info.imageType = VK_IMAGE_TYPE_2D;
+    image_create_info.format = tex_format;
+    image_create_info.extent.width = tex_width;
+    image_create_info.extent.height = tex_height;
+    image_create_info.extent.depth = 1;
+    image_create_info.mipLevels = 1;
+    image_create_info.arrayLayers = 1;
+    image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    image_create_info.tiling = VK_IMAGE_TILING_LINEAR;
+    image_create_info.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+    image_create_info.flags = 0;
+
+    // Introduce error by sending down a bogus width extent
+    image_create_info.extent.width = 0;
+    vkCreateImage(m_device->device(), &image_create_info, NULL, &image);
+
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, UpdateBufferAlignment) {
@@ -6159,23 +7297,14 @@ TEST_F(VkLayerTest, UpdateBufferAlignment) {
     BeginCommandBuffer();
     // Introduce failure by using offset that is not multiple of 4
     m_commandBuffer->UpdateBuffer(buffer.handle(), 1, 4, updateData);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCommandUpdateBuffer parameter, "
-                  "VkDeviceSize dstOffset, is not a multiple of 4'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     // Introduce failure by using size that is not multiple of 4
     m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
                                          "dataSize, is not a multiple of 4");
 
     m_commandBuffer->UpdateBuffer(buffer.handle(), 0, 6, updateData);
-
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCommandUpdateBuffer parameter, "
-                  "VkDeviceSize dataSize, is not a multiple of 4'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
     EndCommandBuffer();
 }
 
@@ -6192,11 +7321,7 @@ TEST_F(VkLayerTest, FillBufferAlignment) {
     BeginCommandBuffer();
     // Introduce failure by using offset that is not multiple of 4
     m_commandBuffer->FillBuffer(buffer.handle(), 1, 4, 0x11111111);
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCommandFillBuffer parameter, "
-                  "VkDeviceSize dstOffset, is not a multiple of 4'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     // Introduce failure by using size that is not multiple of 4
     m_errorMonitor->SetDesiredFailureMsg(VK_DEBUG_REPORT_ERROR_BIT_EXT,
@@ -6204,11 +7329,8 @@ TEST_F(VkLayerTest, FillBufferAlignment) {
 
     m_commandBuffer->FillBuffer(buffer.handle(), 0, 6, 0x11111111);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCommandFillBuffer parameter, "
-                  "VkDeviceSize size, is not a multiple of 4'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
     EndCommandBuffer();
 }
 
@@ -6264,11 +7386,7 @@ TEST_F(VkLayerTest, InvalidImageView) {
     err = vkCreateImageView(m_device->device(), &image_view_create_info, NULL,
                             &view);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCreateImageView called with "
-                  "baseMipLevel 10...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
 TEST_F(VkLayerTest, InvalidImageViewAspect) {
@@ -6320,20 +7438,16 @@ TEST_F(VkLayerTest, InvalidImageViewAspect) {
     err = vkCreateImageView(m_device->device(), &image_view_create_info, NULL,
                             &view);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'VkCreateImageView: Color image "
-                  "formats must have ...'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 }
 
-TEST_F(VkLayerTest, CopyImageTypeMismatch) {
+TEST_F(VkLayerTest, CopyImageLayerCountMismatch) {
     VkResult err;
     bool pass;
 
     m_errorMonitor->SetDesiredFailureMsg(
         VK_DEBUG_REPORT_ERROR_BIT_EXT,
-        "vkCmdCopyImage called with unmatched source and dest image types");
+        "vkCmdCopyImage: number of layers in source and destination subresources for pRegions");
 
     ASSERT_NO_FATAL_FAILURE(InitState());
 
@@ -6353,7 +7467,7 @@ TEST_F(VkLayerTest, CopyImageTypeMismatch) {
     image_create_info.extent.height = 32;
     image_create_info.extent.depth = 1;
     image_create_info.mipLevels = 1;
-    image_create_info.arrayLayers = 1;
+    image_create_info.arrayLayers = 4;
     image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
     image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
     image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
@@ -6362,9 +7476,6 @@ TEST_F(VkLayerTest, CopyImageTypeMismatch) {
     err =
         vkCreateImage(m_device->device(), &image_create_info, NULL, &srcImage);
     ASSERT_VK_SUCCESS(err);
-
-    image_create_info.imageType = VK_IMAGE_TYPE_1D;
-    image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
     err =
         vkCreateImage(m_device->device(), &image_create_info, NULL, &dstImage);
@@ -6403,14 +7514,15 @@ TEST_F(VkLayerTest, CopyImageTypeMismatch) {
     copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     copyRegion.srcSubresource.mipLevel = 0;
     copyRegion.srcSubresource.baseArrayLayer = 0;
-    copyRegion.srcSubresource.layerCount = 0;
+    copyRegion.srcSubresource.layerCount = 1;
     copyRegion.srcOffset.x = 0;
     copyRegion.srcOffset.y = 0;
     copyRegion.srcOffset.z = 0;
     copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     copyRegion.dstSubresource.mipLevel = 0;
     copyRegion.dstSubresource.baseArrayLayer = 0;
-    copyRegion.dstSubresource.layerCount = 0;
+    // Introduce failure by forcing the dst layerCount to differ from src
+    copyRegion.dstSubresource.layerCount = 3;
     copyRegion.dstOffset.x = 0;
     copyRegion.dstOffset.y = 0;
     copyRegion.dstOffset.z = 0;
@@ -6421,11 +7533,7 @@ TEST_F(VkLayerTest, CopyImageTypeMismatch) {
                                VK_IMAGE_LAYOUT_GENERAL, 1, &copyRegion);
     EndCommandBuffer();
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCmdCopyImage called with unmatched "
-                  "source and dest image types'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyImage(m_device->device(), srcImage, NULL);
     vkDestroyImage(m_device->device(), dstImage, NULL);
@@ -6434,17 +7542,13 @@ TEST_F(VkLayerTest, CopyImageTypeMismatch) {
 }
 
 TEST_F(VkLayerTest, CopyImageFormatSizeMismatch) {
-    // TODO : Create two images with different format sizes and vkCmdCopyImage
-    // between them
-}
-
-TEST_F(VkLayerTest, CopyImageDepthStencilFormatMismatch) {
     VkResult err;
     bool pass;
 
+    // Create color images with different format sizes and try to copy between them
     m_errorMonitor->SetDesiredFailureMsg(
         VK_DEBUG_REPORT_ERROR_BIT_EXT,
-        "vkCmdCopyImage called with unmatched source and dest image types");
+        "vkCmdCopyImage called with unmatched source and dest image format sizes");
 
     ASSERT_NO_FATAL_FAILURE(InitState());
 
@@ -6474,9 +7578,9 @@ TEST_F(VkLayerTest, CopyImageDepthStencilFormatMismatch) {
         vkCreateImage(m_device->device(), &image_create_info, NULL, &srcImage);
     ASSERT_VK_SUCCESS(err);
 
-    image_create_info.imageType = VK_IMAGE_TYPE_1D;
-    image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
     image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    // Introduce failure by creating second image with a different-sized format.
+    image_create_info.format = VK_FORMAT_R5G5B5A1_UNORM_PACK16;
 
     err =
         vkCreateImage(m_device->device(), &image_create_info, NULL, &dstImage);
@@ -6533,11 +7637,114 @@ TEST_F(VkLayerTest, CopyImageDepthStencilFormatMismatch) {
                                VK_IMAGE_LAYOUT_GENERAL, 1, &copyRegion);
     EndCommandBuffer();
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCmdCopyImage called with unmatched "
-                  "source and dest image types'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
+
+    vkDestroyImage(m_device->device(), srcImage, NULL);
+    vkDestroyImage(m_device->device(), dstImage, NULL);
+    vkFreeMemory(m_device->device(), srcMem, NULL);
+    vkFreeMemory(m_device->device(), destMem, NULL);
+}
+
+TEST_F(VkLayerTest, CopyImageDepthStencilFormatMismatch) {
+    VkResult err;
+    bool pass;
+
+    // Create a color image and a depth/stencil image and try to copy between them
+    m_errorMonitor->SetDesiredFailureMsg(
+        VK_DEBUG_REPORT_ERROR_BIT_EXT,
+        "vkCmdCopyImage called with unmatched source and dest image depth");
+
+    ASSERT_NO_FATAL_FAILURE(InitState());
+
+    // Create two images of different types and try to copy between them
+    VkImage srcImage;
+    VkImage dstImage;
+    VkDeviceMemory srcMem;
+    VkDeviceMemory destMem;
+    VkMemoryRequirements memReqs;
+
+    VkImageCreateInfo image_create_info = {};
+    image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    image_create_info.pNext = NULL;
+    image_create_info.imageType = VK_IMAGE_TYPE_2D;
+    image_create_info.format = VK_FORMAT_B8G8R8A8_UNORM;
+    image_create_info.extent.width = 32;
+    image_create_info.extent.height = 32;
+    image_create_info.extent.depth = 1;
+    image_create_info.mipLevels = 1;
+    image_create_info.arrayLayers = 1;
+    image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    image_create_info.tiling = VK_IMAGE_TILING_LINEAR;
+    image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    image_create_info.flags = 0;
+
+    err =
+        vkCreateImage(m_device->device(), &image_create_info, NULL, &srcImage);
+    ASSERT_VK_SUCCESS(err);
+
+    image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+    // Introduce failure by creating second image with a depth/stencil format
+    image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    image_create_info.format = VK_FORMAT_D24_UNORM_S8_UINT;
+    image_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+    err =
+        vkCreateImage(m_device->device(), &image_create_info, NULL, &dstImage);
+    ASSERT_VK_SUCCESS(err);
+
+    // Allocate memory
+    VkMemoryAllocateInfo memAlloc = {};
+    memAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    memAlloc.pNext = NULL;
+    memAlloc.allocationSize = 0;
+    memAlloc.memoryTypeIndex = 0;
+
+    vkGetImageMemoryRequirements(m_device->device(), srcImage, &memReqs);
+    memAlloc.allocationSize = memReqs.size;
+    pass =
+        m_device->phy().set_memory_type(memReqs.memoryTypeBits, &memAlloc, 0);
+    ASSERT_TRUE(pass);
+    err = vkAllocateMemory(m_device->device(), &memAlloc, NULL, &srcMem);
+    ASSERT_VK_SUCCESS(err);
+
+    vkGetImageMemoryRequirements(m_device->device(), dstImage, &memReqs);
+    memAlloc.allocationSize = memReqs.size;
+    pass =
+        m_device->phy().set_memory_type(memReqs.memoryTypeBits, &memAlloc, 0);
+    ASSERT_TRUE(pass);
+    err = vkAllocateMemory(m_device->device(), &memAlloc, NULL, &destMem);
+    ASSERT_VK_SUCCESS(err);
+
+    err = vkBindImageMemory(m_device->device(), srcImage, srcMem, 0);
+    ASSERT_VK_SUCCESS(err);
+    err = vkBindImageMemory(m_device->device(), dstImage, destMem, 0);
+    ASSERT_VK_SUCCESS(err);
+
+    BeginCommandBuffer();
+    VkImageCopy copyRegion;
+    copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.srcSubresource.mipLevel = 0;
+    copyRegion.srcSubresource.baseArrayLayer = 0;
+    copyRegion.srcSubresource.layerCount = 0;
+    copyRegion.srcOffset.x = 0;
+    copyRegion.srcOffset.y = 0;
+    copyRegion.srcOffset.z = 0;
+    copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.dstSubresource.mipLevel = 0;
+    copyRegion.dstSubresource.baseArrayLayer = 0;
+    copyRegion.dstSubresource.layerCount = 0;
+    copyRegion.dstOffset.x = 0;
+    copyRegion.dstOffset.y = 0;
+    copyRegion.dstOffset.z = 0;
+    copyRegion.extent.width = 1;
+    copyRegion.extent.height = 1;
+    copyRegion.extent.depth = 1;
+    m_commandBuffer->CopyImage(srcImage, VK_IMAGE_LAYOUT_GENERAL, dstImage,
+                               VK_IMAGE_LAYOUT_GENERAL, 1, &copyRegion);
+    EndCommandBuffer();
+
+    m_errorMonitor->VerifyFound();
 
     vkDestroyImage(m_device->device(), srcImage, NULL);
     vkDestroyImage(m_device->device(), dstImage, NULL);
@@ -6642,11 +7849,7 @@ TEST_F(VkLayerTest, ResolveImageLowSampleCount) {
                                   VK_IMAGE_LAYOUT_GENERAL, 1, &resolveRegion);
     EndCommandBuffer();
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCmdResolveImage called with source "
-                  "sample count less than 2.'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyImage(m_device->device(), srcImage, NULL);
     vkDestroyImage(m_device->device(), dstImage, NULL);
@@ -6757,11 +7960,7 @@ TEST_F(VkLayerTest, ResolveImageHighSampleCount) {
                                   VK_IMAGE_LAYOUT_GENERAL, 1, &resolveRegion);
     EndCommandBuffer();
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCmdResolveImage called with dest "
-                  "sample count greater than 1.'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyImage(m_device->device(), srcImage, NULL);
     vkDestroyImage(m_device->device(), dstImage, NULL);
@@ -6874,11 +8073,7 @@ TEST_F(VkLayerTest, ResolveImageFormatMismatch) {
                                   VK_IMAGE_LAYOUT_GENERAL, 1, &resolveRegion);
     EndCommandBuffer();
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCmdResolveImage called with "
-                  "unmatched source and dest formats.'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyImage(m_device->device(), srcImage, NULL);
     vkDestroyImage(m_device->device(), dstImage, NULL);
@@ -6990,11 +8185,7 @@ TEST_F(VkLayerTest, ResolveImageTypeMismatch) {
                                   VK_IMAGE_LAYOUT_GENERAL, 1, &resolveRegion);
     EndCommandBuffer();
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'vkCmdResolveImage called with "
-                  "unmatched source and dest image types.'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyImage(m_device->device(), srcImage, NULL);
     vkDestroyImage(m_device->device(), dstImage, NULL);
@@ -7109,11 +8300,7 @@ TEST_F(VkLayerTest, DepthStencilImageViewWithColorAspectBitError) {
     err = vkCreateImageView(m_device->device(), &image_view_create_info, NULL,
                             &view);
 
-    if (!m_errorMonitor->DesiredMsgFound()) {
-        FAIL() << "Did not receive Error 'Combination depth-stencil image "
-                  "formats can have only the....'";
-        m_errorMonitor->DumpFailureMsgs();
-    }
+    m_errorMonitor->VerifyFound();
 
     vkDestroyImage(m_device->device(), image_bad, NULL);
     vkDestroyImage(m_device->device(), image_good, NULL);
@@ -7124,6 +8311,12 @@ TEST_F(VkLayerTest, DepthStencilImageViewWithColorAspectBitError) {
 
 int main(int argc, char **argv) {
     int result;
+
+#ifdef ANDROID
+    int vulkanSupport = InitVulkan();
+    if (vulkanSupport == 0)
+        return 1;
+#endif
 
     ::testing::InitGoogleTest(&argc, argv);
     VkTestFramework::InitArgs(&argc, argv);

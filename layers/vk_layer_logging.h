@@ -2,24 +2,17 @@
  * Copyright (c) 2015-2016 Valve Corporation
  * Copyright (c) 2015-2016 LunarG, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and/or associated documentation files (the "Materials"), to
- * deal in the Materials without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Materials, and to permit persons to whom the Materials
- * are furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice(s) and this permission notice shall be included
- * in all copies or substantial portions of the Materials.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- *
- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
- * USE OR OTHER DEALINGS IN THE MATERIALS
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  * Author: Courtney Goeltzenleuchter <courtney@LunarG.com>
  * Author: Tobin Ehlis <tobin@lunarg.com>
@@ -49,10 +42,10 @@ template debug_report_data *get_my_data_ptr<debug_report_data>(void *data_key,
                                                                std::unordered_map<void *, debug_report_data *> &data_map);
 
 // Utility function to handle reporting
-static inline VkBool32 debug_report_log_msg(debug_report_data *debug_data, VkFlags msgFlags, VkDebugReportObjectTypeEXT objectType,
-                                            uint64_t srcObject, size_t location, int32_t msgCode, const char *pLayerPrefix,
-                                            const char *pMsg) {
-    VkBool32 bail = false;
+static inline bool debug_report_log_msg(debug_report_data *debug_data, VkFlags msgFlags, VkDebugReportObjectTypeEXT objectType,
+                                        uint64_t srcObject, size_t location, int32_t msgCode, const char *pLayerPrefix,
+                                        const char *pMsg) {
+    bool bail = false;
     VkLayerDbgFunctionNode *pTrav = debug_data->g_pDbgFunctionHead;
     while (pTrav) {
         if (pTrav->msgFlags & msgFlags) {
@@ -203,7 +196,7 @@ static inline PFN_vkVoidFunction debug_report_get_instance_proc_addr(debug_repor
  * Allows layer to defer collecting & formating data if the
  * message will be discarded.
  */
-static inline VkBool32 will_log_msg(debug_report_data *debug_data, VkFlags msgFlags) {
+static inline bool will_log_msg(debug_report_data *debug_data, VkFlags msgFlags) {
     if (!debug_data || !(debug_data->active_flags & msgFlags)) {
         /* message is not wanted */
         return false;
@@ -212,30 +205,47 @@ static inline VkBool32 will_log_msg(debug_report_data *debug_data, VkFlags msgFl
     return true;
 }
 
+#ifdef WIN32
+static inline int vasprintf(char **strp, char const *fmt, va_list ap) {
+    *strp = nullptr;
+    int size = _vscprintf(fmt, ap);
+    if (size >= 0) {
+        *strp = (char *)malloc(size+1);
+        if (!*strp) {
+            return -1;
+        }
+        _vsnprintf(*strp, size+1, fmt, ap);
+    }
+    return size;
+}
+#endif
+
 /*
  * Output log message via DEBUG_REPORT
  * Takes format and variable arg list so that output string
  * is only computed if a message needs to be logged
  */
 #ifndef WIN32
-static inline VkBool32 log_msg(debug_report_data *debug_data, VkFlags msgFlags, VkDebugReportObjectTypeEXT objectType,
-                               uint64_t srcObject, size_t location, int32_t msgCode, const char *pLayerPrefix, const char *format,
-                               ...) __attribute__((format(printf, 8, 9)));
+static inline bool log_msg(debug_report_data *debug_data, VkFlags msgFlags, VkDebugReportObjectTypeEXT objectType,
+                           uint64_t srcObject, size_t location, int32_t msgCode, const char *pLayerPrefix, const char *format, ...)
+    __attribute__((format(printf, 8, 9)));
 #endif
-static inline VkBool32 log_msg(debug_report_data *debug_data, VkFlags msgFlags, VkDebugReportObjectTypeEXT objectType,
-                               uint64_t srcObject, size_t location, int32_t msgCode, const char *pLayerPrefix, const char *format,
-                               ...) {
+static inline bool log_msg(debug_report_data *debug_data, VkFlags msgFlags, VkDebugReportObjectTypeEXT objectType,
+                           uint64_t srcObject, size_t location, int32_t msgCode, const char *pLayerPrefix, const char *format,
+                           ...) {
     if (!debug_data || !(debug_data->active_flags & msgFlags)) {
         /* message is not wanted */
         return false;
     }
 
-    char str[1024];
     va_list argptr;
     va_start(argptr, format);
-    vsnprintf(str, 1024, format, argptr);
+    char *str;
+    vasprintf(&str, format, argptr);
     va_end(argptr);
-    return debug_report_log_msg(debug_data, msgFlags, objectType, srcObject, location, msgCode, pLayerPrefix, str);
+    bool result = debug_report_log_msg(debug_data, msgFlags, objectType, srcObject, location, msgCode, pLayerPrefix, str);
+    free(str);
+    return result;
 }
 
 static inline VKAPI_ATTR VkBool32 VKAPI_CALL log_callback(VkFlags msgFlags, VkDebugReportObjectTypeEXT objType, uint64_t srcObject,

@@ -5,24 +5,17 @@
 # Copyright (c) 2015-2016 Valve Corporation
 # Copyright (c) 2015-2016 LunarG, Inc.
 #
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and/or associated documentation files (the "Materials"), to
-# deal in the Materials without restriction, including without limitation the
-# rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-# sell copies of the Materials, and to permit persons to whom the Materials
-# are furnished to do so, subject to the following conditions:
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-# The above copyright notice(s) and this permission notice shall be included
-# in all copies or substantial portions of the Materials.
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
-# THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-#
-# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-# OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
-# USE OR OTHER DEALINGS IN THE MATERIALS
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 # Author: Tobin Ehlis <tobin@lunarg.com>
 # Author: Courtney Goeltzenleuchter <courtney@lunarg.com>
@@ -162,24 +155,17 @@ class Subcommand(object):
  * Copyright (c) 2015-2016 Valve Corporation
  * Copyright (c) 2015-2016 LunarG, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and/or associated documentation files (the "Materials"), to
- * deal in the Materials without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Materials, and to permit persons to whom the Materials
- * are furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice(s) and this permission notice shall be included
- * in all copies or substantial portions of the Materials.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- *
- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
- * USE OR OTHER DEALINGS IN THE MATERIALS
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  * Author: Tobin Ehlis <tobin@lunarg.com>
  * Author: Courtney Goeltzenleuchter <courtney@lunarg.com>
@@ -343,7 +329,7 @@ class Subcommand(object):
             ggep_body.append('static const VkLayerProperties globalLayerProps[] = {')
             ggep_body.append('    {')
             ggep_body.append('        "VK_LAYER_LUNARG_%s",' % layer_name)
-            ggep_body.append('        VK_API_VERSION, // specVersion')
+            ggep_body.append('        VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION), // specVersion')
             ggep_body.append('        VK_MAKE_VERSION(0, 1, 0), // implementationVersion')
             ggep_body.append('        "layer: %s",' % layer)
             ggep_body.append('    }')
@@ -367,7 +353,7 @@ class Subcommand(object):
             gpdlp_body.append('static const VkLayerProperties deviceLayerProps[] = {')
             gpdlp_body.append('    {')
             gpdlp_body.append('        "VK_LAYER_LUNARG_%s",' % layer)
-            gpdlp_body.append('        VK_API_VERSION,')
+            gpdlp_body.append('        VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION),')
             gpdlp_body.append('        VK_MAKE_VERSION(0, 1, 0),')
             gpdlp_body.append('        "layer: %s",' % layer)
             gpdlp_body.append('    }')
@@ -657,7 +643,6 @@ class Subcommand(object):
                              "}\n")
             return "\n".join(func_body)
 
-
     def _generate_layer_initialization(self, init_opts=False, prefix='vk', lockname=None, condname=None):
         func_body = ["#include \"vk_dispatch_table_helper.h\""]
         func_body.append('%s' % self.lineinfo.get())
@@ -665,70 +650,8 @@ class Subcommand(object):
                          '{\n' % self.layer_name)
         if init_opts:
             func_body.append('%s' % self.lineinfo.get())
-            func_body.append('    uint32_t report_flags = 0;')
-            func_body.append('    uint32_t debug_action = 0;')
-            func_body.append('    FILE *log_output = NULL;')
-            func_body.append('    const char *option_str;\n')
-            func_body.append('    // initialize %s options' % self.layer_name)
-            func_body.append('    report_flags = getLayerOptionFlags("%sReportFlags", 0);' % self.layer_name)
-            func_body.append('    getLayerOptionEnum("%sDebugAction", (uint32_t *) &debug_action);' % self.layer_name)
             func_body.append('')
-            func_body.append('    if (debug_action & VK_DBG_LAYER_ACTION_LOG_MSG)')
-            func_body.append('    {')
-            func_body.append('        option_str = getLayerOption("%sLogFilename");' % self.layer_name)
-            func_body.append('        log_output = getLayerLogOutput(option_str,"%s");' % self.layer_name)
-            func_body.append('        VkDebugReportCallbackCreateInfoEXT dbgCreateInfo;')
-            func_body.append('        memset(&dbgCreateInfo, 0, sizeof(dbgCreateInfo));')
-            func_body.append('        dbgCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;')
-            func_body.append('        dbgCreateInfo.flags = report_flags;')
-            func_body.append('        dbgCreateInfo.pfnCallback = log_callback;')
-            func_body.append('        dbgCreateInfo.pUserData = NULL;')
-            func_body.append('        layer_create_msg_callback(my_data->report_data, &dbgCreateInfo, pAllocator,')
-            func_body.append('                                  &my_data->logging_callback);')
-            func_body.append('    }')
-            func_body.append('')
-        if lockname is not None:
-            func_body.append('%s' % self.lineinfo.get())
-            func_body.append("    if (!%sLockInitialized)" % lockname)
-            func_body.append("    {")
-            func_body.append("        // TODO/TBD: Need to delete this mutex sometime.  How???")
-            func_body.append("        loader_platform_thread_create_mutex(&%sLock);" % lockname)
-            if condname is not None:
-                func_body.append("        loader_platform_thread_init_cond(&%sCond);" % condname)
-            func_body.append("        %sLockInitialized = 1;" % lockname)
-            func_body.append("    }")
-        func_body.append("}\n")
-        func_body.append('')
-        return "\n".join(func_body)
-
-    def _generate_new_layer_initialization(self, init_opts=False, prefix='vk', lockname=None, condname=None):
-        func_body = ["#include \"vk_dispatch_table_helper.h\""]
-        func_body.append('%s' % self.lineinfo.get())
-        func_body.append('static void init_%s(layer_data *my_data, const VkAllocationCallbacks *pAllocator)\n'
-                         '{\n' % self.layer_name)
-        if init_opts:
-            func_body.append('%s' % self.lineinfo.get())
-            func_body.append('    uint32_t report_flags = 0;')
-            func_body.append('    uint32_t debug_action = 0;')
-            func_body.append('    FILE *log_output = NULL;')
-            func_body.append('    const char *strOpt;')
-            func_body.append('    // initialize %s options' % self.layer_name)
-            func_body.append('    report_flags = getLayerOptionFlags("%sReportFlags", 0);' % self.layer_name)
-            func_body.append('    getLayerOptionEnum("%sDebugAction", (uint32_t *) &debug_action);' % self.layer_name)
-            func_body.append('')
-            func_body.append('    if (debug_action & VK_DBG_LAYER_ACTION_LOG_MSG)')
-            func_body.append('    {')
-            func_body.append('        strOpt = getLayerOption("%sLogFilename");' % self.layer_name)
-            func_body.append('        log_output = getLayerLogOutput(strOpt, "%s");' % self.layer_name)
-            func_body.append('        VkDebugReportCallbackCreateInfoEXT dbgCreateInfo;')
-            func_body.append('        memset(&dbgCreateInfo, 0, sizeof(dbgCreateInfo));')
-            func_body.append('        dbgCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;')
-            func_body.append('        dbgCreateInfo.flags = report_flags;')
-            func_body.append('        dbgCreateInfo.pfnCallback = log_callback;')
-            func_body.append('        dbgCreateInfo.pUserData = log_output;')
-            func_body.append('        layer_create_msg_callback(my_data->report_data, &dbgCreateInfo, pAllocator,')
-            func_body.append('                                  &my_data->logging_callback);')
-            func_body.append('    }')
+            func_body.append('    layer_debug_actions(my_data->report_data, my_data->logging_callback, pAllocator, "lunarg_%s");' % self.layer_name)
             func_body.append('')
         if lockname is not None:
             func_body.append('%s' % self.lineinfo.get())
@@ -765,6 +688,7 @@ class GenericLayerSubcommand(Subcommand):
         gen_header.append('#include "vk_layer_logging.h"')
         gen_header.append('#include "vk_layer_table.h"')
         gen_header.append('#include "vk_layer_extension_utils.h"')
+        gen_header.append('#include "vk_layer_utils.h"')
         gen_header.append('')
         gen_header.append('#include "generic.h"')
         gen_header.append('')
@@ -843,8 +767,10 @@ class GenericLayerSubcommand(Subcommand):
                          '    pDisp->DestroyInstance(instance, pAllocator);\n'
                          '    // Clean up logging callback, if any\n'
                          '    layer_data *my_data = get_my_data_ptr(key, layer_data_map);\n'
-                         '    if (my_data->logging_callback) {\n'
-                         '        layer_destroy_msg_callback(my_data->report_data, my_data->logging_callback, pAllocator);\n'
+                         '    while (my_data->logging_callback.size() > 0) {'
+                         '        VkDebugReportCallbackEXT callback = my_data->logging_callback.back();'
+                         '        layer_destroy_msg_callback(my_data->report_data, callback, pAllocator);'
+                         '        my_data->logging_callback.pop_back();'
                          '    }\n\n'
                          '    layer_debug_report_destroy_instance(my_data->report_data);\n'
                          '    layer_data_map.erase(key);\n'
@@ -937,6 +863,8 @@ class ApiDumpSubcommand(Subcommand):
         header_txt.append('#include "vk_struct_string_helper_cpp.h"')
         header_txt.append('#include "vk_layer_table.h"')
         header_txt.append('#include "vk_layer_extension_utils.h"')
+        header_txt.append('#include "vk_layer_config.h"')
+        header_txt.append('#include "vk_layer_utils.h"')
         header_txt.append('#include <unordered_map>')
         header_txt.append('#include "api_dump.h"')
         header_txt.append('')

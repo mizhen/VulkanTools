@@ -1,7 +1,7 @@
 # Build Instructions
-These instructions are for Linux and Windows.
+This document contains the instructions for building this repository on Linux and Windows.
 
-This repository contains addtional layers, tests, and the VkTrace trace/replay tools, supplementing the
+This repository contains additional layers, tests, and the VkTrace trace/replay tools, supplementing the
 loader and validation layer core components found at https://github.com/KhronosGroup.
 
 For Linux, this repository also contains a sample Intel Vulkan driver that is being deprecated.
@@ -17,14 +17,14 @@ create a branch in your forked repo, do the work,
 and create a pull request on GitHub to integrate that work back into the repo.
 
 ## Linux System Requirements
-Ubuntu 14.04.3 LTS, 14.10, 15.04 and 15.10 have been tested with this repo.
+Ubuntu 14.04.3 LTS, 14.10, 15.04,15.10, and 16.04 LTS have been tested with this repo.
 
 These additional packages are needed for building the components in this repo.
 ```
 # Dependencies from the LoaderAndValidationLayers repo:
-sudo apt-get install git cmake build-essential bison libxcb1-dev
+sudo apt-get install git cmake build-essential bison libx11-dev libxcb1-dev
 # Additional dependencies for this repo:
-sudo apt-get install libudev-dev libpciaccess-dev libxcb-dri3-dev libxcb-present-dev libmagickwand-dev libgl1-mesa-dev
+sudo apt-get install libudev-dev libpciaccess-dev libxcb-dri3-dev libxcb-present-dev libmagickwand-dev libgl1-mesa-dev wget autotools-dev
 ```
 
 If you are using the sample Intel Vulkan driver in this repo, you will have to ensure that
@@ -120,7 +120,7 @@ Optional software packages:
 
 Cygwin is used in order to obtain a local copy of the Git repository, and to run the CMake command that creates Visual Studio files.  Visual Studio is used to build the software, and will re-run CMake as appropriate.
 
-Example debug x64 build (e.g. in a "Developer Command Prompt for VS2013" window):
+To build all Windows targets (e.g. in a "Developer Command Prompt for VS2013" window):
 ```
 cd VulkanTools  # cd to the root of the VulkanTools git repository
 mkdir build
@@ -135,7 +135,7 @@ As part of the build process, Python scripts will create additional Visual Studi
 along with additional source files.  
 All of these auto-generated files are under the "build" folder.
 
-Vulkan programs must be able to find and use the Vulkan-1.dll libary.
+Vulkan programs must be able to find and use the Vulkan-1.dll library.
 Make sure it is either installed in the C:\Windows\System32 folder,
 or the PATH environment variable includes the folder that it is located in.
 

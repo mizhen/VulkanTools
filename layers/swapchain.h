@@ -3,24 +3,17 @@
  * Copyright (c) 2015-2016 LunarG, Inc.
  * Copyright (C) 2015-2016 Google Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and/or associated documentation files (the "Materials"), to
- * deal in the Materials without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Materials, and to permit persons to whom the Materials
- * are furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice(s) and this permission notice shall be included
- * in all copies or substantial portions of the Materials.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- *
- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
- * USE OR OTHER DEALINGS IN THE MATERIALS
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  * Author: Ian Elliott <ian@lunarg.com>
  * Author: Ian Elliott <ianelliott@google.com>
@@ -64,9 +57,9 @@ typedef enum _SWAPCHAIN_ERROR {
     SWAPCHAIN_CREATE_SWAP_DIFF_SURFACE, // Called vkCreateSwapchainKHR() with pCreateInfo->oldSwapchain that has a different surface
                                         // than pCreateInfo->surface
     SWAPCHAIN_DESTROY_SWAP_DIFF_DEVICE, // Called vkDestroySwapchainKHR() with a different VkDevice than vkCreateSwapchainKHR()
-    SWAPCHAIN_APP_OWNS_TOO_MANY_IMAGES, // vkAcquireNextImageKHR() asked for more images than are available
+    SWAPCHAIN_APP_ACQUIRES_TOO_MANY_IMAGES, // vkAcquireNextImageKHR() asked for more images than are available
     SWAPCHAIN_INDEX_TOO_LARGE,          // Index is too large for swapchain
-    SWAPCHAIN_INDEX_NOT_IN_USE,         // vkQueuePresentKHR() given index that is not owned by app
+    SWAPCHAIN_INDEX_NOT_IN_USE,         // vkQueuePresentKHR() given index that is not acquired by app
     SWAPCHAIN_BAD_BOOL,                 // VkBool32 that doesn't have value of VK_TRUE or VK_FALSE (e.g. is a non-zero form of true)
     SWAPCHAIN_INVALID_COUNT,            // Second time a query called, the pCount value didn't match first time
     SWAPCHAIN_WRONG_STYPE,              // The sType for a struct has the wrong value
@@ -79,6 +72,7 @@ typedef enum _SWAPCHAIN_ERROR {
                                                 // vkGetPhysicalDeviceQueueFamilyProperties()
     SWAPCHAIN_SURFACE_NOT_SUPPORTED_WITH_QUEUE, // A surface is not supported by a given queueFamilyIndex, as seen by
                                                 // vkGetPhysicalDeviceSurfaceSupportKHR()
+    SWAPCHAIN_NO_SYNC_FOR_ACQUIRE,      // vkAcquireNextImageKHR should be called with a valid semaphore and/or fence
 } SWAPCHAIN_ERROR;
 
 // The following is for logging error messages:
@@ -123,6 +117,10 @@ typedef enum _SWAPCHAIN_ERROR {
 #define LOG_PERF_WARNING(objType, type, obj, enm, fmt, ...)                                                                        \
     (my_data) ? log_msg(my_data->report_data, VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT, (objType), (uint64_t)(obj), __LINE__,   \
                         (enm), LAYER_NAME, (fmt), __VA_ARGS__)                                                                     \
+              : VK_FALSE
+#define LOG_WARNING(objType, type, obj, enm, fmt, ...)                                                                             \
+    (my_data) ? log_msg(my_data->report_data, VK_DEBUG_REPORT_WARNING_BIT_EXT, (objType), (uint64_t)(obj), __LINE__, (enm),        \
+                        LAYER_NAME, (fmt), __VA_ARGS__)                                                                            \
               : VK_FALSE
 #define LOG_INFO_WRONG_NEXT(objType, type, obj)                                                                                    \
     (my_data) ? log_msg(my_data->report_data, VK_DEBUG_REPORT_INFORMATION_BIT_EXT, (objType), (uint64_t)(obj), 0,                  \
@@ -284,9 +282,9 @@ struct _SwpImage {
     // Corresponding VkSwapchainKHR (and info) to this VkImage:
     SwpSwapchain *pSwapchain;
 
-    // true if application got this image from vkAcquireNextImageKHR(), and
-    // hasn't yet called vkQueuePresentKHR() for it; otherwise false:
-    bool ownedByApp;
+    // true if application acquired this image from vkAcquireNextImageKHR(),
+    // and hasn't yet called vkQueuePresentKHR() for it; otherwise false:
+    bool acquiredByApp;
 };
 
 // Create one of these for each VkSwapchainKHR within a VkDevice:

@@ -39,14 +39,6 @@ if(NOT "${LLVM_LIBS_RESULT}" EQUAL "0")
 endif()
 
 # Expect libraries to be in either the build (release build) or dbuild (debug) directories
-if(EXISTS ${GLSLANG_PREFIX}/${BUILDTGT_DIR}/install/lib)
-    set(GLSLANG_BUILD ${GLSLANG_PREFIX}/${BUILDTGT_DIR})
-elseif(EXISTS ${GLSLANG_PREFIX}/dbuild/install/lib)
-    set(GLSLANG_BUILD ${GLSLANG_PREFIX}/dbuild)
-else()
-    message(FATAL_ERROR "Necessary glslang libraries cannot be found: " ${GLSLANG_PREFIX})
-endif()
-
 if(EXISTS ${LUNARGLASS_PREFIX}/${BUILDTGT_DIR}/install/lib)
     set(LUNARGLASS_BUILD ${LUNARGLASS_PREFIX}/${BUILDTGT_DIR})
 elseif(EXISTS ${LUNARGLASS_PREFIX}/dbuild/install/lib)
@@ -75,7 +67,7 @@ set_target_properties(icd
       COMPILE_FLAGS "${LLVM_CXX_CONFIG}")
 
 SET(COMPILER_LINK_DIRS
-    -L${GLSLANG_BUILD}/install/lib
+    -L${PROJECT_SOURCE_DIR}/../glslang/build/install/lib
     -L${LUNARGLASS_PREFIX}/Core/LLVM/llvm-3.4/${BUILDTGT_DIR}/install/usr/local/lib
     -L${LUNARGLASS_PREFIX}/${BUILDTGT_DIR}/Core
     -L${LUNARGLASS_PREFIX}/${BUILDTGT_DIR}/Frontends/glslang
@@ -93,6 +85,7 @@ SET(COMPILER_LIBS
    LLVMipo
    glslang
    SPIRV
+   HLSL
    OGLCompiler
    ${LLVM_LIBS_ALL}
 )
@@ -115,18 +108,20 @@ add_library(core            STATIC IMPORTED)
 add_library(LLVMipo         STATIC IMPORTED)
 add_library(glslang         STATIC IMPORTED)
 add_library(SPIRV           STATIC IMPORTED)
+add_library(HLSL            STATIC IMPORTED)
 add_library(OGLCompiler     STATIC IMPORTED)
 
 set_target_properties(glslangFrontend PROPERTIES IMPORTED_LOCATION ${LUNARGLASS_PREFIX}/${BUILDTGT_DIR}/Frontends/glslang/libglslangFrontend.a)
 set_target_properties(SpvFrontend     PROPERTIES IMPORTED_LOCATION ${LUNARGLASS_PREFIX}/${BUILDTGT_DIR}/Frontends/SPIRV/libSpvFrontend.a)
 set_target_properties(core            PROPERTIES IMPORTED_LOCATION ${LUNARGLASS_PREFIX}/${BUILDTGT_DIR}/Core/libcore.a)
 set_target_properties(LLVMipo         PROPERTIES IMPORTED_LOCATION ${LUNARGLASS_PREFIX}/Core/LLVM/llvm-3.4/${BUILDTGT_DIR}/install/usr/local/lib/libLLVMipo.a)
-set_target_properties(glslang         PROPERTIES IMPORTED_LOCATION ${GLSLANG_BUILD}/install/lib/libglslang.a)
-set_target_properties(SPIRV           PROPERTIES IMPORTED_LOCATION ${GLSLANG_BUILD}/install/lib/libSPIRV.a)
-set_target_properties(OGLCompiler     PROPERTIES IMPORTED_LOCATION ${GLSLANG_BUILD}/install/lib/libOGLCompiler.a)
+set_target_properties(glslang         PROPERTIES IMPORTED_LOCATION ${GLSLANG_LIB})
+set_target_properties(SPIRV           PROPERTIES IMPORTED_LOCATION ${SPIRV_LIB})
+set_target_properties(HLSL            PROPERTIES IMPORTED_LOCATION ${HLSL_LIB})
+set_target_properties(OGLCompiler     PROPERTIES IMPORTED_LOCATION ${OGLCompiler_LIB})
 
 SET(COMPILER_INCLUDE_DIRS
-    ${GLSLANG_PREFIX}
+    ${GLSLANG_SPIRV_INCLUDE_DIR}
     ${LUNARGLASS_PREFIX}/Core/LLVM/llvm-3.4/${BUILDTGT_DIR}/install/usr/local/include
     ${LUNARGLASS_PREFIX}
     shader
