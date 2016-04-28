@@ -4,24 +4,17 @@
 # Copyright (c) 2015-2016 Valve Corporation
 # Copyright (c) 2015-2016 LunarG, Inc.
 #
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and/or associated documentation files (the "Materials"), to
-# deal in the Materials without restriction, including without limitation the
-# rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-# sell copies of the Materials, and to permit persons to whom the Materials are
-# furnished to do so, subject to the following conditions:
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-# The above copyright notice(s) and this permission notice shall be included in
-# all copies or substantial portions of the Materials.
+#      http://www.apache.org/licenses/LICENSE-2.0
 #
-# THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-#
-# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-# OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
-# USE OR OTHER DEALINGS IN THE MATERIALS.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 # Author: David Pinedo <david@LunarG.com>
 # Author: Mark Young <mark@LunarG.com>
@@ -231,11 +224,23 @@ VIProductVersion "${PRODUCTVERSION}"
 VIAddVersionKey  "ProductName" "Vulkan Runtime"
 VIAddVersionKey  "FileVersion" "${PRODUCTVERSION}"
 VIAddVersionKey  "ProductVersion" "${PRODUCTVERSION}"
-VIAddVersionKey  "FileDescription" "Vulkan Runtime Installer"
 VIAddVersionKey  "LegalCopyright" ""
+
+!ifdef UNINSTALLER
+    VIAddVersionKey  "FileDescription" "Vulkan Runtime Uninstaller"
+!else
+    VIAddVersionKey  "FileDescription" "Vulkan Runtime Installer"
+!endif
 
 # Start default section
 Section
+
+    # Turn on logging
+    LogSet on
+
+    # Remove contents of temp dir
+    SetOutPath "$TEMP\VulkanRT"
+    RmDir /R "$TEMP\VulkanRT"
 
     # If running on a 64-bit OS machine, disable registry re-direct since we're running as a 32-bit executable.
     ${If} ${RunningX64}
@@ -245,6 +250,20 @@ Section
 
     ${Endif}
 
+    # Create our temp directory, with minimal permissions
+    SetOutPath "$TEMP\VulkanRT"
+    AccessControl::DisableFileInheritance $TEMP\VulkanRT
+    AccessControl::SetFileOwner $TEMP\VulkanRT "Administrators"
+    AccessControl::ClearOnFile  $TEMP\VulkanRT "Administrators" "FullAccess"
+    AccessControl::SetOnFile    $TEMP\VulkanRT "SYSTEM" "FullAccess"
+    AccessControl::GrantOnFile  $TEMP\VulkanRT "Everyone" "ListDirectory"
+    AccessControl::GrantOnFile  $TEMP\VulkanRT "Everyone" "GenericExecute"
+    AccessControl::GrantOnFile  $TEMP\VulkanRT "Everyone" "GenericRead"
+    AccessControl::GrantOnFile  $TEMP\VulkanRT "Everyone" "ReadAttributes"
+    StrCpy $1 10
+    Call CheckForError
+
+    # Check the registry to see if we are already installed
     ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}${PRODUCTVERSION}" "InstallDir"
 
     # If the registry entry isn't there, it will throw an error as well as return a blank value.  So, clear the errors.
@@ -268,11 +287,19 @@ Section
     ${EndIf}
 
     SetOutPath "$INSTDIR"
+    AccessControl::DisableFileInheritance $INSTDIR
+    AccessControl::SetFileOwner $INSTDIR "Administrators"
+    AccessControl::ClearOnFile  $INSTDIR "Administrators" "FullAccess"
+    AccessControl::SetOnFile    $INSTDIR "SYSTEM" "FullAccess"
+    AccessControl::GrantOnFile  $INSTDIR "Everyone" "ListDirectory"
+    AccessControl::GrantOnFile  $INSTDIR "Everyone" "GenericExecute"
+    AccessControl::GrantOnFile  $INSTDIR "Everyone" "GenericRead"
+    AccessControl::GrantOnFile  $INSTDIR "Everyone" "ReadAttributes"
     File ${ICOFILE}
     File VULKANRT_LICENSE.RTF
-    File LICENSE.txt
+    File /oname=LICENSE.txt ..\COPYRIGHT.txt
     File ConfigLayersAndVulkanDLL.ps1
-    StrCpy $1 10
+    StrCpy $1 15
     Call CheckForError
 
     # Add the signed uninstaller
@@ -281,7 +308,7 @@ Section
         File "Uninstall${PRODUCTNAME}.exe"
     !endif
 
-    StrCpy $1 11
+    StrCpy $1 20
     Call CheckForError
 
     # Reference count the number of times we have been installed.
@@ -349,21 +376,17 @@ Section
         WriteRegDword HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}${PRODUCTVERSION}" "SystemComponent" 0
     ${EndIf}
 
-    StrCpy $1 12
+    StrCpy $1 25
     Call CheckForError
 
     # Set up version number for file names
     ${StrRep} $0 ${VERSION_BUILDNO} "." "-"
     StrCpy $FileVersion ${VERSION_ABI_MAJOR}-${VERSION_API_MAJOR}-${VERSION_MINOR}-${VERSION_PATCH}-$0
 
-    # Remove vulkaninfo from Start Menu
+    # Complete remove the Vulkan Start Menu. Prior version of the Vulkan RT
+    # created Start Menu items, we don't do that anymore.
     SetShellVarContext all
-    Delete "$SMPROGRAMS\Vulkan\vulkaninfo32.lnk"
-    Delete "$SMPROGRAMS\Vulkan\vulkaninfo.lnk"
-    ClearErrors
-
-    # Create Vulkan in the Start Menu
-    CreateDirectory "$SMPROGRAMS\Vulkan"
+    RmDir /R "$SMPROGRAMS\Vulkan"
     ClearErrors
 
     # If running on a 64-bit OS machine
@@ -374,14 +397,14 @@ Section
         SetOutPath $WINDIR\SysWow64
         File /oname=vulkan-$FileVersion.dll ..\build32\loader\Release\vulkan-${VERSION_ABI_MAJOR}.dll
         File /oname=vulkaninfo-$FileVersion.exe ..\build32\demos\Release\vulkaninfo.exe
-        StrCpy $1 13
+        StrCpy $1 30
         Call CheckForError
 
         # 64-bit DLLs/EXEs
         ##########################################
         SetOutPath $WINDIR\System32
         File /oname=vulkan-$FileVersion.dll ..\build\loader\Release\vulkan-${VERSION_ABI_MAJOR}.dll
-        StrCpy $1 14
+        StrCpy $1 35
         Call CheckForError
 
         # vulkaninfo.exe
@@ -389,7 +412,7 @@ Section
         SetOutPath "$INSTDIR"
         File ..\build\demos\Release\vulkaninfo.exe
         File /oname=vulkaninfo32.exe ..\build32\demos\Release\vulkaninfo.exe
-        StrCpy $1 15
+        StrCpy $1 40
         Call CheckForError
 
         # Run the ConfigLayersAndVulkanDLL.ps1 script to copy the most recent version of
@@ -400,7 +423,7 @@ Section
         ${If} $PsErr != 0
             SetErrors
         ${EndIf}
-        StrCpy $1 16
+        StrCpy $1 45
         Call CheckForError
 
     # Else, running on a 32-bit OS machine
@@ -410,14 +433,14 @@ Section
         ##########################################
         SetOutPath $WINDIR\System32
         File /oname=vulkan-$FileVersion.dll ..\build32\loader\Release\vulkan-${VERSION_ABI_MAJOR}.dll
-        StrCpy $1 17
+        StrCpy $1 50
         Call CheckForError
 
         # vulkaninfo.exe
         File /oname=vulkaninfo-$FileVersion.exe ..\build32\demos\Release\vulkaninfo.exe
         SetOutPath "$INSTDIR"
         File ..\build32\demos\Release\vulkaninfo.exe
-        StrCpy $1 18
+        StrCpy $1 55
         Call CheckForError
 
         # Run the ConfigLayersAndVulkanDLL.ps1 script to copy the most recent version of
@@ -428,7 +451,7 @@ Section
         ${If} $PsErr != 0
             SetErrors
         ${EndIf}
-        StrCpy $1 19
+        StrCpy $1 60
         Call CheckForError
 
     ${Endif}
@@ -437,58 +460,55 @@ Section
     # by the uninstaller when it needs to be run again during uninstall.
     Delete ConfigLayersAndVulkanDLL.ps1
 
-    # Add vulkaninfo to Start Menu
-    SetShellVarContext all
-    IfFileExists $WINDIR\System32\vulkaninfo.exe 0 +2
-        CreateShortCut "$SMPROGRAMS\Vulkan\vulkaninfo.lnk" "$WINDIR\System32\vulkaninfo.exe"
-    IfFileExists $WINDIR\SysWow64\vulkaninfo.exe 0 +2
-        CreateShortCut "$SMPROGRAMS\Vulkan\vulkaninfo32.lnk" "$WINDIR\SysWow64\vulkaninfo.exe"
-
     # Possibly install MSVC 2013 redistributables
+    ClearErrors
     ${If} ${RunningX64}
-
-        # If running on a 64-bit OS machine, we need the 64-bit Visual Studio re-distributable.  Install it if it's not already present.
-        ReadRegDword $1 HKLM "SOFTWARE\Microsoft\DevDiv\vc\Servicing\12.0\RuntimeMinimum" "Install"
-        ClearErrors
-        IntCmp $1 1 RedistributablesInstalled6464 InstallRedistributables6464 InstallRedistributables6464
-        InstallRedistributables6464:
-           SetOutPath "$TEMP"
-
-           File vcredist_x64.exe
-           ExecWait '"$TEMP\vcredist_x64.exe"  /quiet /norestart'
-
-        RedistributablesInstalled6464:
-
-        # We also need the 32-bit Visual Studio re-distributable.  Install it as well if it's not present
         ReadRegDword $1 HKLM "SOFTWARE\WOW6432Node\Microsoft\DevDiv\vc\Servicing\12.0\RuntimeMinimum" "Install"
-        ClearErrors
-        IntCmp $1 1 RedistributablesInstalled InstallRedistributables InstallRedistributables
-
+        ${If} ${Errors}
+           StrCpy $1 0
+           ClearErrors
+        ${Endif}
     ${Else}
-
-        # Otherwise, we're running on a 32-bit OS machine, we need to install the 32-bit Visual Studio re-distributable if it's not present.
-        ReadRegDword $1 HKLM "SOFTWARE\Microsoft\DevDiv\vc\Servicing\12.0\RuntimeMinimum" "Install"
-        ClearErrors
-        IntCmp $1 1 RedistributablesInstalled InstallRedistributables InstallRedistributables
-
+       StrCpy $1 1
     ${Endif}
-
-    InstallRedistributables:
-       SetOutPath "$TEMP"
-
-       File vcredist_x86.exe
-       ExecWait '"$TEMP\vcredist_x86.exe"  /quiet /norestart'
-
-    RedistributablesInstalled:
-
-    StrCpy $1 20
+    ReadRegDword $2 HKLM "SOFTWARE\Microsoft\DevDiv\vc\Servicing\12.0\RuntimeMinimum" "Install"
+    ${If} ${Errors}
+       StrCpy $2 0
+       ClearErrors
+    ${Endif}
+    IntOp $3 $1 + $2
+    ${If} $3 <= 1
+        # If either x86 or x64 redistributables are not present, install redistributables.
+        # We install both resdistributables because we have found that the x86 redist
+        # will uninstall the x64 redist if the x64 redistrib is an old version. Amazing, isn't it?
+        SetOutPath "$TEMP\VulkanRT"
+        ${If} ${RunningX64}
+            File vcredist_x64.exe
+            ExecWait '"$TEMP\VulkanRT\vcredist_x64.exe"  /quiet /norestart'
+        ${Endif}
+        File vcredist_x86.exe
+        ExecWait '"$TEMP\VulkanRT\vcredist_x86.exe"  /quiet /norestart'
+    ${Endif}
+    StrCpy $1 65
     Call CheckForError
+
+    # Finish logging and move log file to TEMP dir
+    LogSet off
+    Rename "$INSTDIR\install.log" "$TEMP\VulkanRT\Install.log"
 
 SectionEnd
 
 # Uninstaller section start
 !ifdef UNINSTALLER
 Section "uninstall"
+
+    # Remove contents of temp dir
+    SetOutPath "$TEMP\VulkanRT"
+    RmDir /R "$TEMP\VulkanRT"
+
+    # Turn on logging
+    StrCpy $INSTDIR $TEMP\VulkanRT
+    LogSet on
 
     # If running on a 64-bit OS machine, disable registry re-direct since we're running as a 32-bit executable.
     ${If} ${RunningX64}
@@ -499,11 +519,10 @@ Section "uninstall"
     ${Endif}
 
     # Look up the install dir and remove files from that directory.
-    # We do this so that the uninstaller can be run from any directory.
     ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}${PRODUCTVERSION}" "InstallDir"
     StrCpy $IDir $0
 
-    StrCpy $1 21
+    StrCpy $1 70
     Call un.CheckForError
 
     SetOutPath "$IDir"
@@ -542,73 +561,53 @@ Section "uninstall"
         DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}${PRODUCTVERSION}"
     ${EndIf}
 
-    # Ref count is in $1. If it is zero, uninstall everything
+
+    # Install the ConfigLayersAndVulkanDLL.ps1 so we can run it.
+    # It will be deleted later when we remove the install directory.
+    File ConfigLayersAndVulkanDLL.ps1
+
+    # If running on a 64-bit OS machine
+    ${If} ${RunningX64}
+
+        # Delete vulkaninfo.exe in C:\Windows\System32 and C:\Windows\SysWOW64
+        Delete /REBOOTOK $WINDIR\SysWow64\vulkaninfo.exe
+        Delete /REBOOTOK "$WINDIR\SysWow64\vulkaninfo-$FileVersion.exe"
+        Delete /REBOOTOK $WINDIR\System32\vulkaninfo.exe
+        Delete /REBOOTOK "$WINDIR\System32\vulkaninfo-$FileVersion.exe"
+
+        # Delete vullkan dll files: vulkan-<majorabi>.dll and vulkan-<majorabi>-<major>-<minor>-<patch>-<buildno>.dll
+        Delete /REBOOTOK $WINDIR\SysWow64\vulkan-${VERSION_ABI_MAJOR}.dll
+        Delete /REBOOTOK $WINDIR\SysWow64\vulkan-$FileVersion.dll
+        Delete /REBOOTOK $WINDIR\System32\vulkan-${VERSION_ABI_MAJOR}.dll
+        Delete /REBOOTOK $WINDIR\System32\vulkan-$FileVersion.dll
+
+        # Run the ConfigLayersAndVulkanDLL.ps1 script to:
+        #   Copy the most recent version of vulkan-<abimajor>-*.dll to vulkan-<abimajor>.dll
+        #   Copy the most recent version of vulkaninfo-<abimajor>-*.exe to vulkaninfo.exe
+        #   Set up layer registry entries to use layers from the corresponding SDK
+        nsExec::ExecToStack 'powershell -NoLogo -NonInteractive -WindowStyle Hidden -inputformat none -ExecutionPolicy RemoteSigned -File "$IDir\ConfigLayersAndVulkanDLL.ps1" ${VERSION_ABI_MAJOR} 64'
+
+    # Else, running on a 32-bit OS machine
+    ${Else}
+
+        # Delete vulkaninfo.exe in C:\Windows\System32
+        Delete /REBOOTOK $WINDIR\System32\vulkaninfo.exe
+        Delete /REBOOTOK "$WINDIR\System32\vulkaninfo-$FileVersion.exe"
+
+        # Delete vullkan dll files: vulkan-<majorabi>.dll and vulkan-<majorabi>-<major>-<minor>-<patch>-<buildno>.dll
+        Delete /REBOOTOK $WINDIR\System32\vulkan-${VERSION_ABI_MAJOR}.dll
+        Delete /REBOOTOK $WINDIR\System32\vulkan-$FileVersion.dll
+
+        # Run the ConfigLayersAndVulkanDLL.ps1 script to:
+        #   Copy the most recent version of vulkan-<abimajor>-*.dll to vulkan-<abimajor>.dll
+        #   Copy the most recent version of vulkaninfo-<abimajor>-*.exe to vulkaninfo.exe
+        #   Set up layer registry entries to use layers from the corresponding SDK
+        nsExec::ExecToStack 'powershell -NoLogo -NonInteractive -WindowStyle Hidden -inputformat none -ExecutionPolicy RemoteSigned -File "$IDir\ConfigLayersAndVulkanDLL.ps1" ${VERSION_ABI_MAJOR} 32'
+
+    ${EndIf}
+
+    # If Ref Count is zero, uninstall everything
     ${If} $IC <= 0
-
-        # Install the ConfigLayersAndVulkanDLL.ps1 so we can run it.
-        # It will be deleted later when we remove the install directory.
-        File ConfigLayersAndVulkanDLL.ps1
-
-        # If running on a 64-bit OS machine
-        ${If} ${RunningX64}
-
-            # Delete vulkaninfo.exe in C:\Windows\System32 and C:\Windows\SysWOW64
-            Delete /REBOOTOK $WINDIR\SysWow64\vulkaninfo.exe
-            Delete /REBOOTOK "$WINDIR\SysWow64\vulkaninfo-$FileVersion.exe"
-            Delete /REBOOTOK $WINDIR\System32\vulkaninfo.exe
-            Delete /REBOOTOK "$WINDIR\System32\vulkaninfo-$FileVersion.exe"
-
-            # Delete vullkan dll files: vulkan-<majorabi>.dll and vulkan-<majorabi>-<major>-<minor>-<patch>-<buildno>.dll
-            Delete /REBOOTOK $WINDIR\SysWow64\vulkan-${VERSION_ABI_MAJOR}.dll
-            Delete /REBOOTOK $WINDIR\SysWow64\vulkan-$FileVersion.dll
-            Delete /REBOOTOK $WINDIR\System32\vulkan-${VERSION_ABI_MAJOR}.dll
-            Delete /REBOOTOK $WINDIR\System32\vulkan-$FileVersion.dll
-
-            # Run the ConfigLayersAndVulkanDLL.ps1 script to:
-            #   Copy the most recent version of vulkan-<abimajor>-*.dll to vulkan-<abimajor>.dll
-            #   Copy the most recent version of vulkaninfo-<abimajor>-*.exe to vulkaninfo.exe
-            #   Set up layer registry entries to use layers from the corresponding SDK
-            nsExec::ExecToStack 'powershell -NoLogo -NonInteractive -WindowStyle Hidden -inputformat none -ExecutionPolicy RemoteSigned -File "$IDir\ConfigLayersAndVulkanDLL.ps1" ${VERSION_ABI_MAJOR} 64'
-
-        # Else, running on a 32-bit OS machine
-        ${Else}
-
-            # Delete vulkaninfo.exe in C:\Windows\System32
-            Delete /REBOOTOK $WINDIR\System32\vulkaninfo.exe
-            Delete /REBOOTOK "$WINDIR\System32\vulkaninfo-$FileVersion.exe"
-
-            # Delete vullkan dll files: vulkan-<majorabi>.dll and vulkan-<majorabi>-<major>-<minor>-<patch>-<buildno>.dll
-            Delete /REBOOTOK $WINDIR\System32\vulkan-${VERSION_ABI_MAJOR}.dll
-            Delete /REBOOTOK $WINDIR\System32\vulkan-$FileVersion.dll
-
-            # Run the ConfigLayersAndVulkanDLL.ps1 script to:
-            #   Copy the most recent version of vulkan-<abimajor>-*.dll to vulkan-<abimajor>.dll
-            #   Copy the most recent version of vulkaninfo-<abimajor>-*.exe to vulkaninfo.exe
-            #   Set up layer registry entries to use layers from the corresponding SDK
-            nsExec::ExecToStack 'powershell -NoLogo -NonInteractive -WindowStyle Hidden -inputformat none -ExecutionPolicy RemoteSigned -File "$IDir\ConfigLayersAndVulkanDLL.ps1" ${VERSION_ABI_MAJOR} 32'
-
-        ${EndIf}
-
-        # Delete vulkaninfo from start menu.
-        SetShellVarContext all
-        Delete "$SMPROGRAMS\Vulkan\vulkaninfo.lnk"
-
-        # If running on a 64-bit OS machine
-        ${If} ${RunningX64}
-            Delete "$SMPROGRAMS\Vulkan\vulkaninfo32.lnk"
-        ${EndIf}
-
-        # Possibly add vulkaninfo to Start Menu
-        SetShellVarContext all
-        IfFileExists $WINDIR\System32\vulkaninfo.exe 0 +2
-            CreateShortCut "$SMPROGRAMS\Vulkan\vulkaninfo.lnk" "$WINDIR\System32\vulkaninfo.exe"
-        IfFileExists $WINDIR\SysWow64\vulkaninfo.exe 0 +2
-            CreateShortCut "$SMPROGRAMS\Vulkan\vulkaninfo32.lnk" "$WINDIR\SysWow64\vulkaninfo.exe"
-
-        # Possibly delete vulkan Start Menu
-        StrCpy $0 "$SMPROGRAMS\Vulkan"
-        Call un.DeleteDirIfEmpty
-        ClearErrors
 
         # Remove files in install dir
         Delete /REBOOTOK "$IDir\VULKANRT_LICENSE.rtf"
@@ -623,7 +622,7 @@ Section "uninstall"
             Delete /REBOOTOK "$IDir\vulkaninfo32.exe"
         ${EndIf}
 
-        StrCpy $1 22
+        StrCpy $1 75
         Call un.CheckForError
 
         # Need to do a SetOutPath to something outside of install dir,
@@ -631,7 +630,8 @@ Section "uninstall"
         SetOutPath "$TEMP"
 
         # Remove install directories
-        Rmdir /REBOOTOK "$IDir"
+        StrCpy $0 "$IDir"
+        Call un.DeleteDirIfEmpty
         StrCpy $0 "$PROGRAMFILES\${PRODUCTNAME}"
         Call un.DeleteDirIfEmpty
         ClearErrors
@@ -650,8 +650,12 @@ Section "uninstall"
 
     ${Endif}
 
-    StrCpy $1 23
+    StrCpy $1 80
     Call un.CheckForError
+
+    # Finish logging and move log file to TEMP dir
+    LogSet off
+    Rename "$INSTDIR\install.log" "$INSTDIR\Uninstall.log"
 
 SectionEnd
 !endif
@@ -693,17 +697,21 @@ Function CheckForError
         # IHV's using this install may want no message box.
         MessageBox MB_OK|MB_ICONSTOP "${errorMessage1}${errorMessage2}Errorcode: $1$\r$\n" /SD IDOK
 
+        # Finish logging and move log file to TEMP dir
+        LogSet off
+        Rename "$INSTDIR\install.log" "$TEMP\VulkanRT\install.log"
+
         # Copy the uninstaller to a temp folder of our own creation so we can completely
         # delete the old contents.
-        SetOutPath "$TEMP\tempun"
-        CopyFiles "$INSTDIR\Uninstall${PRODUCTNAME}.exe" "$TEMP\tempun"
+        SetOutPath "$TEMP\VulkanRT"
+        CopyFiles "$INSTDIR\Uninstall${PRODUCTNAME}.exe" "$TEMP\VulkanRT"
 
         # No uninstall using the version in the temporary folder.
-        ExecWait '"$TEMP\tempun\Uninstall${PRODUCTNAME}.exe" /S _?=$INSTDIR'
+        ExecWait '"$TEMP\VulkanRT\Uninstall${PRODUCTNAME}.exe" /S _?=$INSTDIR'
 
         # Delete the copy of the uninstaller we ran
-        Delete /REBOOTOK "$TEMP\tempun\Uninstall${PRODUCTNAME}.exe"
-        RmDir /R /REBOOTOK "$TEMP\tempun"
+        Delete /REBOOTOK "$TEMP\VulkanRT\Uninstall${PRODUCTNAME}.exe"
+        RmDir /R /REBOOTOK "$TEMP\VulkanRT"
 
         # Set an error message to output
         SetErrorLevel $1
@@ -721,6 +729,11 @@ Function un.CheckForError
 
         # Set an error message to output
         SetErrorLevel $1
+
+        # Finish logging and move log file to TEMP dir
+        LogSet off
+        Delete "$TEMP\VulkanRT\Uninstall.log"
+        Rename "$INSTDIR\install.log" "$TEMP\VulkanRT\Uninstall.log"
 
         Quit
     ${EndIf}

@@ -7,24 +7,17 @@
 # Copyright (c) 2015-2016 LunarG, Inc.
 # Copyright (c) 2015-2016 Google Inc.
 #
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and/or associated documentation files (the "Materials"), to
-# deal in the Materials without restriction, including without limitation the
-# rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-# sell copies of the Materials, and to permit persons to whom the Materials
-# are furnished to do so, subject to the following conditions:
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-# The above copyright notice(s) and this permission notice shall be included
-# in all copies or substantial portions of the Materials.
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
-# THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-#
-# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-# OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
-# USE OR OTHER DEALINGS IN THE MATERIALS
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 # Author: Tobin Ehlis <tobine@google.com>
 # Author: Courtney Goeltzenleuchter <courtneygo@google.com>
@@ -208,26 +201,19 @@ class Subcommand(object):
  * Copyright (c) 2015-2016 The Khronos Group Inc.
  * Copyright (c) 2015-2016 Valve Corporation
  * Copyright (c) 2015-2016 LunarG, Inc.
- * Copyright (c) 2015 Google, Inc.
+ * Copyright (c) 2015-2016 Google, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and/or associated documentation files (the "Materials"), to
- * deal in the Materials without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Materials, and to permit persons to whom the Materials
- * are furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice(s) and this permission notice shall be included
- * in all copies or substantial portions of the Materials.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- *
- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
- * USE OR OTHER DEALINGS IN THE MATERIALS
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  * Author: Tobin Ehlis <tobine@google.com>
  * Author: Courtney Goeltzenleuchter <courtneygo@google.com>
@@ -306,7 +292,7 @@ class Subcommand(object):
         r_body.append('        VkDebugReportCallbackEXT*                    pCallback)')
         r_body.append('{')
         # Switch to this code section for the new per-instance storage and debug callbacks
-        if self.layer_name in ['object_tracker', 'threading', 'unique_objects']:
+        if self.layer_name in ['object_tracker', 'unique_objects']:
             r_body.append('    VkLayerInstanceDispatchTable *pInstanceTable = get_dispatch_table(%s_instance_table_map, instance);' % self.layer_name )
             r_body.append('    VkResult result = pInstanceTable->CreateDebugReportCallbackEXT(instance, pCreateInfo, pAllocator, pCallback);')
             r_body.append('    if (VK_SUCCESS == result) {')
@@ -333,7 +319,7 @@ class Subcommand(object):
         r_body.append('VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyDebugReportCallbackEXT(VkInstance instance, VkDebugReportCallbackEXT msgCallback, const VkAllocationCallbacks *pAllocator)')
         r_body.append('{')
         # Switch to this code section for the new per-instance storage and debug callbacks
-        if self.layer_name in ['object_tracker', 'threading', 'unique_objects']:
+        if self.layer_name in ['object_tracker', 'unique_objects']:
             r_body.append('    VkLayerInstanceDispatchTable *pInstanceTable = get_dispatch_table(%s_instance_table_map, instance);' % self.layer_name )
         else:
             r_body.append('    VkLayerInstanceDispatchTable *pInstanceTable = instance_dispatch_table(instance);')
@@ -349,7 +335,7 @@ class Subcommand(object):
         r_body.append('VK_LAYER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDebugReportMessageEXT(VkInstance instance, VkDebugReportFlagsEXT    flags, VkDebugReportObjectTypeEXT objType, uint64_t object, size_t location, int32_t msgCode, const char *pLayerPrefix, const char *pMsg)')
         r_body.append('{')
         # Switch to this code section for the new per-instance storage and debug callbacks
-        if self.layer_name == 'object_tracker' or self.layer_name == 'threading':
+        if self.layer_name == 'object_tracker':
             r_body.append('    VkLayerInstanceDispatchTable *pInstanceTable = get_dispatch_table(%s_instance_table_map, instance);' % self.layer_name )
         else:
             r_body.append('    VkLayerInstanceDispatchTable *pInstanceTable = instance_dispatch_table(instance);')
@@ -363,7 +349,7 @@ class Subcommand(object):
         ggep_body.append('%s' % self.lineinfo.get())
 
         ggep_body.append('')
-        if self.layer_name == 'object_tracker' or self.layer_name == 'threading':
+        if self.layer_name == 'object_tracker':
             ggep_body.append('static const VkExtensionProperties instance_extensions[] = {')
             ggep_body.append('    {')
             ggep_body.append('        VK_EXT_DEBUG_REPORT_EXTENSION_NAME,')
@@ -372,7 +358,7 @@ class Subcommand(object):
             ggep_body.append('};')
         ggep_body.append('VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char *pLayerName, uint32_t *pCount,  VkExtensionProperties* pProperties)')
         ggep_body.append('{')
-        if self.layer_name == 'object_tracker' or self.layer_name == 'threading':
+        if self.layer_name == 'object_tracker':
           ggep_body.append('    return util_GetExtensionProperties(1, instance_extensions, pCount, pProperties);')
         else:
           ggep_body.append('    return util_GetExtensionProperties(0, NULL, pCount, pProperties);')
@@ -386,14 +372,14 @@ class Subcommand(object):
         ggep_body.append('%s' % self.lineinfo.get())
         ggep_body.append('static const VkLayerProperties globalLayerProps[] = {')
         ggep_body.append('    {')
-        if self.layer_name in ['threading', 'unique_objects']:
+        if self.layer_name in ['unique_objects']:
           ggep_body.append('        "VK_LAYER_GOOGLE_%s",' % layer)
-          ggep_body.append('        VK_API_VERSION, // specVersion')
+          ggep_body.append('        VK_LAYER_API_VERSION, // specVersion')
           ggep_body.append('        1, // implementationVersion')
           ggep_body.append('        "Google Validation Layer"')
         else:
           ggep_body.append('        "VK_LAYER_LUNARG_%s",' % layer)
-          ggep_body.append('        VK_API_VERSION, // specVersion')
+          ggep_body.append('        VK_LAYER_API_VERSION, // specVersion')
           ggep_body.append('        1, // implementationVersion')
           ggep_body.append('        "LunarG Validation Layer"')
         ggep_body.append('    }')
@@ -412,14 +398,14 @@ class Subcommand(object):
         gpdlp_body.append('%s' % self.lineinfo.get())
         gpdlp_body.append('static const VkLayerProperties deviceLayerProps[] = {')
         gpdlp_body.append('    {')
-        if self.layer_name in ['threading', 'unique_objects']:
+        if self.layer_name in ['unique_objects']:
           gpdlp_body.append('        "VK_LAYER_GOOGLE_%s",' % layer)
-          gpdlp_body.append('        VK_API_VERSION, // specVersion')
+          gpdlp_body.append('        VK_LAYER_API_VERSION, // specVersion')
           gpdlp_body.append('        1, // implementationVersion')
           gpdlp_body.append('        "Google Validation Layer"')
         else:
           gpdlp_body.append('        "VK_LAYER_LUNARG_%s",' % layer)
-          gpdlp_body.append('        VK_API_VERSION, // specVersion')
+          gpdlp_body.append('        VK_LAYER_API_VERSION, // specVersion')
           gpdlp_body.append('        1, // implementationVersion')
           gpdlp_body.append('        "LunarG Validation Layer"')
         gpdlp_body.append('    }')
@@ -524,7 +510,7 @@ class Subcommand(object):
 #
 # New style of GPA Functions for the new layer_data/layer_logging changes
 #
-        if self.layer_name in ['object_tracker', 'threading', 'unique_objects']:
+        if self.layer_name in ['object_tracker', 'unique_objects']:
             func_body.append("VK_LAYER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char* funcName)\n"
                              "{\n"
                              "    PFN_vkVoidFunction addr;\n"
@@ -702,70 +688,8 @@ class Subcommand(object):
                          '{\n' % self.layer_name)
         if init_opts:
             func_body.append('%s' % self.lineinfo.get())
-            func_body.append('    uint32_t report_flags = 0;')
-            func_body.append('    uint32_t debug_action = 0;')
-            func_body.append('    FILE *log_output = NULL;')
-            func_body.append('    const char *option_str;\n')
-            func_body.append('    // initialize %s options' % self.layer_name)
-            func_body.append('    report_flags = getLayerOptionFlags("%sReportFlags", 0);' % self.layer_name)
-            func_body.append('    getLayerOptionEnum("%sDebugAction", (uint32_t *) &debug_action);' % self.layer_name)
             func_body.append('')
-            func_body.append('    if (debug_action & VK_DBG_LAYER_ACTION_LOG_MSG)')
-            func_body.append('    {')
-            func_body.append('        option_str = getLayerOption("%sLogFilename");' % self.layer_name)
-            func_body.append('        log_output = getLayerLogOutput(option_str,"%s");' % self.layer_name)
-            func_body.append('        VkDebugReportCallbackCreateInfoEXT dbgCreateInfo;')
-            func_body.append('        memset(&dbgCreateInfo, 0, sizeof(dbgCreateInfo));')
-            func_body.append('        dbgCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;')
-            func_body.append('        dbgCreateInfo.flags = report_flags;')
-            func_body.append('        dbgCreateInfo.pfnCallback = log_callback;')
-            func_body.append('        dbgCreateInfo.pUserData = NULL;')
-            func_body.append('        layer_create_msg_callback(my_data->report_data, &dbgCreateInfo, pAllocator,')
-            func_body.append('                                  &my_data->logging_callback);')
-            func_body.append('    }')
-            func_body.append('')
-        if lockname is not None:
-            func_body.append('%s' % self.lineinfo.get())
-            func_body.append("    if (!%sLockInitialized)" % lockname)
-            func_body.append("    {")
-            func_body.append("        // TODO/TBD: Need to delete this mutex sometime.  How???")
-            func_body.append("        loader_platform_thread_create_mutex(&%sLock);" % lockname)
-            if condname is not None:
-                func_body.append("        loader_platform_thread_init_cond(&%sCond);" % condname)
-            func_body.append("        %sLockInitialized = 1;" % lockname)
-            func_body.append("    }")
-        func_body.append("}\n")
-        func_body.append('')
-        return "\n".join(func_body)
-
-    def _generate_new_layer_initialization(self, init_opts=False, prefix='vk', lockname=None, condname=None):
-        func_body = ["#include \"vk_dispatch_table_helper.h\""]
-        func_body.append('%s' % self.lineinfo.get())
-        func_body.append('static void init_%s(layer_data *my_data, const VkAllocationCallbacks *pAllocator)\n'
-                         '{\n' % self.layer_name)
-        if init_opts:
-            func_body.append('%s' % self.lineinfo.get())
-            func_body.append('    uint32_t report_flags = 0;')
-            func_body.append('    uint32_t debug_action = 0;')
-            func_body.append('    FILE *log_output = NULL;')
-            func_body.append('    const char *strOpt;')
-            func_body.append('    // initialize %s options' % self.layer_name)
-            func_body.append('    report_flags = getLayerOptionFlags("%sReportFlags", 0);' % self.layer_name)
-            func_body.append('    getLayerOptionEnum("%sDebugAction", (uint32_t *) &debug_action);' % self.layer_name)
-            func_body.append('')
-            func_body.append('    if (debug_action & VK_DBG_LAYER_ACTION_LOG_MSG)')
-            func_body.append('    {')
-            func_body.append('        strOpt = getLayerOption("%sLogFilename");' % self.layer_name)
-            func_body.append('        log_output = getLayerLogOutput(strOpt, "%s");' % self.layer_name)
-            func_body.append('        VkDebugReportCallbackCreateInfoEXT dbgCreateInfo;')
-            func_body.append('        memset(&dbgCreateInfo, 0, sizeof(dbgCreateInfo));')
-            func_body.append('        dbgCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;')
-            func_body.append('        dbgCreateInfo.flags = report_flags;')
-            func_body.append('        dbgCreateInfo.pfnCallback = log_callback;')
-            func_body.append('        dbgCreateInfo.pUserData = log_output;')
-            func_body.append('        layer_create_msg_callback(my_data->report_data, &dbgCreateInfo, pAllocator,')
-            func_body.append('                                  &my_data->logging_callback);')
-            func_body.append('    }')
+            func_body.append('    layer_debug_actions(my_data->report_data, my_data->logging_callback, pAllocator, "lunarg_%s");' % self.layer_name)
             func_body.append('')
         if lockname is not None:
             func_body.append('%s' % self.lineinfo.get())
@@ -785,13 +709,13 @@ class ObjectTrackerSubcommand(Subcommand):
     def generate_header(self):
         header_txt = []
         header_txt.append('%s' % self.lineinfo.get())
+        header_txt.append('#include "vk_loader_platform.h"')
+        header_txt.append('#include "vulkan/vulkan.h"')
+        header_txt.append('')
         header_txt.append('#include <stdio.h>')
         header_txt.append('#include <stdlib.h>')
         header_txt.append('#include <string.h>')
         header_txt.append('#include <inttypes.h>')
-        header_txt.append('')
-        header_txt.append('#include "vulkan/vulkan.h"')
-        header_txt.append('#include "vk_loader_platform.h"')
         header_txt.append('')
         header_txt.append('#include <unordered_map>')
         header_txt.append('using namespace std;')
@@ -816,7 +740,7 @@ class ObjectTrackerSubcommand(Subcommand):
     # for each member of struct_type
     #     add objs in obj_list to obj_set
     #     call self for structs
-        for m in vk_helper.struct_dict[struct_type]:
+        for m in sorted(vk_helper.struct_dict[struct_type]):
             if vk_helper.struct_dict[struct_type][m]['type'] in obj_list:
                 obj_set.add(vk_helper.struct_dict[struct_type][m]['type'])
             elif vk_helper.is_type(vk_helper.struct_dict[struct_type][m]['type'], 'struct'):
@@ -975,8 +899,8 @@ class ObjectTrackerSubcommand(Subcommand):
         #  dispatchable object type, we have a corresponding validate_* function
         #  for that object and all non-dispatchable objects that are used in API
         #  calls with that dispatchable object.
-        procs_txt.append('//%s' % str(obj_use_dict))
-        for do in obj_use_dict:
+        procs_txt.append('//%s' % str(sorted(obj_use_dict)))
+        for do in sorted(obj_use_dict):
             name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', do)
             name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', name).lower()[3:]
             # First create validate_* func for disp obj
@@ -992,7 +916,7 @@ class ObjectTrackerSubcommand(Subcommand):
             procs_txt.append('    return VK_FALSE;')
             procs_txt.append('}')
             procs_txt.append('')
-            for o in obj_use_dict[do]:
+            for o in sorted(obj_use_dict[do]):
                 if o == do: # We already generated this case above so skip here
                     continue
                 name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', o)
@@ -1024,7 +948,7 @@ class ObjectTrackerSubcommand(Subcommand):
         gedi_txt.append('VkInstance instance,')
         gedi_txt.append('const VkAllocationCallbacks* pAllocator)')
         gedi_txt.append('{')
-        gedi_txt.append('    loader_platform_thread_lock_mutex(&objLock);')
+        gedi_txt.append('    std::unique_lock<std::mutex> lock(global_lock);')
         gedi_txt.append('    validate_instance(instance, instance, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT, false);')
         gedi_txt.append('')
         gedi_txt.append('    destroy_instance(instance, instance);')
@@ -1060,24 +984,21 @@ class ObjectTrackerSubcommand(Subcommand):
         gedi_txt.append('    VkLayerInstanceDispatchTable *pInstanceTable = get_dispatch_table(object_tracker_instance_table_map, instance);')
         gedi_txt.append('    pInstanceTable->DestroyInstance(instance, pAllocator);')
         gedi_txt.append('')
-        gedi_txt.append('    // Clean up logging callback, if any')
         gedi_txt.append('    layer_data *my_data = get_my_data_ptr(key, layer_data_map);')
-        gedi_txt.append('    if (my_data->logging_callback) {')
-        gedi_txt.append('        layer_destroy_msg_callback(my_data->report_data, my_data->logging_callback, pAllocator);')
+        gedi_txt.append('    // Clean up logging callback, if any')
+        gedi_txt.append('    while (my_data->logging_callback.size() > 0) {')
+        gedi_txt.append('        VkDebugReportCallbackEXT callback = my_data->logging_callback.back();')
+        gedi_txt.append('        layer_destroy_msg_callback(my_data->report_data, callback, pAllocator);')
+        gedi_txt.append('        my_data->logging_callback.pop_back();')
         gedi_txt.append('    }')
         gedi_txt.append('')
         gedi_txt.append('    layer_debug_report_destroy_instance(mid(instance));')
-        gedi_txt.append('    layer_data_map.erase(pInstanceTable);')
+        gedi_txt.append('    layer_data_map.erase(key);')
         gedi_txt.append('')
         gedi_txt.append('    instanceExtMap.erase(pInstanceTable);')
-        gedi_txt.append('    loader_platform_thread_unlock_mutex(&objLock);')
+        gedi_txt.append('    lock.unlock();')
         # The loader holds a mutex that protects this from other threads
         gedi_txt.append('    object_tracker_instance_table_map.erase(key);')
-        gedi_txt.append('    if (object_tracker_instance_table_map.empty()) {')
-        gedi_txt.append('        // Release mutex when destroying last instance.')
-        gedi_txt.append('        loader_platform_thread_delete_mutex(&objLock);')
-        gedi_txt.append('        objLockInitialized = 0;')
-        gedi_txt.append('    }')
         gedi_txt.append('}')
         gedi_txt.append('')
         return "\n".join(gedi_txt)
@@ -1089,7 +1010,7 @@ class ObjectTrackerSubcommand(Subcommand):
         gedd_txt.append('VkDevice device,')
         gedd_txt.append('const VkAllocationCallbacks* pAllocator)')
         gedd_txt.append('{')
-        gedd_txt.append('    loader_platform_thread_lock_mutex(&objLock);')
+        gedd_txt.append('    std::unique_lock<std::mutex> lock(global_lock);')
         gedd_txt.append('    validate_device(device, device, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT, false);')
         gedd_txt.append('')
         gedd_txt.append('    destroy_device(device, device);')
@@ -1113,7 +1034,7 @@ class ObjectTrackerSubcommand(Subcommand):
         gedd_txt.append("    // Clean up Queue's MemRef Linked Lists")
         gedd_txt.append('    destroyQueueMemRefLists();')
         gedd_txt.append('')
-        gedd_txt.append('    loader_platform_thread_unlock_mutex(&objLock);')
+        gedd_txt.append('    lock.unlock();')
         gedd_txt.append('')
         gedd_txt.append('    dispatch_key key = get_dispatch_key(device);')
         gedd_txt.append('    VkLayerDispatchTable *pDisp = get_dispatch_table(object_tracker_device_table_map, device);')
@@ -1195,7 +1116,7 @@ class ObjectTrackerSubcommand(Subcommand):
                 full_name = '%s%s' % (prefix, name)
                 null_obj_ok = 'false'
                 # If a valid null param is defined for this func and we have a match, allow NULL
-                if func_name in valid_null_dict and True in [name in pn for pn in valid_null_dict[func_name]]:
+                if func_name in valid_null_dict and True in [name in pn for pn in sorted(valid_null_dict[func_name])]:
                     null_obj_ok = 'true'
                 if (array_index > 0) or '' != array:
                     tmp_pre = self._dereference_conditionally(indent, prefix, type_name, full_name)
@@ -1347,11 +1268,12 @@ class ObjectTrackerSubcommand(Subcommand):
                 typ = proto.params[-1].ty.strip('*').replace('const ', '');
                 name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', typ)
                 name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', name).lower()[3:]
-                create_line =  '    loader_platform_thread_lock_mutex(&objLock);\n'
-                create_line += '    if (result == VK_SUCCESS) {\n'
-                create_line += '        create_%s(%s, *%s, %s);\n' % (name, param0_name, proto.params[-1].name, obj_type_mapping[typ])
+                create_line =  '    {\n'
+                create_line += '        std::lock_guard<std::mutex> lock(global_lock);\n'
+                create_line += '        if (result == VK_SUCCESS) {\n'
+                create_line += '            create_%s(%s, *%s, %s);\n' % (name, param0_name, proto.params[-1].name, obj_type_mapping[typ])
+                create_line += '        }\n'
                 create_line += '    }\n'
-                create_line += '    loader_platform_thread_unlock_mutex(&objLock);\n'
             if 'FreeCommandBuffers' in proto.name:
                 typ = proto.params[-1].ty.strip('*').replace('const ', '');
                 name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', typ)
@@ -1367,22 +1289,28 @@ class ObjectTrackerSubcommand(Subcommand):
                 name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', typ)
                 name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', name).lower()[3:]
                 funcs.append('%s\n' % self.lineinfo.get())
-                destroy_line =  '    loader_platform_thread_lock_mutex(&objLock);\n'
-                destroy_line += '    destroy_%s(%s, %s);\n' % (name, param0_name, proto.params[-2].name)
-                destroy_line += '    loader_platform_thread_unlock_mutex(&objLock);\n'
+                destroy_line =  '    {\n'
+                destroy_line += '        std::lock_guard<std::mutex> lock(global_lock);\n'
+                destroy_line += '        destroy_%s(%s, %s);\n' % (name, param0_name, proto.params[-2].name)
+                destroy_line += '    }\n'
             indent = '    '
             if len(struct_uses) > 0:
                 using_line += '%sVkBool32 skipCall = VK_FALSE;\n' % (indent)
                 if not mutex_unlock:
-                    using_line += '%sloader_platform_thread_lock_mutex(&objLock);\n' % (indent)
+                    using_line += '%s{\n' % (indent)
+                    indent += '    '
+                    using_line += '%sstd::lock_guard<std::mutex> lock(global_lock);\n' % (indent)
                     mutex_unlock = True
-                using_line += '// objects to validate: %s\n' % str(struct_uses)
-                using_line += self._gen_obj_validate_code(struct_uses, obj_type_mapping, proto.name, valid_null_object_names, param0_name, '    ', '', 0)
+                using_line += '// objects to validate: %s\n' % str(sorted(struct_uses))
+                using_line += self._gen_obj_validate_code(struct_uses, obj_type_mapping, proto.name, valid_null_object_names, param0_name, indent, '', 0)
             if mutex_unlock:
-                using_line += '%sloader_platform_thread_unlock_mutex(&objLock);\n' % (indent)
+                indent = indent[4:]
+                using_line += '%s}\n' % (indent)
             if len(struct_uses) > 0:
                 using_line += '    if (skipCall)\n'
-                if proto.ret != "void":
+                if proto.ret == "VkBool32":
+                    using_line += '        return VK_FALSE;\n'
+                elif proto.ret != "void":
                     using_line += '        return VK_ERROR_VALIDATION_FAILED_EXT;\n'
                 else:
                     using_line += '        return;\n'
@@ -1493,7 +1421,7 @@ class UniqueObjectsSubcommand(Subcommand):
                 (name, array) = obj.split('[')
                 array = array.strip(']')
             ptr_type = False
-            if 'p' == obj[0] and obj[1] != obj[1].lower(): # TODO : Not idea way to determine ptr
+            if 'p' == obj[0] and obj[1] != obj[1].lower(): # TODO : Not ideal way to determine ptr
                 ptr_type = True
             if isinstance(struct_uses[obj], dict):
                 local_prefix = ''
@@ -1538,7 +1466,7 @@ class UniqueObjectsSubcommand(Subcommand):
             else:
                 if (array_index > 0) or array != '': # TODO : This is not ideal, really want to know if we're anywhere under an array
                     if first_level_param:
-                        pre_code += '%s%s* local_%s = NULL;\n' % (indent, struct_uses[obj], name)
+                        decls += '%s%s* local_%s = NULL;\n' % (indent, struct_uses[obj], name)
                     if array != '' and not first_level_param: # ptrs under structs will have been initialized so use local_*
                         pre_code += '%sif (local_%s%s) {\n' %(indent, prefix, name)
                     else:
@@ -1557,7 +1485,7 @@ class UniqueObjectsSubcommand(Subcommand):
                     pName = 'p%s' % (struct_uses[obj][2:])
                     if name not in vector_name_set:
                         vector_name_set.add(name)
-                    pre_code += '%slocal_%s%s = (%s)((VkUniqueObject*)%s%s)->actualObject;\n' % (indent, prefix, name, struct_uses[obj], prefix, name)
+                    pre_code += '%slocal_%s%s = (%s)my_map_data->unique_id_mapping[reinterpret_cast<const uint64_t &>(%s%s)];\n' % (indent, prefix, name, struct_uses[obj], prefix, name)
                     if array != '':
                         indent = indent[4:]
                         pre_code += '%s}\n' % (indent)
@@ -1565,18 +1493,13 @@ class UniqueObjectsSubcommand(Subcommand):
                     pre_code += '%s}\n' % (indent)
                 else:
                     pre_code += '%s\n' % (self.lineinfo.get())
-                    pre_code += '%sif (%s%s) {\n' %(indent, prefix, name)
-                    indent += '    '
                     deref_txt = '&'
                     if ptr_type:
                         deref_txt = ''
                     if '->' in prefix: # need to update local struct
-                        pre_code += '%slocal_%s%s = (%s)((VkUniqueObject*)%s%s)->actualObject;\n' % (indent, prefix, name, struct_uses[obj], prefix, name)
+                        pre_code += '%slocal_%s%s = (%s)my_map_data->unique_id_mapping[reinterpret_cast<const uint64_t &>(%s%s)];\n' % (indent, prefix, name, struct_uses[obj], prefix, name)
                     else:
-                        pre_code += '%s%s* p%s = (%s*)%s%s%s;\n' % (indent, struct_uses[obj], name, struct_uses[obj], deref_txt, prefix, name)
-                        pre_code += '%s*p%s = (%s)((VkUniqueObject*)%s%s)->actualObject;\n' % (indent, name, struct_uses[obj], prefix, name)
-                    indent = indent[4:]
-                    pre_code += '%s}\n' % (indent)
+                        pre_code += '%s%s = (%s)my_map_data->unique_id_mapping[reinterpret_cast<uint64_t &>(%s)];\n' % (indent, name, struct_uses[obj], name)
         return decls, pre_code, post_code
 
     def generate_intercept(self, proto, qual):
@@ -1591,15 +1514,21 @@ class UniqueObjectsSubcommand(Subcommand):
         # A few API cases that are manual code
         # TODO : Special case Create*Pipelines funcs to handle creating multiple unique objects
         explicit_object_tracker_functions = ['GetSwapchainImagesKHR',
+                                             'CreateSwapchainKHR',
                                              'CreateInstance',
+                                             'DestroyInstance',
                                              'CreateDevice',
+                                             'DestroyDevice',
                                              'CreateComputePipelines',
                                              'CreateGraphicsPipelines'
                                              ]
         # TODO : This is hacky, need to make this a more general-purpose solution for all layers
         ifdef_dict = {'CreateXcbSurfaceKHR': 'VK_USE_PLATFORM_XCB_KHR',
                       'CreateAndroidSurfaceKHR': 'VK_USE_PLATFORM_ANDROID_KHR',
-                      'CreateWin32SurfaceKHR': 'VK_USE_PLATFORM_WIN32_KHR'}
+                      'CreateWin32SurfaceKHR': 'VK_USE_PLATFORM_WIN32_KHR',
+                      'CreateXlibSurfaceKHR': 'VK_USE_PLATFORM_XLIB_KHR',
+                      'CreateWaylandSurfaceKHR': 'VK_USE_PLATFORM_WAYLAND_KHR',
+                      'CreateMirSurfaceKHR': 'VK_USE_PLATFORM_MIR_KHR'}
         # Give special treatment to create functions that return multiple new objects
         # This dict stores array name and size of array
         custom_create_dict = {'pDescriptorSets' : 'pAllocateInfo->descriptorSetCount'}
@@ -1621,21 +1550,31 @@ class UniqueObjectsSubcommand(Subcommand):
         # First thing we need to do is gather uses of non-dispatchable-objects (ndos)
         (struct_uses, local_decls) = get_object_uses(vulkan.object_non_dispatch_list, proto.params[1:last_param_index])
 
+        dispatch_param = proto.params[0].name
+        if 'CreateInstance' in proto.name:
+           dispatch_param = '*' + proto.params[1].name
+        pre_call_txt += '%slayer_data *my_map_data = get_my_data_ptr(get_dispatch_key(%s), layer_data_map);\n' % (indent, dispatch_param)
         if len(struct_uses) > 0:
-            pre_call_txt += '// STRUCT USES:%s\n' % struct_uses
+            pre_call_txt += '// STRUCT USES:%s\n' % sorted(struct_uses)
             if len(local_decls) > 0:
-                pre_call_txt += '//LOCAL DECLS:%s\n' % local_decls
+                pre_call_txt += '//LOCAL DECLS:%s\n' % sorted(local_decls)
             if destroy_func: # only one object
-                for del_obj in struct_uses:
-                    pre_call_txt += '%s%s local_%s = %s;\n' % (indent, struct_uses[del_obj], del_obj, del_obj)
-            (pre_decl, pre_code, post_code) = self._gen_obj_code(struct_uses, local_decls, '    ', '', 0, set(), True)
+                for del_obj in sorted(struct_uses):
+                    #pre_call_txt += '%s%s local_%s = %s;\n' % (indent, struct_uses[del_obj], del_obj, del_obj)
+                    pre_call_txt += '%suint64_t local_%s = reinterpret_cast<uint64_t &>(%s);\n' % (indent, del_obj, del_obj)
+                    pre_call_txt += '%s%s = (%s)my_map_data->unique_id_mapping[local_%s];\n' % (indent, del_obj, struct_uses[del_obj], del_obj)
+                    (pre_decl, pre_code, post_code) = ('', '', '')
+            else:
+                (pre_decl, pre_code, post_code) = self._gen_obj_code(struct_uses, local_decls, '    ', '', 0, set(), True)
             # This is a bit hacky but works for now. Need to decl local versions of top-level structs
-            for ld in local_decls:
+            for ld in sorted(local_decls):
                 init_null_txt = 'NULL';
                 if '*' not in local_decls[ld]:
                     init_null_txt = '{}';
                 if local_decls[ld].strip('*') not in vulkan.object_non_dispatch_list:
                     pre_decl += '    safe_%s local_%s = %s;\n' % (local_decls[ld], ld, init_null_txt)
+            if pre_code != '': # lock around map uses
+                pre_code = '%s{\n%sstd::lock_guard<std::mutex> lock(global_lock);\n%s%s}\n' % (indent, indent, pre_code, indent)
             pre_call_txt += '%s%s' % (pre_decl, pre_code)
             post_call_txt += '%s' % (post_code)
         elif create_func:
@@ -1650,9 +1589,6 @@ class UniqueObjectsSubcommand(Subcommand):
         if proto.ret != "void":
             ret_val = "%s result = " % proto.ret
             ret_stmt = "    return result;\n"
-        dispatch_param = proto.params[0].name
-        if 'CreateInstance' in proto.name:
-           dispatch_param = '*' + proto.params[1].name
         if create_func:
             obj_type = proto.params[-1].ty.strip('*')
             obj_name = proto.params[-1].name
@@ -1660,22 +1596,22 @@ class UniqueObjectsSubcommand(Subcommand):
                 local_name = "unique%s" % obj_type[2:]
                 post_call_txt += '%sif (VK_SUCCESS == result) {\n' % (indent)
                 indent += '    '
+                post_call_txt += '%sstd::lock_guard<std::mutex> lock(global_lock);\n' % (indent)
                 if obj_name in custom_create_dict:
                     post_call_txt += '%s\n' % (self.lineinfo.get())
                     local_name = '%ss' % (local_name) # add 's' to end for vector of many
-                    post_call_txt += '%sstd::vector<VkUniqueObject*> %s = {};\n' % (indent, local_name)
                     post_call_txt += '%sfor (uint32_t i=0; i<%s; ++i) {\n' % (indent, custom_create_dict[obj_name])
                     indent += '    '
-                    post_call_txt += '%s%s.push_back(new VkUniqueObject());\n' % (indent, local_name)
-                    post_call_txt += '%s%s[i]->actualObject = (uint64_t)%s[i];\n' % (indent, local_name, obj_name)
-                    post_call_txt += '%s%s[i] = (%s)%s[i];\n' % (indent, obj_name, obj_type, local_name)
+                    post_call_txt += '%suint64_t unique_id = my_map_data->unique_id++;\n' % (indent)
+                    post_call_txt += '%smy_map_data->unique_id_mapping[unique_id] = reinterpret_cast<uint64_t &>(%s[i]);\n' % (indent, obj_name)
+                    post_call_txt += '%s%s[i] = reinterpret_cast<%s&>(unique_id);\n' % (indent, obj_name, obj_type)
                     indent = indent[4:]
                     post_call_txt += '%s}\n' % (indent)
                 else:
                     post_call_txt += '%s\n' % (self.lineinfo.get())
-                    post_call_txt += '%sVkUniqueObject* %s = new VkUniqueObject();\n' % (indent, local_name)
-                    post_call_txt += '%s%s->actualObject = (uint64_t)*%s;\n' % (indent, local_name, obj_name)
-                    post_call_txt += '%s*%s = (%s)%s;\n' % (indent, obj_name, obj_type, local_name)
+                    post_call_txt += '%suint64_t unique_id = my_map_data->unique_id++;\n' % (indent)
+                    post_call_txt += '%smy_map_data->unique_id_mapping[unique_id] = reinterpret_cast<uint64_t &>(*%s);\n' % (indent, obj_name)
+                    post_call_txt += '%s*%s = reinterpret_cast<%s&>(unique_id);\n' % (indent, obj_name, obj_type)
                 indent = indent[4:]
                 post_call_txt += '%s}\n' % (indent)
         elif destroy_func:
@@ -1690,7 +1626,8 @@ class UniqueObjectsSubcommand(Subcommand):
                 post_call_txt += '%s}\n' % (indent)
             else:
                 post_call_txt += '%s\n' % (self.lineinfo.get())
-                post_call_txt = '%sdelete (VkUniqueObject*)local_%s;\n' % (indent, proto.params[-2].name)
+                post_call_txt += '%sstd::lock_guard<std::mutex> lock(global_lock);\n' % (indent)
+                post_call_txt += '%smy_map_data->unique_id_mapping.erase(local_%s);\n' % (indent, proto.params[-2].name)
 
         call_sig = proto.c_call()
         # Replace default params with any custom local params
@@ -1761,294 +1698,6 @@ class UniqueObjectsSubcommand(Subcommand):
                                                   instance_extensions)]
         return "\n\n".join(body)
 
-class ThreadingSubcommand(Subcommand):
-    thread_check_dispatchable_objects = [
-        "VkQueue",
-        "VkCommandBuffer",
-    ]
-    thread_check_nondispatchable_objects = [
-        "VkDeviceMemory",
-        "VkBuffer",
-        "VkImage",
-        "VkDescriptorSet",
-        "VkDescriptorPool",
-        "VkSemaphore"
-    ]
-    thread_check_object_types = {
-        'VkInstance' : 'VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT',
-        'VkPhysicalDevice' : 'VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT',
-        'VkDevice' : 'VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT',
-        'VkQueue' : 'VK_DEBUG_REPORT_OBJECT_TYPE_QUEUE_EXT',
-        'VkCommandBuffer' : 'VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT',
-        'VkFence' : 'VK_DEBUG_REPORT_OBJECT_TYPE_FENCE_EXT',
-        'VkDeviceMemory' : 'VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_MEMORY_EXT',
-        'VkBuffer' : 'VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT',
-        'VkImage' : 'VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT',
-        'VkSemaphore' : 'VK_DEBUG_REPORT_OBJECT_TYPE_SEMAPHORE_EXT',
-        'VkEvent' : 'VK_DEBUG_REPORT_OBJECT_TYPE_EVENT_EXT',
-        'VkQueryPool' : 'VK_DEBUG_REPORT_OBJECT_TYPE_QUERY_POOL_EXT',
-        'VkBufferView' : 'VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_VIEW_EXT',
-        'VkImageView' : 'VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_VIEW_EXT',
-        'VkShaderModule' : 'VK_DEBUG_REPORT_OBJECT_TYPE_SHADER_MODULE_EXT',
-        'VkShader' : 'VK_DEBUG_REPORT_OBJECT_TYPE_SHADER',
-        'VkPipelineCache' : 'VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_CACHE_EXT',
-        'VkPipelineLayout' : 'VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_LAYOUT_EXT',
-        'VkRenderPass' : 'VK_DEBUG_REPORT_OBJECT_TYPE_RENDER_PASS_EXT',
-        'VkPipeline' : 'VK_DEBUG_REPORT_OBJECT_TYPE_PIPELINE_EXT',
-        'VkDescriptorSetLayout' : 'VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT_EXT',
-        'VkSampler' : 'VK_DEBUG_REPORT_OBJECT_TYPE_SAMPLER_EXT',
-        'VkDescriptorPool' : 'VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_POOL_EXT',
-        'VkDescriptorSet' : 'VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT',
-        'VkFramebuffer' : 'VK_DEBUG_REPORT_OBJECT_TYPE_FRAMEBUFFER_EXT',
-        'VkCommandPool' : 'VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_POOL_EXT',
-    }
-    def generate_useObject(self, ty):
-        obj_type = self.thread_check_object_types[ty]
-        key = "object"
-        msg_object = "(uint64_t)(object)"
-        header_txt = []
-        header_txt.append('%s' % self.lineinfo.get())
-        header_txt.append('static void use%s(const void* dispatchable_object, %s object)' % (ty, ty))
-        header_txt.append('{')
-        header_txt.append('    loader_platform_thread_id tid = loader_platform_get_thread_id();')
-        header_txt.append('    loader_platform_thread_lock_mutex(&threadingLock);')
-        header_txt.append('    if (%sObjectsInUse.find(%s) == %sObjectsInUse.end()) {' % (ty, key, ty))
-        header_txt.append('        %sObjectsInUse[%s] = tid;' % (ty, key))
-        header_txt.append('    } else {')
-        header_txt.append('        if (%sObjectsInUse[%s] != tid) {' % (ty, key))
-        header_txt.append('            log_msg(mdd(dispatchable_object), VK_DEBUG_REPORT_ERROR_BIT_EXT, %s, %s,' % (obj_type, msg_object))
-        header_txt.append('                __LINE__, THREADING_CHECKER_MULTIPLE_THREADS, "THREADING",')
-        header_txt.append('                "THREADING ERROR : object of type %s is simultaneously used in thread %%ld and thread %%ld",' % (ty))
-        header_txt.append('                %sObjectsInUse[%s], tid);' % (ty, key))
-        header_txt.append('            // Wait for thread-safe access to object')
-        header_txt.append('            while (%sObjectsInUse.find(%s) != %sObjectsInUse.end()) {' % (ty, key, ty))
-        header_txt.append('                loader_platform_thread_cond_wait(&threadingCond, &threadingLock);')
-        header_txt.append('            }')
-        header_txt.append('            %sObjectsInUse[%s] = tid;' % (ty, key))
-        header_txt.append('        } else {')
-        header_txt.append('            log_msg(mdd(dispatchable_object), VK_DEBUG_REPORT_ERROR_BIT_EXT, %s, %s,' % (obj_type, msg_object))
-        header_txt.append('                __LINE__, THREADING_CHECKER_MULTIPLE_THREADS, "THREADING",')
-        header_txt.append('                "THREADING ERROR : object of type %s is recursively used in thread %%ld",' % (ty))
-        header_txt.append('                tid);')
-        header_txt.append('        }')
-        header_txt.append('    }')
-        header_txt.append('    loader_platform_thread_unlock_mutex(&threadingLock);')
-        header_txt.append('}')
-        return "\n".join(header_txt)
-    def generate_finishUsingObject(self, ty):
-        key = "object"
-        header_txt = []
-        header_txt.append('%s' % self.lineinfo.get())
-        header_txt.append('static void finishUsing%s(%s object)' % (ty, ty))
-        header_txt.append('{')
-        header_txt.append('    // Object is no longer in use')
-        header_txt.append('    loader_platform_thread_lock_mutex(&threadingLock);')
-        header_txt.append('    %sObjectsInUse.erase(%s);' % (ty, key))
-        header_txt.append('    loader_platform_thread_cond_broadcast(&threadingCond);')
-        header_txt.append('    loader_platform_thread_unlock_mutex(&threadingLock);')
-        header_txt.append('}')
-        return "\n".join(header_txt)
-    def generate_header(self):
-        header_txt = []
-        header_txt.append('%s' % self.lineinfo.get())
-        header_txt.append('#include <stdio.h>')
-        header_txt.append('#include <stdlib.h>')
-        header_txt.append('#include <string.h>')
-        header_txt.append('#include <unordered_map>')
-        header_txt.append('#include "vk_loader_platform.h"')
-        header_txt.append('#include "vulkan/vk_layer.h"')
-        header_txt.append('#include "threading.h"')
-        header_txt.append('#include "vk_layer_config.h"')
-        header_txt.append('#include "vk_layer_extension_utils.h"')
-        header_txt.append('#include "vk_enum_validate_helper.h"')
-        header_txt.append('#include "vk_struct_validate_helper.h"')
-        header_txt.append('#include "vk_layer_table.h"')
-        header_txt.append('#include "vk_layer_logging.h"')
-        header_txt.append('')
-        header_txt.append('')
-        header_txt.append('static LOADER_PLATFORM_THREAD_ONCE_DECLARATION(initOnce);')
-        header_txt.append('')
-        header_txt.append('using namespace std;')
-        for ty in self.thread_check_dispatchable_objects:
-            header_txt.append('static unordered_map<%s, loader_platform_thread_id> %sObjectsInUse;' % (ty, ty))
-        for ty in self.thread_check_nondispatchable_objects:
-            header_txt.append('static unordered_map<%s, loader_platform_thread_id> %sObjectsInUse;' % (ty, ty))
-        header_txt.append('static int threadingLockInitialized = 0;')
-        header_txt.append('static loader_platform_thread_mutex threadingLock;')
-        header_txt.append('static loader_platform_thread_cond threadingCond;')
-        header_txt.append('%s' % self.lineinfo.get())
-        for ty in self.thread_check_dispatchable_objects + self.thread_check_nondispatchable_objects:
-            header_txt.append(self.generate_useObject(ty))
-            header_txt.append(self.generate_finishUsingObject(ty))
-        header_txt.append('%s' % self.lineinfo.get())
-        return "\n".join(header_txt)
-
-    def generate_intercept(self, proto, qual):
-        if proto.name in [ 'CreateDebugReportCallbackEXT' ]:
-            # use default version
-            return None
-        decl = proto.c_func(prefix="vk", attr="VKAPI")
-        ret_val = ''
-        stmt = ''
-        funcs = []
-        table = 'device'
-        if proto.ret != "void":
-            ret_val = "%s result = " % proto.ret
-            stmt = "    return result;\n"
-        if proto_is_global(proto):
-           table = 'instance'
-
-        # Memory range calls are special in needed thread checking within structs
-        if proto.name in ["FlushMappedMemoryRanges","InvalidateMappedMemoryRanges"]:
-            funcs.append('%s' % self.lineinfo.get())
-            funcs.append('%s%s\n' % (qual, decl) +
-                     '{\n'
-                     '    for (uint32_t i=0; i<memoryRangeCount; i++) {\n'
-                     '        useVkDeviceMemory((const void *) %s, pMemoryRanges[i].memory);\n' % proto.params[0].name +
-                     '    }\n'
-                     '    VkLayerDispatchTable *pDeviceTable = get_dispatch_table(threading_%s_table_map, %s);\n' % (table, proto.params[0].name) +
-                     '    %s pDeviceTable->%s;\n' % (ret_val, proto.c_call()) +
-                     '    for (uint32_t i=0; i<memoryRangeCount; i++) {\n'
-                     '        finishUsingVkDeviceMemory(pMemoryRanges[i].memory);\n'
-                     '    }\n'
-                     '%s' % (stmt) +
-                     '}')
-            return "\n".join(funcs)
-        # All functions that do a Get are thread safe
-        if 'Get' in proto.name:
-            return None
-        # All WSI functions are thread safe
-        if 'KHR' in proto.name:
-            return None
-        # Initialize in early calls
-        if proto.name == "CreateDevice":
-            funcs.append('%s' % self.lineinfo.get())
-            funcs.append('%s%s\n' % (qual, decl) +
-                     '{\n'
-                     '    VkLayerDeviceCreateInfo *chain_info = get_chain_info(pCreateInfo, VK_LAYER_LINK_INFO);\n'
-                     '    PFN_vkGetInstanceProcAddr fpGetInstanceProcAddr = chain_info->u.pLayerInfo->pfnNextGetInstanceProcAddr;\n'
-                     '    PFN_vkGetDeviceProcAddr fpGetDeviceProcAddr = chain_info->u.pLayerInfo->pfnNextGetDeviceProcAddr;\n'
-                     '    PFN_vkCreateDevice fpCreateDevice = (PFN_vkCreateDevice) fpGetInstanceProcAddr(NULL, "vkCreateDevice");\n'
-                     '    if (fpCreateDevice == NULL) {\n'
-                     '        return VK_ERROR_INITIALIZATION_FAILED;\n'
-                     '    }\n'
-                     '    // Advance the link info for the next element on the chain\n'
-                     '    chain_info->u.pLayerInfo = chain_info->u.pLayerInfo->pNext;\n'
-                     '    VkResult result = fpCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);\n'
-                     '    if (result != VK_SUCCESS) {\n'
-                     '        return result;\n'
-                     '    }\n'
-                     '    layer_data *my_instance_data = get_my_data_ptr(get_dispatch_key(physicalDevice), layer_data_map);\n'
-                     '    layer_data *my_device_data = get_my_data_ptr(get_dispatch_key(*pDevice), layer_data_map);\n'
-                     '    initDeviceTable(*pDevice, fpGetDeviceProcAddr, threading_device_table_map);\n'
-                     '    my_device_data->report_data = layer_debug_report_create_device(my_instance_data->report_data, *pDevice);\n'
-                     '    return result;\n'
-                     '}\n')
-            return "\n".join(funcs)
-        elif proto.params[0].ty == "VkPhysicalDevice":
-            return None
-        # Functions changing command buffers need thread safe use of first parameter
-        if proto.params[0].ty == "VkCommandBuffer":
-            funcs.append('%s' % self.lineinfo.get())
-            funcs.append('%s%s\n' % (qual, decl) +
-                     '{\n'
-                     '    use%s((const void *) %s, %s);\n' % (proto.params[0].ty, proto.params[0].name, proto.params[0].name) +
-                     '    VkLayerDispatchTable *pDeviceTable = get_dispatch_table(threading_%s_table_map, %s);\n' % (table, proto.params[0].name) +
-                     '    %spDeviceTable->%s;\n' % (ret_val, proto.c_call()) +
-                     '    finishUsing%s(%s);\n' % (proto.params[0].ty, proto.params[0].name) +
-                     '%s' % stmt +
-                     '}')
-            return "\n".join(funcs)
-        # Non-Cmd functions that do a Wait are thread safe
-        if 'Wait' in proto.name:
-            return None
-        # Watch use of certain types of objects passed as any parameter
-        checked_params = []
-        for param in proto.params:
-            if param.ty in self.thread_check_dispatchable_objects or param.ty in self.thread_check_nondispatchable_objects:
-                checked_params.append(param)
-        if proto.name == "DestroyDevice":
-            funcs.append('%s%s\n' % (qual, decl) +
-                         '{\n'
-                         '    dispatch_key key = get_dispatch_key(device);\n'
-                         '    VkLayerDispatchTable *pDeviceTable = get_dispatch_table(threading_%s_table_map, %s);\n' % (table, proto.params[0].name) +
-                         '    %spDeviceTable->%s;\n' % (ret_val, proto.c_call()) +
-                         '    threading_device_table_map.erase(key);\n'
-                         '}\n')
-            return "\n".join(funcs);
-        elif proto.name == "DestroyInstance":
-            funcs.append('%s%s\n' % (qual, decl) +
-                         '{\n'
-                         '    dispatch_key key = get_dispatch_key(instance);\n'
-                         '    VkLayerInstanceDispatchTable *pInstanceTable = get_dispatch_table(threading_instance_table_map, %s);\n' % proto.params[0].name +
-                         '    %spInstanceTable->%s;\n' % (ret_val, proto.c_call()) +
-                         '    destroy_dispatch_table(threading_instance_table_map, key);\n'
-                         '\n'
-                         '    // Clean up logging callback, if any\n'
-                         '    layer_data *my_data = get_my_data_ptr(key, layer_data_map);\n'
-                         '    if (my_data->logging_callback) {\n'
-                         '        layer_destroy_msg_callback(my_data->report_data, my_data->logging_callback, pAllocator);\n'
-                         '    }\n'
-                         '\n'
-                         '    layer_debug_report_destroy_instance(my_data->report_data);\n'
-                         '    layer_data_map.erase(pInstanceTable);\n'
-                         '\n'
-                         '    threading_instance_table_map.erase(key);\n'
-                         '}\n')
-            return "\n".join(funcs);
-        elif proto.name == "CreateInstance":
-            funcs.append('%s%s\n'
-                         '{\n'
-                         '    VkLayerInstanceCreateInfo *chain_info = get_chain_info(pCreateInfo, VK_LAYER_LINK_INFO);\n'
-                         '    PFN_vkGetInstanceProcAddr fpGetInstanceProcAddr = chain_info->u.pLayerInfo->pfnNextGetInstanceProcAddr;\n'
-                         '    PFN_vkCreateInstance fpCreateInstance = (PFN_vkCreateInstance) fpGetInstanceProcAddr(NULL, "vkCreateInstance");\n'
-                         '    if (fpCreateInstance == NULL) {\n'
-                         '        return VK_ERROR_INITIALIZATION_FAILED;\n'
-                         '    }\n'
-                         '    // Advance the link info for the next element on the chain\n'
-                         '    chain_info->u.pLayerInfo = chain_info->u.pLayerInfo->pNext;\n'
-                         '    VkResult result = fpCreateInstance(pCreateInfo, pAllocator, pInstance);\n'
-                         '    if (result != VK_SUCCESS) {\n'
-                         '        return result;\n'
-                         '    }\n'
-                         '    VkLayerInstanceDispatchTable *pTable = initInstanceTable(*pInstance, fpGetInstanceProcAddr, threading_instance_table_map);\n'
-                         '    layer_data *my_data = get_my_data_ptr(get_dispatch_key(*pInstance), layer_data_map);\n'
-                         '    my_data->report_data = debug_report_create_instance(\n'
-                         '            pTable,\n'
-                         '            *pInstance,\n'
-                         '            pCreateInfo->enabledExtensionCount,\n'
-                         '            pCreateInfo->ppEnabledExtensionNames);\n'
-                         '    init_threading(my_data, pAllocator);\n'
-                         '    return result;\n'
-                         '}\n' % (qual, decl))
-            return "\n".join(funcs);
-        if len(checked_params) == 0:
-            return None
-        # Surround call with useObject and finishUsingObject for each checked_param
-        funcs.append('%s' % self.lineinfo.get())
-        funcs.append('%s%s' % (qual, decl))
-        funcs.append('{')
-        for param in checked_params:
-            funcs.append('    use%s((const void *) %s, %s);' % (param.ty, proto.params[0].name, param.name))
-        funcs.append('    VkLayerDispatchTable *pDeviceTable = get_dispatch_table(threading_%s_table_map, %s);' % (table, proto.params[0].name));
-        funcs.append('    %spDeviceTable->%s;' % (ret_val, proto.c_call()))
-        for param in checked_params:
-            funcs.append('    finishUsing%s(%s);' % (param.ty, param.name))
-        funcs.append('%s'
-                 '}' % stmt)
-        return "\n".join(funcs)
-
-    def generate_body(self):
-        self.layer_name = "threading"
-        body = [self._generate_new_layer_initialization(True, lockname='threading', condname='threading'),
-                self._generate_dispatch_entrypoints("VK_LAYER_EXPORT"),
-                self._generate_layer_gpa_function(extensions=[],
-                                                  instance_extensions=[('msg_callback_get_proc_addr', [])]),
-                self._gen_create_msg_callback(),
-                self._gen_destroy_msg_callback(),
-                self._gen_debug_report_msg()]
-        return "\n\n".join(body)
-
 def main():
     wsi = {
             "Win32",
@@ -2061,7 +1710,6 @@ def main():
 
     subcommands = {
             "object_tracker" : ObjectTrackerSubcommand,
-            "threading" : ThreadingSubcommand,
             "unique_objects" : UniqueObjectsSubcommand,
     }
 

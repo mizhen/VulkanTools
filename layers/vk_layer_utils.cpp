@@ -2,24 +2,17 @@
  * Copyright (c) 2015-2016 Valve Corporation
  * Copyright (c) 2015-2016 LunarG, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and/or associated documentation files (the "Materials"), to
- * deal in the Materials without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Materials, and to permit persons to whom the Materials
- * are furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice(s) and this permission notice shall be included
- * in all copies or substantial portions of the Materials.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- *
- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
- * USE OR OTHER DEALINGS IN THE MATERIALS
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  * Author: Mark Lobodzinski <mark@lunarg.com>
  *
@@ -27,7 +20,9 @@
 
 #include <string.h>
 #include <string>
+#include <vector>
 #include "vulkan/vulkan.h"
+#include "vk_layer_config.h"
 #include "vk_layer_utils.h"
 
 typedef struct _VULKAN_FORMAT_INFO {
@@ -566,24 +561,24 @@ VkDeviceSize vk_safe_modulo(VkDeviceSize dividend, VkDeviceSize divisor) {
     return result;
 }
 
-static const char UTF8_ONE_BYTE_CODE = 0xC0;
-static const char UTF8_ONE_BYTE_MASK = 0xE0;
-static const char UTF8_TWO_BYTE_CODE = 0xE0;
-static const char UTF8_TWO_BYTE_MASK = 0xF0;
-static const char UTF8_THREE_BYTE_CODE = 0xF0;
-static const char UTF8_THREE_BYTE_MASK = 0xF8;
-static const char UTF8_DATA_BYTE_CODE = 0x80;
-static const char UTF8_DATA_BYTE_MASK = 0xC0;
+static const uint8_t UTF8_ONE_BYTE_CODE = 0xC0;
+static const uint8_t UTF8_ONE_BYTE_MASK = 0xE0;
+static const uint8_t UTF8_TWO_BYTE_CODE = 0xE0;
+static const uint8_t UTF8_TWO_BYTE_MASK = 0xF0;
+static const uint8_t UTF8_THREE_BYTE_CODE = 0xF0;
+static const uint8_t UTF8_THREE_BYTE_MASK = 0xF8;
+static const uint8_t UTF8_DATA_BYTE_CODE = 0x80;
+static const uint8_t UTF8_DATA_BYTE_MASK = 0xC0;
 
 VkStringErrorFlags vk_string_validate(const int max_length, const char *utf8) {
     VkStringErrorFlags result = VK_STRING_ERROR_NONE;
-    int num_char_bytes;
+    int num_char_bytes = 0;
     int i, j;
 
     for (i = 0; i < max_length; i++) {
         if (utf8[i] == 0) {
             break;
-        } else if ((utf8[i] >= 0x20) && (utf8[i] < 0x7f)) {
+        } else if ((utf8[i] >= 0xa) && (utf8[i] < 0x7f)) {
             num_char_bytes = 0;
         } else if ((utf8[i] & UTF8_ONE_BYTE_MASK) == UTF8_ONE_BYTE_CODE) {
             num_char_bytes = 1;
@@ -607,4 +602,47 @@ VkStringErrorFlags vk_string_validate(const int max_length, const char *utf8) {
         }
     }
     return result;
+}
+
+void layer_debug_actions(debug_report_data *report_data, std::vector<VkDebugReportCallbackEXT> &logging_callback,
+                      const VkAllocationCallbacks *pAllocator, const char *layer_identifier) {
+
+    uint32_t report_flags = 0;
+    uint32_t debug_action = 0;
+    VkDebugReportCallbackEXT callback = VK_NULL_HANDLE;
+
+    std::string report_flags_key = layer_identifier;
+    std::string debug_action_key = layer_identifier;
+    std::string log_filename_key = layer_identifier;
+    report_flags_key.append(".report_flags");
+    debug_action_key.append(".debug_action");
+    log_filename_key.append(".log_filename");
+
+    // initialize layer options
+    report_flags = getLayerOptionFlags(report_flags_key.c_str(), 0);
+    getLayerOptionEnum(debug_action_key.c_str(), (uint32_t *)&debug_action);
+
+    if (debug_action & VK_DBG_LAYER_ACTION_LOG_MSG) {
+        const char *log_filename = getLayerOption(log_filename_key.c_str());
+        FILE *log_output = getLayerLogOutput(log_filename, layer_identifier);
+        VkDebugReportCallbackCreateInfoEXT dbgCreateInfo;
+        memset(&dbgCreateInfo, 0, sizeof(dbgCreateInfo));
+        dbgCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
+        dbgCreateInfo.flags = report_flags;
+        dbgCreateInfo.pfnCallback = log_callback;
+        dbgCreateInfo.pUserData = (void *)log_output;
+        layer_create_msg_callback(report_data, &dbgCreateInfo, pAllocator, &callback);
+        logging_callback.push_back(callback);
+    }
+
+    if (debug_action & VK_DBG_LAYER_ACTION_DEBUG_OUTPUT) {
+        VkDebugReportCallbackCreateInfoEXT dbgCreateInfo;
+        memset(&dbgCreateInfo, 0, sizeof(dbgCreateInfo));
+        dbgCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
+        dbgCreateInfo.flags = report_flags;
+        dbgCreateInfo.pfnCallback = win32_debug_output_msg;
+        dbgCreateInfo.pUserData = NULL;
+        layer_create_msg_callback(report_data, &dbgCreateInfo, pAllocator, &callback);
+        logging_callback.push_back(callback);
+    }
 }

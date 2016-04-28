@@ -3,24 +3,17 @@
  * Copyright (c) 2015-2016 Valve Corporation
  * Copyright (c) 2015-2016 LunarG, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and/or associated documentation files (the "Materials"), to
- * deal in the Materials without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Materials, and to permit persons to whom the Materials are
- * furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice(s) and this permission notice shall be included in
- * all copies or substantial portions of the Materials.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- *
- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
- * USE OR OTHER DEALINGS IN THE MATERIALS.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  * Author: Chia-I Wu <olvaffe@gmail.com>
  * Author: Cody Northrop <cody@lunarg.com>
@@ -44,6 +37,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <signal.h>
 
 #ifdef _WIN32
 #pragma comment(linker, "/subsystem:windows")
@@ -112,6 +106,8 @@ struct texture_object {
     int32_t tex_width, tex_height;
 };
 
+static int validation_error = 0;
+
 VKAPI_ATTR VkBool32 VKAPI_CALL
 dbgFunc(VkFlags msgFlags, VkDebugReportObjectTypeEXT objType,
         uint64_t srcObject, size_t location, int32_t msgCode,
@@ -119,6 +115,8 @@ dbgFunc(VkFlags msgFlags, VkDebugReportObjectTypeEXT objType,
     char *message = (char *)malloc(strlen(pMsg) + 100);
 
     assert(message);
+
+    validation_error = 1;
 
     if (msgFlags & VK_DEBUG_REPORT_ERROR_BIT_EXT) {
         sprintf(message, "ERROR: [%s] Code %d : %s", pLayerPrefix, msgCode,
@@ -145,6 +143,20 @@ dbgFunc(VkFlags msgFlags, VkDebugReportObjectTypeEXT objType,
      * That's what would happen without validation layers, so we'll
      * keep that behavior here.
      */
+    return false;
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL
+BreakCallback(VkFlags msgFlags, VkDebugReportObjectTypeEXT objType,
+              uint64_t srcObject, size_t location, int32_t msgCode,
+              const char *pLayerPrefix, const char *pMsg,
+              void *pUserData) {
+#ifndef WIN32
+    raise(SIGTRAP);
+#else
+    DebugBreak();
+#endif
+
     return false;
 }
 
@@ -243,7 +255,10 @@ struct demo {
 
     VkPhysicalDeviceMemoryProperties memory_properties;
 
+    int32_t curFrame;
+    int32_t frameCount;
     bool validate;
+    bool use_break;
     PFN_vkCreateDebugReportCallbackEXT CreateDebugReportCallback;
     PFN_vkDestroyDebugReportCallbackEXT DestroyDebugReportCallback;
     VkDebugReportCallbackEXT msg_callback;
@@ -1236,7 +1251,7 @@ char *demo_read_spv(const char *filename, size_t *psize) {
 
 static VkShaderModule demo_prepare_vs(struct demo *demo) {
     void *vertShaderCode;
-    size_t size;
+    size_t size = 0;
 
     vertShaderCode = demo_read_spv("tri-vert.spv", &size);
 
@@ -1301,6 +1316,7 @@ static void demo_prepare_pipeline(struct demo *demo) {
     rs.depthClampEnable = VK_FALSE;
     rs.rasterizerDiscardEnable = VK_FALSE;
     rs.depthBiasEnable = VK_FALSE;
+    rs.lineWidth = 1.0f;
 
     memset(&cb, 0, sizeof(cb));
     cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -1510,6 +1526,11 @@ static void demo_run(struct demo *demo) {
         demo->depthIncrement = 0.001f;
 
     demo->depthStencil += demo->depthIncrement;
+
+    demo->curFrame++;
+    if (demo->frameCount != INT32_MAX && demo->curFrame == demo->frameCount) {
+        PostQuitMessage(validation_error);
+    }
 }
 
 // On MS-Windows, make this a global, so it's available to WndProc()
@@ -1523,7 +1544,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     case WM_CREATE:
         return 0;
     case WM_CLOSE:
-        PostQuitMessage(0);
+        PostQuitMessage(validation_error);
         return 0;
     case WM_PAINT:
         if (demo.prepared) {
@@ -1652,6 +1673,9 @@ static void demo_run(struct demo *demo) {
 
         // Wait for work to finish before updating MVP.
         vkDeviceWaitIdle(demo->device);
+        demo->curFrame++;
+        if (demo->frameCount != INT32_MAX && demo->curFrame == demo->frameCount)
+            demo->quit = true;
     }
 }
 
@@ -1727,11 +1751,10 @@ static void demo_init_vk(struct demo *demo) {
     };
 
     char *instance_validation_layers_alt2[] = {
-        "VK_LAYER_GOOGLE_threading",     "VK_LAYER_LUNARG_param_checker",
+        "VK_LAYER_GOOGLE_threading",     "VK_LAYER_LUNARG_parameter_validation",
         "VK_LAYER_LUNARG_device_limits", "VK_LAYER_LUNARG_object_tracker",
-        "VK_LAYER_LUNARG_image",         "VK_LAYER_LUNARG_mem_tracker",
-        "VK_LAYER_LUNARG_draw_state",    "VK_LAYER_LUNARG_swapchain",
-        "VK_LAYER_GOOGLE_unique_objects"
+        "VK_LAYER_LUNARG_image",         "VK_LAYER_LUNARG_core_validation",
+        "VK_LAYER_LUNARG_swapchain",     "VK_LAYER_GOOGLE_unique_objects"
     };
 
     /* Look for validation layers */
@@ -1777,7 +1800,7 @@ static void demo_init_vk(struct demo *demo) {
         }
 
         if (!validation_found) {
-            ERR_EXIT("vkEnumerateInstanceLayerProperties failed to find"
+            ERR_EXIT("vkEnumerateInstanceLayerProperties failed to find "
                     "required validation layer.\n\n"
                     "Please look at the Getting Started guide for additional "
                     "information.\n",
@@ -1870,7 +1893,7 @@ static void demo_init_vk(struct demo *demo) {
         .applicationVersion = 0,
         .pEngineName = APP_SHORT_NAME,
         .engineVersion = 0,
-        .apiVersion = VK_MAKE_VERSION(1, 0, 0),
+        .apiVersion = VK_API_VERSION_1_0,
     };
     VkInstanceCreateInfo inst_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -2026,7 +2049,7 @@ static void demo_init_vk(struct demo *demo) {
         dbgCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
         dbgCreateInfo.flags =
             VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
-        dbgCreateInfo.pfnCallback = dbgFunc;
+        dbgCreateInfo.pfnCallback = demo->use_break ? BreakCallback : dbgFunc;
         dbgCreateInfo.pUserData = NULL;
         dbgCreateInfo.pNext = NULL;
         err = demo->CreateDebugReportCallback(demo->inst, &dbgCreateInfo, NULL,
@@ -2069,6 +2092,14 @@ static void demo_init_vk(struct demo *demo) {
                                              demo->queue_props);
     assert(demo->queue_count >= 1);
 
+    VkPhysicalDeviceFeatures features;
+    vkGetPhysicalDeviceFeatures(demo->gpu, &features);
+
+    if (!features.shaderClipDistance) {
+        ERR_EXIT("Required device feature `shaderClipDistance` not supported\n",
+                 "GetPhysicalDeviceFeatures failure");
+    }
+
     // Graphics queue and MemMgr queue can be separate.
     // TODO: Add support for separate queues, including synchronization,
     //       and appropriate tracking for QueueSubmit
@@ -2085,6 +2116,10 @@ static void demo_init_device(struct demo *demo) {
         .queueCount = 1,
         .pQueuePriorities = queue_priorities};
 
+    VkPhysicalDeviceFeatures features = {
+        .shaderClipDistance = VK_TRUE,
+    };
+
     VkDeviceCreateInfo device = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = NULL,
@@ -2097,6 +2132,7 @@ static void demo_init_device(struct demo *demo) {
                                       : NULL),
         .enabledExtensionCount = demo->enabled_extension_count,
         .ppEnabledExtensionNames = (const char *const *)demo->extension_names,
+        .pEnabledFeatures = &features,
     };
 
     err = vkCreateDevice(demo->gpu, &device, NULL, &demo->device);
@@ -2212,6 +2248,9 @@ static void demo_init_vk_swapchain(struct demo *demo) {
     }
     demo->color_space = surfFormats[0].colorSpace;
 
+    demo->quit = false;
+    demo->curFrame = 0;
+
     // Get Memory information and properties
     vkGetPhysicalDeviceMemoryProperties(demo->gpu, &demo->memory_properties);
 }
@@ -2239,38 +2278,34 @@ static void demo_init_connection(struct demo *demo) {
 #endif // _WIN32
 }
 
-#ifdef _WIN32
-static void demo_init(struct demo *demo, HINSTANCE hInstance, LPSTR pCmdLine)
-#else  // _WIN32
 static void demo_init(struct demo *demo, const int argc, const char *argv[])
-#endif // _WIN32
 {
-    bool argv_error = false;
-
     memset(demo, 0, sizeof(*demo));
+    demo->frameCount = INT32_MAX;
 
-#ifdef _WIN32
-    demo->connection = hInstance;
-    strncpy(demo->name, APP_SHORT_NAME, APP_NAME_STR_LEN);
-
-    if (strncmp(pCmdLine, "--use_staging", strlen("--use_staging")) == 0)
-        demo->use_staging_buffer = true;
-    else if (strncmp(pCmdLine, "--validate", strlen("--validate")) == 0)
-        demo->use_staging_buffer = true;
-    else if (strlen(pCmdLine) != 0) {
-        fprintf(stderr, "Do not recognize argument \"%s\".\n", pCmdLine);
-        argv_error = true;
-    }
-#else  // _WIN32
-    for (int i = 0; i < argc; i++) {
-        if (strncmp(argv[i], "--use_staging", strlen("--use_staging")) == 0)
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--use_staging") == 0) {
             demo->use_staging_buffer = true;
-        if (strncmp(argv[i], "--validate", strlen("--validate")) == 0)
+            continue;
+        }
+        if (strcmp(argv[i], "--break") == 0) {
+            demo->use_break = true;
+            continue;
+        }
+        if (strcmp(argv[i], "--validate") == 0) {
             demo->validate = true;
-    }
-#endif // _WIN32
-    if (argv_error) {
-        fprintf(stderr, "Usage:\n  %s [--use_staging] [--validate]\n", APP_SHORT_NAME);
+            continue;
+        }
+        if (strcmp(argv[i], "--c") == 0 && demo->frameCount == INT32_MAX &&
+            i < argc - 1 && sscanf(argv[i + 1], "%d", &demo->frameCount) == 1 &&
+            demo->frameCount >= 0) {
+            i++;
+            continue;
+        }
+
+        fprintf(stderr, "Usage:\n  %s [--use_staging] [--validate] [--break] "
+                        "[--c <framecount>]\n",
+                APP_SHORT_NAME);
         fflush(stderr);
         exit(1);
     }
@@ -2399,12 +2434,61 @@ static void demo_resize(struct demo *demo) {
 }
 
 #ifdef _WIN32
-int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
+// Include header required for parsing the command line options.
+#include <shellapi.h>
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                      LPSTR pCmdLine, int nCmdShow) {
     MSG msg;   // message
     bool done; // flag saying when app is complete
+    int argc;
+    char **argv;
 
-    demo_init(&demo, hInstance, pCmdLine);
+    // Use the CommandLine functions to get the command line arguments.
+    // Unfortunately, Microsoft outputs
+    // this information as wide characters for Unicode, and we simply want the
+    // Ascii version to be compatible
+    // with the non-Windows side.  So, we have to convert the information to
+    // Ascii character strings.
+    LPWSTR *commandLineArgs = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (NULL == commandLineArgs) {
+        argc = 0;
+    }
+
+    if (argc > 0) {
+        argv = (char **)malloc(sizeof(char *) * argc);
+        if (argv == NULL) {
+            argc = 0;
+        } else {
+            for (int iii = 0; iii < argc; iii++) {
+                size_t wideCharLen = wcslen(commandLineArgs[iii]);
+                size_t numConverted = 0;
+
+                argv[iii] = (char *)malloc(sizeof(char) * (wideCharLen + 1));
+                if (argv[iii] != NULL) {
+                    wcstombs_s(&numConverted, argv[iii], wideCharLen + 1,
+                               commandLineArgs[iii], wideCharLen + 1);
+                }
+            }
+        }
+    } else {
+        argv = NULL;
+    }
+
+    demo_init(&demo, argc, argv);
+
+    // Free up the items we had to allocate for the command line arguments.
+    if (argc > 0 && argv != NULL) {
+        for (int iii = 0; iii < argc; iii++) {
+            if (argv[iii] != NULL) {
+                free(argv[iii]);
+            }
+        }
+        free(argv);
+    }
+
+    demo.connection = hInstance;
+    strncpy(demo.name, "tri", APP_NAME_STR_LEN);
     demo_create_window(&demo);
     demo_init_vk_swapchain(&demo);
 
@@ -2442,6 +2526,6 @@ int main(const int argc, const char *argv[]) {
 
     demo_cleanup(&demo);
 
-    return 0;
+    return validation_error;
 }
 #endif // _WIN32

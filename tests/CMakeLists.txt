@@ -47,52 +47,12 @@ set(COMMON_CPP
     test_environment.cpp
    )
 
-set(TEST_LIBRARIES
-    glslang
-    OGLCompiler
-    OSDependent
-    SPIRV
-    ${XCB_LIBRARIES}
-    ${ImageMagick_LIBRARIES}
-    )
-
-add_library(glslang     STATIC IMPORTED)
-add_library(OGLCompiler STATIC IMPORTED)
-add_library(OSDependent STATIC IMPORTED)
-add_library(SPIRV       STATIC IMPORTED)
-
-# On Windows, we must pair Debug and Release appropriately
-if (WIN32)
-
-   set_target_properties(glslang PROPERTIES
-                         IMPORTED_LOCATION       "${GLSLANG_PREFIX}/${BUILDTGT_DIR}/glslang/Release/glslang.lib"
-                         IMPORTED_LOCATION_DEBUG "${GLSLANG_PREFIX}/${BUILDTGT_DIR}/glslang/Debug/glslang.lib")
-   set_target_properties(OGLCompiler PROPERTIES
-                         IMPORTED_LOCATION       "${GLSLANG_PREFIX}/${BUILDTGT_DIR}/OGLCompilersDLL/Release/OGLCompiler.lib"
-                         IMPORTED_LOCATION_DEBUG "${GLSLANG_PREFIX}/${BUILDTGT_DIR}/OGLCompilersDLL/Debug/OGLCompiler.lib")
-   set_target_properties(OSDependent PROPERTIES
-                         IMPORTED_LOCATION       "${GLSLANG_PREFIX}/${BUILDTGT_DIR}/glslang/OSDependent/Windows/Release/OSDependent.lib"
-                         IMPORTED_LOCATION_DEBUG "${GLSLANG_PREFIX}/${BUILDTGT_DIR}/glslang/OSDependent/Windows/Debug/OSDependent.lib")
-   set_target_properties(SPIRV PROPERTIES
-                         IMPORTED_LOCATION       "${GLSLANG_PREFIX}/${BUILDTGT_DIR}/SPIRV/Release/SPIRV.lib"
-                         IMPORTED_LOCATION_DEBUG "${GLSLANG_PREFIX}/${BUILDTGT_DIR}/SPIRV/Debug/SPIRV.lib")
-else ()
-   set_target_properties(glslang PROPERTIES
-                         IMPORTED_LOCATION       "${GLSLANG_PREFIX}/build/install/lib/libglslang.a")
-   set_target_properties(OGLCompiler PROPERTIES
-                         IMPORTED_LOCATION       "${GLSLANG_PREFIX}/build/install/lib/libOGLCompiler.a")
-   set_target_properties(OSDependent PROPERTIES
-                         IMPORTED_LOCATION       "${GLSLANG_PREFIX}/build/install/lib/libOSDependent.a")
-   set_target_properties(SPIRV PROPERTIES
-                         IMPORTED_LOCATION       "${GLSLANG_PREFIX}/build/install/lib/libSPIRV.a")
-endif()
-
 include_directories(
     "${PROJECT_SOURCE_DIR}/tests/gtest-1.7.0/include"
     "${PROJECT_SOURCE_DIR}/icd/common"
     "${PROJECT_SOURCE_DIR}/layers"
-    ${GLSLANG_PREFIX}
     ${XCB_INCLUDE_DIRS}
+    ${GLSLANG_SPIRV_INCLUDE_DIR}
     ${LIBGLM_INCLUDE_DIR}
     ${ImageMagick_INCLUDE_DIRS}
     )
@@ -130,8 +90,10 @@ endif()
 
 if(WIN32)
    set (LIBVK "vulkan-${MAJOR}")
+   set (TEST_LIBRARIES ${GLSLANG_LIBRARIES} ${ImageMagick_LIBRARIES})
 elseif(UNIX)
    set (LIBVK "vulkan")
+   set (TEST_LIBRARIES ${GLSLANG_LIBRARIES} ${ImageMagick_LIBRARIES} ${XCB_LIBRARIES})
 else()
 endif()
 
@@ -163,6 +125,12 @@ add_executable(vk_layer_validation_tests layer_validation_tests.cpp ${COMMON_CPP
 set_target_properties(vk_layer_validation_tests
    PROPERTIES
    COMPILE_DEFINITIONS "GTEST_LINKED_AS_SHARED_LIBRARY=1")
-target_link_libraries(vk_layer_validation_tests ${LIBVK} gtest gtest_main layer_utils ${TEST_LIBRARIES})
+target_link_libraries(vk_layer_validation_tests ${LIBVK} gtest gtest_main VkLayer_utils ${TEST_LIBRARIES})
+
+add_executable(vk_loader_validation_tests loader_validation_tests.cpp ${COMMON_CPP})
+set_target_properties(vk_loader_validation_tests
+   PROPERTIES
+   COMPILE_DEFINITIONS "GTEST_LINKED_AS_SHARED_LIBRARY=1")
+target_link_libraries(vk_loader_validation_tests ${LIBVK} gtest gtest_main VkLayer_utils ${TEST_LIBRARIES})
 
 add_subdirectory(gtest-1.7.0)

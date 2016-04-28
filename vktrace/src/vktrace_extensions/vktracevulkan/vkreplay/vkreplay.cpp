@@ -4,23 +4,17 @@
  * Copyright (C) 2014-2016 LunarG, Inc.
  * All Rights Reserved.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  * Author: Peter Lohrmann <peterl@valvesoftware.com>
  * Author: Jon Ashburn <jon@lunarg.com>
@@ -32,6 +26,7 @@
 #include "vktrace_vk_packet_id.h"
 #include "vktrace_tracelog.h"
 
+static vkreplayer_settings s_defaultVkReplaySettings = { NULL, 1, -1, -1, NULL, NULL };
 
 vkReplay* g_pReplayer = NULL;
 VKTRACE_CRITICAL_SECTION g_handlerLock;
@@ -88,12 +83,10 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL vkErrorHandler(
 
 void VkReplaySetLogCallback(VKTRACE_REPORT_CALLBACK_FUNCTION pCallback)
 {
-    vktrace_LogSetCallback(pCallback);
 }
 
 void VkReplaySetLogLevel(VktraceLogLevel level)
 {
-    vktrace_LogSetLevel(level);
 }
 
 void VkReplayRegisterDbgMsgCallback(vktrace_replay::VKTRACE_DBG_MSG_CALLBACK_FUNCTION pCallback)
@@ -122,7 +115,14 @@ int VKTRACER_CDECL VkReplayInitialize(vktrace_replay::Display* pDisplay, vkrepla
 {
     try
     {
-        g_pReplayer = new vkReplay(pReplaySettings);
+        if (pReplaySettings == NULL)
+        {
+            g_pReplayer = new vkReplay(&s_defaultVkReplaySettings);
+        }
+        else
+        {
+            g_pReplayer = new vkReplay(pReplaySettings);
+        }
     }
     catch (int e)
     {

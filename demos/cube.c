@@ -3,24 +3,17 @@
  * Copyright (c) 2015-2016 Valve Corporation
  * Copyright (c) 2015-2016 LunarG, Inc.
  *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and/or associated documentation files (the "Materials"), to
- * deal in the Materials without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Materials, and to permit persons to whom the Materials are
- * furnished to do so, subject to the following conditions:
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * The above copyright notice(s) and this permission notice shall be included in
- * all copies or substantial portions of the Materials.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
- *
- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
- * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE
- * USE OR OTHER DEALINGS IN THE MATERIALS.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  * Author: Chia-I Wu <olv@lunarg.com>
  * Author: Courtney Goeltzenleuchter <courtney@LunarG.com>
@@ -35,6 +28,9 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <signal.h>
+#ifdef __linux__
+#include <X11/Xutil.h>
+#endif
 
 #ifdef _WIN32
 #pragma comment(linker, "/subsystem:windows")
@@ -116,6 +112,8 @@ struct texture_object {
 };
 
 static char *tex_files[] = {"lunarg.ppm"};
+
+static int validation_error = 0;
 
 struct vkcube_vs_uniform {
     // Must start with MVP
@@ -268,6 +266,7 @@ dbgFunc(VkFlags msgFlags, VkDebugReportObjectTypeEXT objType,
     if (msgFlags & VK_DEBUG_REPORT_ERROR_BIT_EXT) {
         sprintf(message, "ERROR: [%s] Code %d : %s", pLayerPrefix, msgCode,
                 pMsg);
+        validation_error = 1;
     } else if (msgFlags & VK_DEBUG_REPORT_WARNING_BIT_EXT) {
         // We know that we're submitting queues without fences, ignore this
         // warning
@@ -277,7 +276,9 @@ dbgFunc(VkFlags msgFlags, VkDebugReportObjectTypeEXT objType,
         }
         sprintf(message, "WARNING: [%s] Code %d : %s", pLayerPrefix, msgCode,
                 pMsg);
+        validation_error = 1;
     } else {
+        validation_error = 1;
         return false;
     }
 
@@ -299,10 +300,11 @@ dbgFunc(VkFlags msgFlags, VkDebugReportObjectTypeEXT objType,
     return false;
 }
 
-VkBool32 BreakCallback(VkFlags msgFlags, VkDebugReportObjectTypeEXT objType,
-                       uint64_t srcObject, size_t location, int32_t msgCode,
-                       const char *pLayerPrefix, const char *pMsg,
-                       void *pUserData) {
+VKAPI_ATTR VkBool32 VKAPI_CALL
+BreakCallback(VkFlags msgFlags, VkDebugReportObjectTypeEXT objType,
+              uint64_t srcObject, size_t location, int32_t msgCode,
+              const char *pLayerPrefix, const char *pMsg,
+              void *pUserData) {
 #ifndef WIN32
     raise(SIGTRAP);
 #else
@@ -324,15 +326,19 @@ struct demo {
     HINSTANCE connection;        // hInstance - Windows Instance
     char name[APP_NAME_STR_LEN]; // Name to put on the window/icon
     HWND window;                 // hWnd - window handle
-#else                            // _WIN32
+#else
+    Display* display;
+    Window xlib_window;
+    Atom xlib_wm_delete_window;
     xcb_connection_t *connection;
     xcb_screen_t *screen;
-    xcb_window_t window;
+    xcb_window_t xcb_window;
     xcb_intern_atom_reply_t *atom_wm_delete_window;
 #endif                           // _WIN32
     VkSurfaceKHR surface;
     bool prepared;
     bool use_staging_buffer;
+    bool use_xlib;
 
     VkInstance inst;
     VkPhysicalDevice gpu;
@@ -1549,6 +1555,7 @@ static void demo_prepare_pipeline(struct demo *demo) {
     rs.depthClampEnable = VK_FALSE;
     rs.rasterizerDiscardEnable = VK_FALSE;
     rs.depthBiasEnable = VK_FALSE;
+    rs.lineWidth = 1.0f;
 
     memset(&cb, 0, sizeof(cb));
     cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -1830,10 +1837,16 @@ static void demo_cleanup(struct demo *demo) {
     vkDestroyInstance(demo->inst, NULL);
 
 #ifndef _WIN32
-    xcb_destroy_window(demo->connection, demo->window);
-    xcb_disconnect(demo->connection);
+    if (demo->use_xlib) {
+        XDestroyWindow(demo->display, demo->xlib_window);
+        XCloseDisplay(demo->display);
+    } else {
+        xcb_destroy_window(demo->connection, demo->xcb_window);
+        xcb_disconnect(demo->connection);
+    }
     free(demo->atom_wm_delete_window);
 #endif // _WIN32
+
 }
 
 static void demo_resize(struct demo *demo) {
@@ -1905,11 +1918,8 @@ static void demo_run(struct demo *demo) {
     vkDeviceWaitIdle(demo->device);
 
     demo->curFrame++;
-
     if (demo->frameCount != INT_MAX && demo->curFrame == demo->frameCount) {
-        demo->quit = true;
-        demo_cleanup(demo);
-        ExitProcess(0);
+        PostQuitMessage(validation_error);
     }
 }
 
@@ -1917,7 +1927,7 @@ static void demo_run(struct demo *demo) {
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
     case WM_CLOSE:
-        PostQuitMessage(0);
+        PostQuitMessage(validation_error);
         break;
     case WM_PAINT:
         demo_run(&demo);
@@ -1983,8 +1993,106 @@ static void demo_create_window(struct demo *demo) {
         exit(1);
     }
 }
-#else  // _WIN32
-static void demo_handle_event(struct demo *demo,
+#else
+static void demo_create_xlib_window(struct demo *demo) {
+
+    demo->display = XOpenDisplay(NULL);
+    long visualMask = VisualScreenMask;
+    int numberOfVisuals;
+    XVisualInfo vInfoTemplate;
+    vInfoTemplate.screen = DefaultScreen(demo->display);
+    XVisualInfo *visualInfo = XGetVisualInfo(demo->display, visualMask,
+                                             &vInfoTemplate, &numberOfVisuals);
+
+    Colormap colormap = XCreateColormap(
+                demo->display, RootWindow(demo->display, vInfoTemplate.screen),
+                visualInfo->visual, AllocNone);
+
+    XSetWindowAttributes windowAttributes;
+    windowAttributes.colormap = colormap;
+    windowAttributes.background_pixel = 0xFFFFFFFF;
+    windowAttributes.border_pixel = 0;
+    windowAttributes.event_mask =
+            KeyPressMask | KeyReleaseMask | StructureNotifyMask | ExposureMask;
+
+    demo->xlib_window = XCreateWindow(
+                demo->display, RootWindow(demo->display, vInfoTemplate.screen), 0, 0,
+                demo->width, demo->height, 0, visualInfo->depth, InputOutput,
+                visualInfo->visual,
+                CWBackPixel | CWBorderPixel | CWEventMask | CWColormap, &windowAttributes);
+
+    XSelectInput(demo->display, demo->xlib_window, ExposureMask | KeyPressMask);
+    XMapWindow(demo->display, demo->xlib_window);
+    XFlush(demo->display);
+    demo->xlib_wm_delete_window =
+            XInternAtom(demo->display, "WM_DELETE_WINDOW", False);
+}
+static void demo_handle_xlib_event(struct demo *demo, const XEvent *event) {
+    switch(event->type) {
+    case ClientMessage:
+        if ((Atom)event->xclient.data.l[0] == demo->xlib_wm_delete_window)
+            demo->quit = true;
+        break;
+    case KeyPress:
+        switch (event->xkey.keycode) {
+        case 0x9: // Escape
+            demo->quit = true;
+            break;
+        case 0x71: // left arrow key
+            demo->spin_angle += demo->spin_increment;
+            break;
+        case 0x72: // right arrow key
+            demo->spin_angle -= demo->spin_increment;
+            break;
+        case 0x41:
+            demo->pause = !demo->pause;
+            break;
+        }
+        break;
+    case ConfigureNotify:
+        if ((demo->width != event->xconfigure.width) ||
+            (demo->height != event->xconfigure.height)) {
+            demo->width = event->xconfigure.width;
+            demo->height = event->xconfigure.height;
+            demo_resize(demo);
+        }
+        break;
+    default:
+        break;
+    }
+
+}
+
+static void demo_run_xlib(struct demo *demo) {
+
+    while (!demo->quit) {
+        XEvent event;
+
+        if (demo->pause) {
+            XNextEvent(demo->display, &event);
+            demo_handle_xlib_event(demo, &event);
+        } else {
+            while (XPending(demo->display) > 0) {
+                XNextEvent(demo->display, &event);
+                demo_handle_xlib_event(demo, &event);
+            }
+        }
+
+        // Wait for work to finish before updating MVP.
+        vkDeviceWaitIdle(demo->device);
+        demo_update_data_buffer(demo);
+
+        demo_draw(demo);
+
+        // Wait for work to finish before updating MVP.
+        vkDeviceWaitIdle(demo->device);
+        demo->curFrame++;
+        if (demo->frameCount != INT32_MAX && demo->curFrame == demo->frameCount)
+            demo->quit = true;
+    }
+}
+
+static void demo_handle_xcb_event(struct demo *demo,
                               const xcb_generic_event_t *event) {
     uint8_t event_code = event->response_type & 0x7f;
     switch (event_code) {
@@ -2030,7 +2138,7 @@ static void demo_handle_event(struct demo *demo,
     }
 }
 
-static void demo_run(struct demo *demo) {
+static void demo_run_xcb(struct demo *demo) {
     xcb_flush(demo->connection);
 
     while (!demo->quit) {
@@ -2042,7 +2150,7 @@ static void demo_run(struct demo *demo) {
             event = xcb_poll_for_event(demo->connection);
         }
         if (event) {
-            demo_handle_event(demo, event);
+            demo_handle_xcb_event(demo, event);
             free(event);
         }
 
@@ -2060,17 +2168,17 @@ static void demo_run(struct demo *demo) {
     }
 }
 
-static void demo_create_window(struct demo *demo) {
+static void demo_create_xcb_window(struct demo *demo) {
     uint32_t value_mask, value_list[32];
 
-    demo->window = xcb_generate_id(demo->connection);
+    demo->xcb_window = xcb_generate_id(demo->connection);
 
     value_mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK;
     value_list[0] = demo->screen->black_pixel;
     value_list[1] = XCB_EVENT_MASK_KEY_RELEASE | XCB_EVENT_MASK_EXPOSURE |
                     XCB_EVENT_MASK_STRUCTURE_NOTIFY;
 
-    xcb_create_window(demo->connection, XCB_COPY_FROM_PARENT, demo->window,
+    xcb_create_window(demo->connection, XCB_COPY_FROM_PARENT, demo->xcb_window,
                       demo->screen->root, 0, 0, demo->width, demo->height, 0,
                       XCB_WINDOW_CLASS_INPUT_OUTPUT, demo->screen->root_visual,
                       value_mask, value_list);
@@ -2086,17 +2194,17 @@ static void demo_create_window(struct demo *demo) {
     demo->atom_wm_delete_window =
         xcb_intern_atom_reply(demo->connection, cookie2, 0);
 
-    xcb_change_property(demo->connection, XCB_PROP_MODE_REPLACE, demo->window,
+    xcb_change_property(demo->connection, XCB_PROP_MODE_REPLACE, demo->xcb_window,
                         (*reply).atom, 4, 32, 1,
                         &(*demo->atom_wm_delete_window).atom);
     free(reply);
 
-    xcb_map_window(demo->connection, demo->window);
+    xcb_map_window(demo->connection, demo->xcb_window);
 
     // Force the x/y coordinates to 100,100 results are identical in consecutive
     // runs
     const uint32_t coords[] = {100, 100};
-    xcb_configure_window(demo->connection, demo->window,
+    xcb_configure_window(demo->connection, demo->xcb_window,
                          XCB_CONFIG_WINDOW_X | XCB_CONFIG_WINDOW_Y, coords);
 }
 #endif // _WIN32
@@ -2126,68 +2234,80 @@ static VkBool32 demo_check_layers(uint32_t check_count, char **check_names,
 
 static void demo_init_vk(struct demo *demo) {
     VkResult err;
-    char *extension_names[64];
     uint32_t instance_extension_count = 0;
     uint32_t instance_layer_count = 0;
     uint32_t device_validation_layer_count = 0;
-    uint32_t enabled_extension_count = 0;
-    uint32_t enabled_layer_count = 0;
+    char **instance_validation_layers = NULL;
+    demo->enabled_extension_count = 0;
+    demo->enabled_layer_count = 0;
 
-    char *instance_validation_layers[] = {
-        "VK_LAYER_GOOGLE_threading",     "VK_LAYER_LUNARG_param_checker",
-        "VK_LAYER_LUNARG_device_limits", "VK_LAYER_LUNARG_object_tracker",
-        "VK_LAYER_LUNARG_image",         "VK_LAYER_LUNARG_mem_tracker",
-        "VK_LAYER_LUNARG_draw_state",    "VK_LAYER_LUNARG_swapchain",
-        "VK_LAYER_GOOGLE_unique_objects"
+    char *instance_validation_layers_alt1[] = {
+        "VK_LAYER_LUNARG_standard_validation"
     };
 
-    demo->device_validation_layers[0] = "VK_LAYER_GOOGLE_threading";
-    demo->device_validation_layers[1] = "VK_LAYER_LUNARG_param_checker";
-    demo->device_validation_layers[2] = "VK_LAYER_LUNARG_device_limits";
-    demo->device_validation_layers[3] = "VK_LAYER_LUNARG_object_tracker";
-    demo->device_validation_layers[4] = "VK_LAYER_LUNARG_image";
-    demo->device_validation_layers[5] = "VK_LAYER_LUNARG_mem_tracker";
-    demo->device_validation_layers[6] = "VK_LAYER_LUNARG_draw_state";
-    demo->device_validation_layers[7] = "VK_LAYER_LUNARG_swapchain";
-    demo->device_validation_layers[8] = "VK_LAYER_GOOGLE_unique_objects";
-    device_validation_layer_count = 9;
+    char *instance_validation_layers_alt2[] = {
+        "VK_LAYER_GOOGLE_threading",     "VK_LAYER_LUNARG_parameter_validation",
+        "VK_LAYER_LUNARG_device_limits", "VK_LAYER_LUNARG_object_tracker",
+        "VK_LAYER_LUNARG_image",         "VK_LAYER_LUNARG_core_validation",
+        "VK_LAYER_LUNARG_swapchain",     "VK_LAYER_GOOGLE_unique_objects"
+    };
 
     /* Look for validation layers */
     VkBool32 validation_found = 0;
-    err = vkEnumerateInstanceLayerProperties(&instance_layer_count, NULL);
-    assert(!err);
+    if (demo->validate) {
 
-    if (instance_layer_count > 0) {
-        VkLayerProperties *instance_layers =
-            malloc(sizeof(VkLayerProperties) * instance_layer_count);
-        err = vkEnumerateInstanceLayerProperties(&instance_layer_count,
-                                                 instance_layers);
+        err = vkEnumerateInstanceLayerProperties(&instance_layer_count, NULL);
         assert(!err);
 
-        if (demo->validate) {
-            validation_found = demo_check_layers(
-                ARRAY_SIZE(instance_validation_layers),
-                instance_validation_layers, instance_layer_count,
-                instance_layers);
+        instance_validation_layers = instance_validation_layers_alt1;
+        if (instance_layer_count > 0) {
+            VkLayerProperties *instance_layers =
+                    malloc(sizeof (VkLayerProperties) * instance_layer_count);
+            err = vkEnumerateInstanceLayerProperties(&instance_layer_count,
+                    instance_layers);
+            assert(!err);
 
-            enabled_layer_count = ARRAY_SIZE(instance_validation_layers);
+
+            validation_found = demo_check_layers(
+                    ARRAY_SIZE(instance_validation_layers_alt1),
+                    instance_validation_layers, instance_layer_count,
+                    instance_layers);
+            if (validation_found) {
+                demo->enabled_layer_count = ARRAY_SIZE(instance_validation_layers_alt1);
+                demo->device_validation_layers[0] = "VK_LAYER_LUNARG_standard_validation";
+                device_validation_layer_count = 1;
+            } else {
+                // use alternative set of validation layers
+                instance_validation_layers = instance_validation_layers_alt2;
+                demo->enabled_layer_count = ARRAY_SIZE(instance_validation_layers_alt2);
+                validation_found = demo_check_layers(
+                    ARRAY_SIZE(instance_validation_layers_alt2),
+                    instance_validation_layers, instance_layer_count,
+                    instance_layers);
+                device_validation_layer_count =
+                        ARRAY_SIZE(instance_validation_layers_alt2);
+                for (uint32_t i = 0; i < device_validation_layer_count; i++) {
+                    demo->device_validation_layers[i] =
+                            instance_validation_layers[i];
+                }
+            }
+            free(instance_layers);
         }
 
-        free(instance_layers);
-    }
-
-    if (demo->validate && !validation_found) {
-        ERR_EXIT("vkEnumerateInstanceLayerProperties failed to find"
-                 "required validation layer.\n\n"
-                 "Please look at the Getting Started guide for additional "
-                 "information.\n",
-                 "vkCreateInstance Failure");
+        if (!validation_found) {
+            ERR_EXIT("vkEnumerateInstanceLayerProperties failed to find "
+                    "required validation layer.\n\n"
+                    "Please look at the Getting Started guide for additional "
+                    "information.\n",
+                    "vkCreateInstance Failure");
+        }
     }
 
     /* Look for instance extensions */
     VkBool32 surfaceExtFound = 0;
     VkBool32 platformSurfaceExtFound = 0;
-    memset(extension_names, 0, sizeof(extension_names));
+    VkBool32 xlibSurfaceExtFound = 0;
+    memset(demo->extension_names, 0, sizeof(demo->extension_names));
 
     err = vkEnumerateInstanceExtensionProperties(
         NULL, &instance_extension_count, NULL);
@@ -2203,32 +2323,39 @@ static void demo_init_vk(struct demo *demo) {
             if (!strcmp(VK_KHR_SURFACE_EXTENSION_NAME,
                         instance_extensions[i].extensionName)) {
                 surfaceExtFound = 1;
-                extension_names[enabled_extension_count++] =
+                demo->extension_names[demo->enabled_extension_count++] =
                     VK_KHR_SURFACE_EXTENSION_NAME;
             }
 #ifdef _WIN32
             if (!strcmp(VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
                         instance_extensions[i].extensionName)) {
                 platformSurfaceExtFound = 1;
-                extension_names[enabled_extension_count++] =
+                demo->extension_names[demo->enabled_extension_count++] =
                     VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
             }
 #else  // _WIN32
+            if (!strcmp(VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
+                        instance_extensions[i].extensionName)) {
+                platformSurfaceExtFound = 1;
+                xlibSurfaceExtFound = 1;
+                demo->extension_names[demo->enabled_extension_count++] =
+                    VK_KHR_XLIB_SURFACE_EXTENSION_NAME;
+            }
             if (!strcmp(VK_KHR_XCB_SURFACE_EXTENSION_NAME,
                         instance_extensions[i].extensionName)) {
                 platformSurfaceExtFound = 1;
-                extension_names[enabled_extension_count++] =
+                demo->extension_names[demo->enabled_extension_count++] =
                     VK_KHR_XCB_SURFACE_EXTENSION_NAME;
             }
 #endif // _WIN32
             if (!strcmp(VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
                         instance_extensions[i].extensionName)) {
                 if (demo->validate) {
-                    extension_names[enabled_extension_count++] =
+                    demo->extension_names[demo->enabled_extension_count++] =
                         VK_EXT_DEBUG_REPORT_EXTENSION_NAME;
                 }
             }
-            assert(enabled_extension_count < 64);
+            assert(demo->enabled_extension_count < 64);
         }
 
         free(instance_extensions);
@@ -2252,6 +2379,7 @@ static void demo_init_vk(struct demo *demo) {
                  "look at the Getting Started guide for additional "
                  "information.\n",
                  "vkCreateInstance Failure");
+    }
 #else  // _WIN32
         ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find "
                  "the " VK_KHR_XCB_SURFACE_EXTENSION_NAME
@@ -2260,8 +2388,17 @@ static void demo_init_vk(struct demo *demo) {
                  "look at the Getting Started guide for additional "
                  "information.\n",
                  "vkCreateInstance Failure");
-#endif // _WIN32
     }
+    if (demo->use_xlib && !xlibSurfaceExtFound) {
+        ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find "
+                 "the " VK_KHR_XLIB_SURFACE_EXTENSION_NAME
+                 " extension.\n\nDo you have a compatible "
+                 "Vulkan installable client driver (ICD) installed?\nPlease "
+                 "look at the Getting Started guide for additional "
+                 "information.\n",
+                 "vkCreateInstance Failure");
+    }
+#endif // _WIN32
     const VkApplicationInfo app = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pNext = NULL,
@@ -2269,19 +2406,33 @@ static void demo_init_vk(struct demo *demo) {
         .applicationVersion = 0,
         .pEngineName = APP_SHORT_NAME,
         .engineVersion = 0,
-        .apiVersion = VK_MAKE_VERSION(1, 0, 0),
+        .apiVersion = VK_API_VERSION_1_0,
     };
     VkInstanceCreateInfo inst_info = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pNext = NULL,
         .pApplicationInfo = &app,
-        .enabledLayerCount = enabled_layer_count,
-        .ppEnabledLayerNames =
-            (const char *const *)((demo->validate) ? instance_validation_layers
-                                                   : NULL),
-        .enabledExtensionCount = enabled_extension_count,
-        .ppEnabledExtensionNames = (const char *const *)extension_names,
+        .enabledLayerCount = demo->enabled_layer_count,
+        .ppEnabledLayerNames = (const char *const *)instance_validation_layers,
+        .enabledExtensionCount = demo->enabled_extension_count,
+        .ppEnabledExtensionNames = (const char *const *)demo->extension_names,
     };
+
+    /*
+     * This is info for a temp callback to use during CreateInstance.
+     * After the instance is created, we use the instance-based
+     * function to register the final callback.
+     */
+    VkDebugReportCallbackCreateInfoEXT dbgCreateInfo;
+    if (demo->validate) {
+        dbgCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
+        dbgCreateInfo.pNext = NULL;
+        dbgCreateInfo.pfnCallback = demo->use_break ? BreakCallback : dbgFunc;
+        dbgCreateInfo.pUserData = NULL;
+        dbgCreateInfo.flags =
+            VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
+        inst_info.pNext = &dbgCreateInfo;
+    }
 
     uint32_t gpu_count;
 
@@ -2348,7 +2499,7 @@ static void demo_init_vk(struct demo *demo) {
     }
 
     if (demo->validate && !validation_found) {
-        ERR_EXIT("vkEnumerateDeviceLayerProperties failed to find"
+        ERR_EXIT("vkEnumerateDeviceLayerProperties failed to find "
                  "a required validation layer.\n\n"
                  "Please look at the Getting Started guide for additional "
                  "information.\n",
@@ -2359,7 +2510,7 @@ static void demo_init_vk(struct demo *demo) {
     uint32_t device_extension_count = 0;
     VkBool32 swapchainExtFound = 0;
     demo->enabled_extension_count = 0;
-    memset(extension_names, 0, sizeof(extension_names));
+    memset(demo->extension_names, 0, sizeof(demo->extension_names));
 
     err = vkEnumerateDeviceExtensionProperties(demo->gpu, NULL,
                                                &device_extension_count, NULL);
@@ -2420,17 +2571,9 @@ static void demo_init_vk(struct demo *demo) {
                      "vkGetProcAddr Failure");
         }
 
-        PFN_vkDebugReportCallbackEXT callback;
-
-        if (!demo->use_break) {
-            callback = dbgFunc;
-        } else {
-            callback = dbgFunc;
-            // TODO add a break callback defined locally since there is no
-            // longer
-            // one included in the loader
-        }
         VkDebugReportCallbackCreateInfoEXT dbgCreateInfo;
+        PFN_vkDebugReportCallbackEXT callback;
+        callback = demo->use_break ? BreakCallback : dbgFunc;
         dbgCreateInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT;
         dbgCreateInfo.pNext = NULL;
         dbgCreateInfo.pfnCallback = callback;
@@ -2529,17 +2672,31 @@ static void demo_init_vk_swapchain(struct demo *demo) {
 
     err =
         vkCreateWin32SurfaceKHR(demo->inst, &createInfo, NULL, &demo->surface);
+#else
 
-#else  // _WIN32
-    VkXcbSurfaceCreateInfoKHR createInfo;
-    createInfo.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
-    createInfo.pNext = NULL;
-    createInfo.flags = 0;
-    createInfo.connection = demo->connection;
-    createInfo.window = demo->window;
+    if (demo->use_xlib) {
+        VkXlibSurfaceCreateInfoKHR createInfo;
+        createInfo.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+        createInfo.pNext = NULL;
+        createInfo.flags = 0;
+        createInfo.dpy = demo->display;
+        createInfo.window = demo->xlib_window;
 
-    err = vkCreateXcbSurfaceKHR(demo->inst, &createInfo, NULL, &demo->surface);
+        err = vkCreateXlibSurfaceKHR(demo->inst, &createInfo, NULL,
+                                     &demo->surface);
+    }
+    else {
+        VkXcbSurfaceCreateInfoKHR createInfo;
+        createInfo.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
+        createInfo.pNext = NULL;
+        createInfo.flags = 0;
+        createInfo.connection = demo->connection;
+        createInfo.window = demo->xcb_window;
+
+        err = vkCreateXcbSurfaceKHR(demo->inst, &createInfo, NULL, &demo->surface);
+    }
 #endif // _WIN32
+    assert(!err);
 
     // Iterate over each queue to learn whether it supports presenting:
     VkBool32 *supportsPresent =
@@ -2680,6 +2837,10 @@ static void demo_init(struct demo *demo, int argc, char **argv) {
             demo->validate = true;
             continue;
         }
+        if (strcmp(argv[i], "--xlib") == 0) {
+            demo->use_xlib = true;
+            continue;
+        }
         if (strcmp(argv[i], "--c") == 0 && demo->frameCount == INT32_MAX &&
             i < argc - 1 && sscanf(argv[i + 1], "%d", &demo->frameCount) == 1 &&
             demo->frameCount >= 0) {
@@ -2694,7 +2855,9 @@ static void demo_init(struct demo *demo, int argc, char **argv) {
         exit(1);
     }
 
-    demo_init_connection(demo);
+    if (!demo->use_xlib)
+        demo_init_connection(demo);
+
     demo_init_vk(demo);
 
     demo->width = 500;
@@ -2796,14 +2959,22 @@ int main(int argc, char **argv) {
     struct demo demo;
 
     demo_init(&demo, argc, argv);
-    demo_create_window(&demo);
+    if (demo.use_xlib)
+        demo_create_xlib_window(&demo);
+    else
+        demo_create_xcb_window(&demo);
+
     demo_init_vk_swapchain(&demo);
 
     demo_prepare(&demo);
-    demo_run(&demo);
+
+    if (demo.use_xlib)
+        demo_run_xlib(&demo);
+    else
+        demo_run_xcb(&demo);
 
     demo_cleanup(&demo);
 
-    return 0;
+    return validation_error;
 }
 #endif // _WIN32

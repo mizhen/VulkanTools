@@ -25,12 +25,12 @@ In a separate terminal run your app, the cube demo in this example:
 cd /home/jon/LoaderAndValidationLayers/dbuild/demos
 export VK_ICD_FILENAMES=/home/jon/LoaderAndValidationLayers/dbuild/icd/intel/intel_icd.json
 export LD_LIBRARY_PATH=/home/jon/LoaderAndValidationLayers/dbuild/loader
-VK_INSTANCE_LAYERS=Vktrace VK_DEVICE_LAYERS=Vktrace ./cube
+VK_INSTANCE_LAYERS=VK_LAYER_LUNARG_vktrace VK_DEVICE_LAYERS=VK_LAYER_LUNARG_vktrace ./cube
 ```
 
 Trace file is written into "vktrace_cube<number>.vktrace".
 As the app is rerun, the Vktrace tracer server will increment the output file
-number for each succesive run of the app.
+number for each successive run of the app.
 
 One can also set VKTRACE_LIB_IPADDR to a remote system IP address. Then
 the tracer inserted into an app will send the trace packets to the remote

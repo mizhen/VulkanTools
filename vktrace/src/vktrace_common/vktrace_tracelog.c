@@ -3,30 +3,18 @@
  * Copyright (c) 2014-2016 Valve Corporation. All rights reserved.
  * Copyright (C) 2014-2016 LunarG, Inc.
  * 
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *  * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *  * Neither the name of NVIDIA CORPORATION nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- * 
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  * Author: Jon Ashburn <jon@lunarg.com>
  * Author: Peter Lohrmann <peterl@valvesoftware.com>
  */
@@ -61,19 +49,17 @@ void vktrace_tracelog_set_tracer_id(uint8_t tracerId)
 }
 
 VKTRACE_REPORT_CALLBACK_FUNCTION s_reportFunc;
-VktraceLogLevel s_logLevel = VKTRACE_LOG_LEVEL_MAXIMUM;
+VktraceLogLevel s_logLevel = VKTRACE_LOG_ERROR;
 
 const char* vktrace_LogLevelToString(VktraceLogLevel level)
 {
     switch(level)
     {
-    case VKTRACE_LOG_ALWAYS: return "VKTRACE_LOG_ALWAYS";
-    case VKTRACE_LOG_DEBUG: return "VKTRACE_LOG_DEBUG";
-    case VKTRACE_LOG_LEVEL_MINIMUM: return "VKTRACE_LOG_LEVEL_MINIMUM";
-    case VKTRACE_LOG_ERROR: return "VKTRACE_LOG_ERROR";
-    case VKTRACE_LOG_WARNING: return "VKTRACE_LOG_WARNING";
-    case VKTRACE_LOG_VERBOSE: return "VKTRACE_LOG_VERBOSE";
-    case VKTRACE_LOG_LEVEL_MAXIMUM: return "VKTRACE_LOG_LEVEL_MAXIMUM";
+    case VKTRACE_LOG_NONE: return "Quiet";
+    case VKTRACE_LOG_DEBUG: return "Debug";
+    case VKTRACE_LOG_ERROR: return "Errors";
+    case VKTRACE_LOG_WARNING: return "Warnings";
+    case VKTRACE_LOG_VERBOSE: return "Info";
     default:
         return "Unknown";
     }
@@ -83,13 +69,11 @@ const char* vktrace_LogLevelToShortString(VktraceLogLevel level)
 {
     switch(level)
     {
-    case VKTRACE_LOG_ALWAYS: return "Always";
+    case VKTRACE_LOG_NONE: return "Quiet";
     case VKTRACE_LOG_DEBUG: return "Debug";
-    case VKTRACE_LOG_LEVEL_MINIMUM: return "Miniumm";
-    case VKTRACE_LOG_ERROR: return "Error";
-    case VKTRACE_LOG_WARNING: return "Warning";
-    case VKTRACE_LOG_VERBOSE: return "Verbose";
-    case VKTRACE_LOG_LEVEL_MAXIMUM: return "Maximum";
+    case VKTRACE_LOG_ERROR: return "Errors";
+    case VKTRACE_LOG_WARNING: return "Warnings";
+    case VKTRACE_LOG_VERBOSE: return "Info";
     default:
         return "Unknown";
     }
@@ -104,19 +88,12 @@ void vktrace_LogSetCallback(VKTRACE_REPORT_CALLBACK_FUNCTION pCallback)
 
 void vktrace_LogSetLevel(VktraceLogLevel level)
 {
-    s_logLevel = level;
     vktrace_LogDebug("Log Level = %u (%s)", level, vktrace_LogLevelToString(level));
+    s_logLevel = level;
 }
 
 BOOL vktrace_LogIsLogging(VktraceLogLevel level)
 {
-#if defined(_DEBUG)
-    if (level == VKTRACE_LOG_DEBUG)
-    {
-        return TRUE;
-    }
-#endif
-
     return (level <= s_logLevel) ? TRUE : FALSE;
 }
 
@@ -164,17 +141,20 @@ void vktrace_LogAlways(const char* format, ...)
 {
     va_list args;
     va_start(args, format);
-    LogGuts(VKTRACE_LOG_ALWAYS, format, args);
+    LogGuts(VKTRACE_LOG_VERBOSE, format, args);
     va_end(args);
 }
 
 void vktrace_LogDebug(const char* format, ...)
 {
 #if defined(_DEBUG)
-    va_list args;
-    va_start(args, format);
-    LogGuts(VKTRACE_LOG_DEBUG, format, args);
-    va_end(args);
+	if (vktrace_LogIsLogging(VKTRACE_LOG_DEBUG))
+	{
+		va_list args;
+	    va_start(args, format);
+	    LogGuts(VKTRACE_LOG_DEBUG, format, args);
+	    va_end(args);
+    }
 #endif
 }
 
