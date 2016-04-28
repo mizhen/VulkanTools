@@ -598,7 +598,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDevices(
 static const VkLayerProperties ss_device_layers[] = {
     {
         "VK_LAYER_AMD_png_screenshot",
-        VK_API_VERSION,
+        VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION),
         1,
         "Layer: png screenshot",
     }

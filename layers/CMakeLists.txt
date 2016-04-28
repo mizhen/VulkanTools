@@ -1,6 +1,4 @@
 cmake_minimum_required (VERSION 2.8.11)
-find_library(LIBPNG libpng16 ${VULKANTOOLS_SOURCE_DIR}/libs/libpng-1.6.21/x64)
-find_library(ZLIB zlib ${VULKANTOOLS_SOURCE_DIR}/libs/zlib-1.2.8/x64)
 
 macro(run_vk_helper subcmd)
     add_custom_command(OUTPUT ${ARGN}
@@ -31,7 +29,6 @@ set(LAYER_JSON_FILES
     VkLayer_swapchain
     VkLayer_threading
     VkLayer_device_limits
-    VkLayer_png_screenshot
     )
 
 set(VK_LAYER_RPATH /usr/lib/x86_64-linux-gnu/vulkan/layer:/usr/lib/i386-linux-gnu/vulkan/layer)
@@ -87,8 +84,6 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/vulkan
     ${CMAKE_CURRENT_BINARY_DIR}
     ${GLSLANG_SPIRV_INCLUDE_DIR}
-    ${PROJECT_SOURCE_DIR}/libs/libpng-1.6.21/inc
-    ${PROJECT_SOURCE_DIR}/libs/zlib-1.2.8/inc
 )
 
 if (WIN32)
@@ -154,12 +149,8 @@ add_vk_layer(core_validation core_validation.cpp vk_layer_table.cpp vk_safe_stru
 add_vk_layer(device_limits device_limits.cpp vk_layer_table.cpp)
 add_vk_layer(image image.cpp vk_layer_table.cpp)
 add_vk_layer(swapchain swapchain.cpp vk_layer_table.cpp)
-# AMD added
-add_vk_layer(png_screenshot png_screenshot.cpp vk_layer_table.cpp)
 # generated
 add_vk_layer(object_tracker object_tracker.cpp vk_layer_table.cpp)
 add_vk_layer(threading threading.cpp thread_check.h vk_layer_table.cpp)
 add_vk_layer(unique_objects unique_objects.cpp vk_layer_table.cpp vk_safe_struct.cpp)
 add_vk_layer(parameter_validation parameter_validation.cpp parameter_validation.h vk_layer_table.cpp)
-target_link_Libraries(VkLayer_png_screenshot ${LIBPNG})
-target_link_Libraries(VkLayer_png_screenshot ${ZLIB})
