@@ -174,6 +174,7 @@ void add_device_layer(const char* fullLayerName)
 // ------------------------------------------------------------------------------------------------
 int main(int argc, char* argv[])
 {
+    BOOL isServerMode = FALSE;
     memset(&g_settings, 0, sizeof(vktrace_settings));
 
     vktrace_LogSetCallback(loggingCallback);
@@ -250,6 +251,7 @@ int main(int argc, char* argv[])
             printf("Running vktrace as server...\n");
             fflush(stdout);
             g_settings.arguments = NULL;
+            isServerMode = TRUE;
         }
         else
         {
@@ -376,21 +378,23 @@ int main(int argc, char* argv[])
                 return -1;
             }
 
-            // create watchdog thread to monitor existence of remote process
-            if (g_settings.program != NULL)
-                procInfo.watchdogThread = vktrace_platform_create_thread(Process_RunWatchdogThread, &procInfo);
+            if (isServerMode == FALSE) {
+                // create watchdog thread to monitor existence of remote process
+                if (g_settings.program != NULL)
+                    procInfo.watchdogThread = vktrace_platform_create_thread(Process_RunWatchdogThread, &procInfo);
 
 #if defined(PLATFORM_LINUX)
-            // Sync wait for local threads and remote process to complete.
+                // Sync wait for local threads and remote process to complete.
 
-            vktrace_platform_sync_wait_for_thread(&(procInfo.pCaptureThreads[0].recordingThread));
+                vktrace_platform_sync_wait_for_thread(&(procInfo.pCaptureThreads[0].recordingThread));
 
-            if (g_settings.program != NULL)
-                vktrace_platform_sync_wait_for_thread(&procInfo.watchdogThread);
+                if (g_settings.program != NULL)
+                    vktrace_platform_sync_wait_for_thread(&procInfo.watchdogThread);
 #else
-            vktrace_platform_resume_thread(&procInfo.hThread);
+                vktrace_platform_resume_thread(&procInfo.hThread);
+            }
 
-            // Now into the main message loop, listen for hotkeys to send over.
+				// Now into the main message loop, listen for hotkeys to send over.
             MessageLoop();
 #endif
         }

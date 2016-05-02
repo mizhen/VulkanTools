@@ -181,6 +181,21 @@ class Subcommand(object):
             return ("%p", "(void*)%s" % name, deref)
         return ("%p", "(void*)(%s)" % name, deref)
 
+    def _generate_trim_trace_bools(self):
+        trim_trace_bools = []
+        trim_trace_bools.append('// Trim support')
+        trim_trace_bools.append('// Indicates whether trim support will be utilized during this instance of vktrace.')
+        trim_trace_bools.append('// Only set once based on the VKTRACE_TRIM_FRAMES env var.')
+        trim_trace_bools.append('extern bool g_trimEnabled;')
+        trim_trace_bools.append('// Stores a boolean for each entrypoint to indicate whether or not to trace that function to a trace file.')
+        trim_trace_bools.append('// These maybe toggled on/off while vktrace is running to control whether or not API calls are recorded.')
+        trim_trace_bools.append('extern bool g_trimTraceFunc[%s + VKTRACE_TPI_BEGIN_API_HERE];' % len(self.protos))
+        trim_trace_bools.append('extern uint32_t g_trimTraceFuncCount;')
+        trim_trace_bools.append('extern uint64_t g_trimFrameCounter;')
+        trim_trace_bools.append('extern uint64_t g_trimStartFrame;')
+        trim_trace_bools.append('extern uint64_t g_trimEndFrame;')
+        return "\n".join(trim_trace_bools)
+
     def _generate_init_funcs(self):
         init_tracer = []
         init_tracer.append('void send_vk_api_version_packet()\n{')
@@ -193,6 +208,12 @@ class Subcommand(object):
         init_tracer.append('    FINISH_TRACE_PACKET();\n}\n')
 
         init_tracer.append('extern VKTRACE_CRITICAL_SECTION g_memInfoLock;')
+        init_tracer.append('bool g_trimTraceFunc[%s + VKTRACE_TPI_BEGIN_API_HERE];' % len(self.protos))
+        init_tracer.append('bool g_trimEnabled = false;')
+        init_tracer.append('uint32_t g_trimTraceFuncCount = sizeof(g_trimTraceFunc) / sizeof(g_trimTraceFunc[0]);')
+        init_tracer.append('uint64_t g_trimFrameCounter = 0;')
+        init_tracer.append('uint64_t g_trimStartFrame = 0;')
+        init_tracer.append('uint64_t g_trimEndFrame = UINT64_MAX;')
         init_tracer.append('void InitTracer(void)\n{')
         init_tracer.append('    const char *ipAddr = vktrace_get_global_var("VKTRACE_LIB_IPADDR");')
         init_tracer.append('    if (ipAddr == NULL)')
@@ -200,6 +221,20 @@ class Subcommand(object):
         init_tracer.append('    gMessageStream = vktrace_MessageStream_create(FALSE, ipAddr, VKTRACE_BASE_PORT + VKTRACE_TID_VULKAN);')
         init_tracer.append('    vktrace_trace_set_trace_file(vktrace_FileLike_create_msg(gMessageStream));')
         init_tracer.append('    vktrace_tracelog_set_tracer_id(VKTRACE_TID_VULKAN);')
+        init_tracer.append('    const char *trimFrames = vktrace_get_global_var("VKTRACE_TRIM_FRAMES");')
+        init_tracer.append('    bool bTraceFromBeginning = true;')
+        init_tracer.append('    if (trimFrames != NULL && sscanf(trimFrames, "%llu-%llu", &g_trimStartFrame, &g_trimEndFrame) == 2)')
+        init_tracer.append('    {')
+        init_tracer.append('        // make sure the start/end frames are in expected order.')
+        init_tracer.append('        if (g_trimStartFrame <= g_trimEndFrame)')
+        init_tracer.append('        {')
+        init_tracer.append('            bTraceFromBeginning = (g_trimStartFrame == 0);')
+        init_tracer.append('            g_trimEnabled = true;')
+        init_tracer.append('        }')
+        init_tracer.append('    }')
+        init_tracer.append('    for (int i = 0; i < (%s + VKTRACE_TPI_BEGIN_API_HERE); i++){' % len(self.protos))
+        init_tracer.append('        g_trimTraceFunc[i] = bTraceFromBeginning;')
+        init_tracer.append('    }')
         init_tracer.append('    vktrace_create_critical_section(&g_memInfoLock);')
         init_tracer.append('    if (gMessageStream != NULL)')
         init_tracer.append('        send_vk_api_version_packet();\n}\n')
@@ -378,6 +413,91 @@ class Subcommand(object):
                     ps.append('sizeof(%s)' % (p.ty.strip('*').replace('const ', '')))
         return ps
 
+    # Generate instructions for certain API calls that need to be tracked so that we can recreate
+    # objects that are used within a trimmed trace file.
+    def _generate_trim_instructions(self, proto):
+        trim_instructions = []
+        if 'GetDeviceQueue' is proto.name:
+            trim_instructions.append("        trim_add_Queue_call(*pQueue, pHeader);")
+        elif 'CreateSemaphore' is proto.name:
+            trim_instructions.append("        trim_add_Semaphore_call(*pSemaphore, pHeader);")
+        elif 'CreateFence' is proto.name:
+            trim_instructions.append("        trim_add_Fence_call(*pFence, pHeader);")
+        elif 'CreateCommandPool' is proto.name:
+            trim_instructions.append("        trim_add_CommandPool_call(*pCommandPool, pHeader);")
+        elif ('EndCommandBuffer' is proto.name or
+              'ResetCommandBuffer' is proto.name or
+              'CmdBindPipeline' is proto.name or
+              'CmdSetViewport' is proto.name or
+              'CmdSetScissor' is proto.name or
+              'CmdSetLineWidth' is proto.name or
+              'CmdSetDepthBias' is proto.name or
+              'CmdSetBlendConstants' is proto.name or
+              'CmdSetDepthBounds' is proto.name or
+              'CmdSetStencilCompareMask' is proto.name or
+              'CmdSetStencilWriteMask' is proto.name or
+              'CmdSetStencilReference' is proto.name or
+              'CmdBindDescriptorSets' is proto.name or
+              'CmdBindIndexBuffer' is proto.name or
+              'CmdBindVertexBuffers' is proto.name or
+              'CmdDraw' is proto.name or
+              'CmdDrawIndexed' is proto.name or
+              'CmdDrawIndirect' is proto.name or
+              'CmdDrawIndexedIndirect' is proto.name or
+              'CmdDispatch' is proto.name or
+              'CmdDispatchIndirect' is proto.name or
+              'CmdCopyBuffer' is proto.name or
+              'CmdCopyImage' is proto.name or
+              'CmdBlitImage' is proto.name or
+              'CmdCopyBufferToImage' is proto.name or
+              'CmdCopyImageToBuffer' is proto.name or
+              'CmdUpdateBuffer' is proto.name or
+              'CmdFillBuffer' is proto.name or
+              'CmdClearColorImage' is proto.name or
+              'CmdClearDepthStencilImage' is proto.name or
+              'CmdClearAttachments' is proto.name or
+              'CmdResolveImage' is proto.name or
+              'CmdSetEvent' is proto.name or
+              'CmdResetEvent' is proto.name or
+              'CmdNextSubpass' is proto.name or
+              'CmdEndRenderPass' is proto.name or
+              'CmdExecuteCommands' is proto.name):
+            trim_instructions.append("        trim_add_CommandBuffer_call(commandBuffer, pHeader);")
+        elif 'CreateImage' is proto.name:
+            trim_instructions.append("        trim_add_Image_call(*pImage, pHeader);")
+        elif ('GetImageMemoryRequirements' is proto.name or
+              'BindImageMemory' is proto.name):
+            trim_instructions.append("        trim_add_Image_call(image, pHeader);")
+        elif 'CreateImageView' is proto.name:
+            trim_instructions.append("        trim_add_ImageView_call(*pView, pHeader);")
+        elif 'CreateBuffer' is proto.name:
+            trim_instructions.append("        trim_add_Buffer_call(*pBuffer, pHeader);")
+        elif 'BindBufferMemory' is proto.name:
+            trim_instructions.append("        trim_add_Buffer_call(buffer, pHeader);")
+        elif 'CreateBufferView' is proto.name:
+            trim_instructions.append("        trim_add_BufferView_call(*pView, pHeader);")
+        elif 'CreateFramebuffer' is proto.name:
+            trim_instructions.append("        trim_add_Framebuffer_call(*pFramebuffer, pHeader);")
+        elif 'CreateEvent' is proto.name:
+            trim_instructions.append("        trim_add_Event_call(*pEvent, pHeader);")
+        elif 'CreateQueryPool' is proto.name:
+            trim_instructions.append("        trim_add_QueryPool_call(*pQueryPool, pHeader);")
+        elif 'CreateShaderModule' is proto.name:
+            trim_instructions.append("        trim_add_ShaderModule_call(*pShaderModule, pHeader);")
+        elif 'CreatePipelineLayout' is proto.name:
+            trim_instructions.append("        trim_add_PipelineLayout_call(*pPipelineLayout, pHeader);")
+        elif 'CreateSampler' is proto.name:
+            trim_instructions.append("        trim_add_Sampler_call(*pSampler, pHeader);")
+        elif 'CreateDescriptorSetLayout' is proto.name:
+            trim_instructions.append("        trim_add_DescriptorSetLayout_call(*pSetLayout, pHeader);")
+        elif ('GetPhysicalDeviceSurfaceSupportKHR' is proto.name or
+              'GetPhysicalDeviceMemoryProperties' is proto.name):
+            trim_instructions.append("        trim_add_PhysicalDevice_call(physicalDevice, pHeader);")
+        else:
+            return None
+        return "\n".join(trim_instructions)
+            
+
     # Generate functions used to trace API calls and store the input and result data into a packet
     # Here's the general flow of code insertion w/ option items flagged w/ "?"
     # Result decl?
@@ -475,10 +595,11 @@ class Subcommand(object):
                         ptr_packet_update_list = self._get_packet_ptr_param_list(proto.params)
                         func_body[-1] = func_body[-1].replace(',', ')')
                         # End of function declaration portion, begin function body
-                        func_body.append('{\n    vktrace_trace_packet_header* pHeader;')
+                        func_body.append('{')
                         if 'void' not in proto.ret or '*' in proto.ret:
                             func_body.append('    %s result;' % proto.ret)
                             return_txt = 'result = '
+                        func_body.append('    vktrace_trace_packet_header* pHeader;')
                         if in_data_size:
                             func_body.append('    size_t _dataSize;')
                         func_body.append('    packet_vk%s* pPacket = NULL;' % proto.name)
@@ -512,8 +633,25 @@ class Subcommand(object):
                         for pp_dict in ptr_packet_update_list:
                             if ('DeviceCreateInfo' not in proto.params[pp_dict['index']].ty):
                                 func_body.append('    %s;' % (pp_dict['finalize_txt']))
+                        func_body.append('    if (g_trimTraceFunc[VKTRACE_TPI_VK_vk%s])' % proto.name)
+                        func_body.append('    {')
                         # All buffers should be finalized by now, and the trace packet can be finished (which sends it over the socket)
-                        func_body.append('    FINISH_TRACE_PACKET();')
+                        func_body.append('        FINISH_TRACE_PACKET();')
+
+                        # Else half of g_bTraceFunc conditional
+                        # Since packet wasn't sent to trace file, it either needs to be associated with an object, or deleted.
+                        func_body.append('    }')
+                        func_body.append('    else')
+                        func_body.append('    {')
+                        func_body.append('        vktrace_finalize_trace_packet(pHeader);')
+                        trim_instructions = self._generate_trim_instructions(proto);
+                        if trim_instructions is None:
+                            func_body.append('        vktrace_delete_trace_packet(&pHeader);')
+                        else:
+                            func_body.append(trim_instructions)
+                        func_body.append('    }')
+
+                        # Clean up instance or device data if needed
                         if proto.name == "DestroyInstance":
                             func_body.append('    g_instanceDataMap.erase(key);')
                         elif proto.name == "DestroyDevice":
@@ -1909,7 +2047,8 @@ class VktraceTraceHeader(Subcommand):
         return "\n".join(header_txt)
 
     def generate_body(self):
-        body = [self._generate_trace_func_protos()]
+        body = [self._generate_trim_trace_bools(),
+                self._generate_trace_func_protos()]
 
         return "\n".join(body)
 
@@ -1919,6 +2058,7 @@ class VktraceTraceC(Subcommand):
         header_txt.append('#include "vktrace_platform.h"')
         header_txt.append('#include "vktrace_common.h"')
         header_txt.append('#include "vktrace_lib_helpers.h"')
+        header_txt.append('#include "vktrace_lib_trim.h"')
         header_txt.append('#include "vktrace_vk_vk.h"')
         #header_txt.append('#include "vktrace_vk_vk_lunarg_debug_marker.h"')
         header_txt.append('#include "vktrace_interconnect.h"')
