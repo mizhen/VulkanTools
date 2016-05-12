@@ -448,7 +448,7 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkAllocateCommandBuffers
         else
         {
             vktrace_finalize_trace_packet(pHeader);
-            trim_add_Device_call(device, pHeader);
+            trim_add_CommandPool_call(pAllocateInfo->commandPool, pHeader);
         }
     }
     return result;
@@ -1996,7 +1996,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkQueuePresentKHR(
         else
         {
             vktrace_finalize_trace_packet(pHeader);
-            trim_add_Queue_call(queue, pHeader);
         }
     }
 
