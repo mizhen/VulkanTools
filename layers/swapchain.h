@@ -61,6 +61,7 @@ typedef enum _SWAPCHAIN_ERROR {
     SWAPCHAIN_INDEX_TOO_LARGE,          // Index is too large for swapchain
     SWAPCHAIN_INDEX_NOT_IN_USE,         // vkQueuePresentKHR() given index that is not acquired by app
     SWAPCHAIN_BAD_BOOL,                 // VkBool32 that doesn't have value of VK_TRUE or VK_FALSE (e.g. is a non-zero form of true)
+    SWAPCHAIN_PRIOR_COUNT,              // Query must be called first to get value of pCount, then called second time
     SWAPCHAIN_INVALID_COUNT,            // Second time a query called, the pCount value didn't match first time
     SWAPCHAIN_WRONG_STYPE,              // The sType for a struct has the wrong value
     SWAPCHAIN_WRONG_NEXT,               // The pNext for a struct is not NULL
@@ -91,6 +92,12 @@ typedef enum _SWAPCHAIN_ERROR {
                                                              "value (%d) that is greater than the value (%d) that "                \
                                                              "was returned when %s was NULL.",                                     \
                         __FUNCTION__, (obj2), (obj), (val), (val2), (obj2))                                                        \
+              : VK_FALSE
+#define LOG_ERROR_ZERO_PRIOR_COUNT(objType, type, obj, obj2)                                                                       \
+    (my_data) ? log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, (objType), (uint64_t)(obj), 0,                        \
+                        SWAPCHAIN_PRIOR_COUNT, LAYER_NAME, "%s() called with non-NULL %s; but no prior "                           \
+                        "positive value has been seen for %s.",                                                                    \
+                        __FUNCTION__, (obj), (obj2))                                                                               \
               : VK_FALSE
 #define LOG_ERROR_WRONG_STYPE(objType, type, obj, val)                                                                             \
     (my_data) ? log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, (objType), (uint64_t)(obj), 0, SWAPCHAIN_WRONG_STYPE, \
@@ -320,10 +327,19 @@ struct _SwpQueue {
 };
 
 struct layer_data {
+    VkInstance instance;
+
     debug_report_data *report_data;
     std::vector<VkDebugReportCallbackEXT> logging_callback;
     VkLayerDispatchTable *device_dispatch_table;
     VkLayerInstanceDispatchTable *instance_dispatch_table;
+
+    // The following are for keeping track of the temporary callbacks that can
+    // be used in vkCreateInstance and vkDestroyInstance:
+    uint32_t num_tmp_callbacks;
+    VkDebugReportCallbackCreateInfoEXT *tmp_dbg_create_infos;
+    VkDebugReportCallbackEXT *tmp_callbacks;
+
     // NOTE: The following are for keeping track of info that is used for
     // validating the WSI extensions.
     std::unordered_map<void *, SwpInstance> instanceMap;
@@ -333,7 +349,9 @@ struct layer_data {
     std::unordered_map<VkSwapchainKHR, SwpSwapchain> swapchainMap;
     std::unordered_map<void *, SwpQueue> queueMap;
 
-    layer_data() : report_data(nullptr), device_dispatch_table(nullptr), instance_dispatch_table(nullptr){};
+    layer_data()
+        : report_data(nullptr), device_dispatch_table(nullptr), instance_dispatch_table(nullptr), num_tmp_callbacks(0),
+          tmp_dbg_create_infos(nullptr), tmp_callbacks(nullptr){};
 };
 
 #endif // SWAPCHAIN_H

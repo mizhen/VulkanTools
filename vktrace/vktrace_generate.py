@@ -254,8 +254,8 @@ class Subcommand(object):
                                                 'finalize_txt': 'default'},
                            'pDataSize': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pDataSize), sizeof(size_t), &_dataSize)',
                                          'finalize_txt': 'vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pDataSize))'},
-#                           'pData': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pData), _dataSize, pData)',
-#                                     'finalize_txt': 'default'},
+                           'pData': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pData), _dataSize, pData)',
+                                     'finalize_txt': 'default'},
                            'pName': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pName), ((pName != NULL) ? strlen(pName) + 1 : 0), pName)',
                                      'finalize_txt': 'default'},
                            'pMarker': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pMarker), ((pMarker != NULL) ? strlen(pMarker) + 1 : 0), pMarker)',
@@ -1358,7 +1358,7 @@ class Subcommand(object):
         rof_body.append('        else')
         rof_body.append('        {')
         rof_body.append('            assert(offset >= mr.offset);')
-        rof_body.append('            assert(size <= mr.size && (size + offset) <= mr.size);')
+        rof_body.append('            assert(size <= mr.size && (size + offset) <= (size_t)m_allocInfo.allocationSize);')
         rof_body.append('        }')
         rof_body.append('        memcpy(mr.pData + offset, pSrcData, size);')
         rof_body.append('        if (!mr.pending && entire_map)')
@@ -1794,7 +1794,7 @@ class Subcommand(object):
         # Functions to treat as "Create' that don't have 'Create' in the name
         special_create_list = ['LoadPipeline', 'LoadPipelineDerivative', 'AllocateMemory', 'GetDeviceQueue', 'PinSystemMemory', 'AllocateDescriptorSets']
         # A couple funcs use do while loops
-        do_while_dict = {'GetFenceStatus': 'replayResult != pPacket->result  && pPacket->result == VK_SUCCESS', 'GetEventStatus': '(pPacket->result == VK_EVENT_SET || pPacket->result == VK_EVENT_RESET) && replayResult != pPacket->result'}
+        do_while_dict = {'GetFenceStatus': 'replayResult != pPacket->result  && pPacket->result == VK_SUCCESS', 'GetEventStatus': '(pPacket->result == VK_EVENT_SET || pPacket->result == VK_EVENT_RESET) && replayResult != pPacket->result', 'GetQueryPoolResults': 'pPacket->result == VK_SUCCESS && replayResult != pPacket->result'}
         rbody = []
         rbody.append('%s' % self.lineinfo.get())
         rbody.append('vktrace_replay::VKTRACE_REPLAY_RESULT vkReplay::replay(vktrace_trace_packet_header *packet)')
