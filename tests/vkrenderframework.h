@@ -30,6 +30,7 @@ class VkImageObj;
 
 #include <map>
 #include <vector>
+#include <array>
 
 using namespace std;
 
@@ -45,7 +46,7 @@ class VkDeviceObj : public vk_testing::Device {
 
     uint32_t id;
     VkPhysicalDeviceProperties props;
-    const VkQueueFamilyProperties *queue_props;
+    std::vector<VkQueueFamilyProperties> queue_props;
 
     VkQueue m_queue;
 };
@@ -58,6 +59,7 @@ class VkRenderFramework : public VkTestFramework {
     VkRenderFramework();
     ~VkRenderFramework();
 
+    VkInstance instance() { return inst; }
     VkDevice device() { return m_device->device(); }
     VkPhysicalDevice gpu() { return objs[0]; }
     VkRenderPass renderPass() { return m_renderPass; }

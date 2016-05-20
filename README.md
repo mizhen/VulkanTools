@@ -14,6 +14,12 @@ The following components are available in this repository over and above what is
 - tests for the Intel Ilo sample driver (tests/)
 - vktrace and vkreplay, API capture and replay  (vktrace/)
 
+## Contributing
+
+If you intend to contribute, the preferred work flow is for you to develop your contribution
+in a fork of this repo in your GitHub account and then submit a pull request.
+Please see the [CONTRIBUTING](CONTRIBUTING.md) file in this respository for more details.
+
 ## How to Build and Run
 
 [BUILDVT.md](BUILDVT.md)
@@ -28,7 +34,7 @@ Architecture and interface information for the loader is in
 ## License
 This work is released as open source under a Apache-style license from Khronos including a Khronos copyright.
 
-See LICENSE.txt for a full list of licenses used in this repository.
+See COPYRIGHT.txt for a full list of licenses used in this repository.
 
 ## Acknowledgements
 While this project has been developed primarily by LunarG, Inc; there are many other
