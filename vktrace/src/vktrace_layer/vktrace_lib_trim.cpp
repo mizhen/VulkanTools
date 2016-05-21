@@ -107,7 +107,7 @@ void trim_add_##type##_call(Vk##type var, vktrace_trace_packet_header* pHeader) 
     { \
         std::list<vktrace_trace_packet_header*> packets; \
         packets.push_back(pHeader); \
-        g_trim_created##type##s.insert_or_assign(var, packets); \
+        g_trim_created##type##s[var] = packets; \
     } else { \
         iter->second.push_back(pHeader); \
     } \
@@ -123,7 +123,7 @@ void trim_mark_##type##_reference(Vk##type var) { \
         ObjectPacketMap::iterator existing = g_trim_created##type##s.find(var); \
         assert(existing != g_trim_created##type##s.end()); \
         /* // add it to the referenced list */ \
-        g_trim_referenced##type##s.insert_or_assign(existing->first, existing->second); \
+        g_trim_referenced##type##s[existing->first] = existing->second; \
     } \
 }
 
