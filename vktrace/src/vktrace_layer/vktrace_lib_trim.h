@@ -107,6 +107,10 @@ typedef struct _Trim_ObjectInfo
             vktrace_trace_packet_header* pCreatePacket;
             VkAllocationCallbacks allocator;
         } PipelineLayout;
+        struct _RenderPass {     // VkRenderPass
+            vktrace_trace_packet_header* pCreatePacket;
+            VkAllocationCallbacks allocator;
+        } RenderPass;
 
 
 
