@@ -99,6 +99,10 @@ typedef struct _Trim_ObjectInfo
             vktrace_trace_packet_header* pCreatePacket;
             VkAllocationCallbacks allocator;
         } Sampler;
+        struct _DescriptorSetLayout {     // VkDescriptorSetLayout
+            vktrace_trace_packet_header* pCreatePacket;
+            VkAllocationCallbacks allocator;
+        } DescriptorSetLayout;
 
 
 
