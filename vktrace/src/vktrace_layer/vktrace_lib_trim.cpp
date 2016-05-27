@@ -313,6 +313,13 @@ void trim_write_all_referenced_object_calls()
         vktrace_delete_trace_packet(&(obj->second.ObjectInfo.Pipeline.pCreatePacket));
     }
 
+    // DescriptorPool
+    for (TrimObjectInfoMap::iterator obj = g_trimGlobalStateTracker.createdDescriptorPools.begin(); obj != g_trimGlobalStateTracker.createdDescriptorPools.end(); obj++)
+    {
+        vktrace_write_trace_packet(obj->second.ObjectInfo.DescriptorPool.pCreatePacket, vktrace_trace_get_trace_file());
+        vktrace_delete_trace_packet(&(obj->second.ObjectInfo.DescriptorPool.pCreatePacket));
+    }
+
 /*
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Instance);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(PhysicalDevice);
@@ -332,9 +339,9 @@ void trim_write_all_referenced_object_calls()
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(ShaderModule);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(RenderPass);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Pipeline);
+   TRIM_WRITE_REFERENCED_OBJECT_PACKETS(DescriptorPool);
 
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Framebuffer);
-   TRIM_WRITE_REFERENCED_OBJECT_PACKETS(DescriptorPool);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(DescriptorSet);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Semaphore);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Fence);
@@ -473,6 +480,36 @@ void trim_write_recorded_packets()
 //===============================================
 void trim_write_destroy_packets()
 {
+    // DescriptorPool
+    for (TrimObjectInfoMap::iterator obj = g_trimGlobalStateTracker.createdDescriptorPools.begin(); obj != g_trimGlobalStateTracker.createdDescriptorPools.end(); obj++)
+    {
+        vktrace_trace_packet_header* pHeader;
+        packet_vkDestroyDescriptorPool* pPacket = NULL;
+        CREATE_TRACE_PACKET(vkDestroyDescriptorPool, sizeof(VkAllocationCallbacks));
+        vktrace_set_packet_entrypoint_end_time(pHeader);
+        pPacket = interpret_body_as_vkDestroyDescriptorPool(pHeader);
+        pPacket->device = obj->second.belongsToDevice;
+        pPacket->descriptorPool = (VkDescriptorPool)obj->first;
+        vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pAllocator), sizeof(VkAllocationCallbacks), &(obj->second.ObjectInfo.DescriptorPool.allocator));
+        vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pAllocator));
+        FINISH_TRACE_PACKET();
+    }
+
+    // Pipeline
+    for (TrimObjectInfoMap::iterator obj = g_trimGlobalStateTracker.createdPipelines.begin(); obj != g_trimGlobalStateTracker.createdPipelines.end(); obj++)
+    {
+        vktrace_trace_packet_header* pHeader;
+        packet_vkDestroyPipeline* pPacket = NULL;
+        CREATE_TRACE_PACKET(vkDestroyPipeline, sizeof(VkAllocationCallbacks));
+        vktrace_set_packet_entrypoint_end_time(pHeader);
+        pPacket = interpret_body_as_vkDestroyPipeline(pHeader);
+        pPacket->device = obj->second.belongsToDevice;
+        pPacket->pipeline = (VkPipeline)obj->first;
+        vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pAllocator), sizeof(VkAllocationCallbacks), &(obj->second.ObjectInfo.Pipeline.allocator));
+        vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pAllocator));
+        FINISH_TRACE_PACKET();
+    }
+
     // PipelineCache
     for (TrimObjectInfoMap::iterator obj = g_trimGlobalStateTracker.createdPipelineCaches.begin(); obj != g_trimGlobalStateTracker.createdPipelineCaches.end(); obj++)
     {
