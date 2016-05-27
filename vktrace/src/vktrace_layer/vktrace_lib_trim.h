@@ -111,7 +111,21 @@ typedef struct _Trim_ObjectInfo
             vktrace_trace_packet_header* pCreatePacket;
             VkAllocationCallbacks allocator;
         } RenderPass;
-
+        struct _ShaderModule {     // VkShaderModule
+            vktrace_trace_packet_header* pCreatePacket;
+            VkAllocationCallbacks allocator;
+        } ShaderModule;
+        struct _PipelineCache {     // VkPipelineCache
+            vktrace_trace_packet_header* pCreatePacket;
+            VkAllocationCallbacks allocator;
+        } PipelineCache;
+        struct _Pipeline {     // VkPipeline
+            vktrace_trace_packet_header* pCreatePacket;
+            VkGraphicsPipelineCreateInfo graphicsPipelineCreateInfo;
+            VkComputePipelineCreateInfo computePipelineCreateInfo;
+            // TODO: Need to build out this structure based on VkGraphicsPipelineCreateInfo
+            VkAllocationCallbacks allocator;
+        } Pipeline;
 
 
         struct _DescriptorPool {        // VkDescriptorPool
@@ -145,6 +159,7 @@ typedef struct _Trim_StateTracker
     TRIM_DECLARE_OBJECT_TRACKERS(CommandBuffer);
     TRIM_DECLARE_OBJECT_TRACKERS(DescriptorPool);
     TRIM_DECLARE_OBJECT_TRACKERS(RenderPass);
+    TRIM_DECLARE_OBJECT_TRACKERS(PipelineCache);
     TRIM_DECLARE_OBJECT_TRACKERS(Pipeline);
     TRIM_DECLARE_OBJECT_TRACKERS(Queue);
     TRIM_DECLARE_OBJECT_TRACKERS(Semaphore);
@@ -174,6 +189,7 @@ TRIM_DECLARE_OBJECT_TRACKER_FUNCS(CommandPool);
 TRIM_DECLARE_OBJECT_TRACKER_FUNCS(CommandBuffer);
 TRIM_DECLARE_OBJECT_TRACKER_FUNCS(DescriptorPool);
 TRIM_DECLARE_OBJECT_TRACKER_FUNCS(RenderPass);
+TRIM_DECLARE_OBJECT_TRACKER_FUNCS(PipelineCache);
 TRIM_DECLARE_OBJECT_TRACKER_FUNCS(Pipeline);
 TRIM_DECLARE_OBJECT_TRACKER_FUNCS(Queue);
 TRIM_DECLARE_OBJECT_TRACKER_FUNCS(Semaphore);
