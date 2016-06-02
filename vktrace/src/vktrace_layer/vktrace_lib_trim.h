@@ -30,6 +30,8 @@ void trim_write_recorded_packets();
 void trim_write_destroy_packets();
 void trim_delete_all_packets();
 
+void trim_remove_CommandBuffer_calls(VkCommandBuffer var);
+
 // some of the items in this struct are based on what is tracked in the 'VkLayer_object_tracker' (struct _OBJTRACK_NODE).
 typedef struct _Trim_ObjectInfo
 {

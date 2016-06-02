@@ -499,27 +499,17 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkBeginCommandBuffer(
         // trim not enabled, send packet as usual
         FINISH_TRACE_PACKET();
     }
-    else if (g_trimIsPreTrim)
+    else if (g_trimIsPreTrim || g_trimIsInTrim)
     {
         vktrace_finalize_trace_packet(pHeader);
-        Trim_ObjectInfo* pInfo = trim_get_CommandBuffer_objectInfo(commandBuffer);
-        //pInfo->ObjectInfo.CommandBuffer.beginInfo_flags = pBeginInfo->flags;
-        //pInfo->ObjectInfo.CommandBuffer.beginInfo_inheritenceInfo = *(pBeginInfo->pInheritanceInfo);
-
-//        trim_add_CommandBuffer_call(commandBuffer, pHeader);
-    }
-    else if (g_trimIsInTrim)
-    {
-        // Currently tracing the frame, so need to track references & store packet to write post-tracing.
-        vktrace_finalize_trace_packet(pHeader);
-        Trim_ObjectInfo* pInfo = trim_get_CommandBuffer_objectInfo(commandBuffer);
-        //pInfo->ObjectInfo.CommandBuffer.beginInfo_flags = pBeginInfo->flags;
-        //pInfo->ObjectInfo.CommandBuffer.beginInfo_inheritenceInfo = *(pBeginInfo->pInheritanceInfo);
-
-        //trim_mark_RenderPass_reference(pBeginInfo->pInheritanceInfo->renderPass);
-        //trim_mark_Framebuffer_reference(pBeginInfo->pInheritanceInfo->framebuffer);
-        
-        trim_add_recorded_packet(pHeader);
+        if (g_trimIsPreTrim)
+        {
+            trim_add_CommandBuffer_call(commandBuffer, pHeader);
+        }
+        if (g_trimIsInTrim)
+        {
+            trim_add_recorded_packet(pHeader);
+        }
     }
     else // g_trimIsPostTrim
     {
@@ -821,7 +811,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateInstance(
         {
             pInfo->ObjectInfo.Instance.allocator = *pAllocator;
         }
-        trim_add_Instance_call(*pInstance, pHeader);
     }
     else if (g_trimIsInTrim)
     {
@@ -2327,7 +2316,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateXcbSurfaceKHR(
         else
         {
             vktrace_finalize_trace_packet(pHeader);
-            trim_add_Instance_call(instance, pHeader);
         }
     }
     return result;
@@ -2399,7 +2387,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateXlibSurfaceKHR(
     //    else
     //    {
     //        vktrace_finalize_trace_packet(pHeader);
-    //        trim_add_Instance_call(instance, pHeader);
     //    }
     //}
 

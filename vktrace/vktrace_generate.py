@@ -413,6 +413,7 @@ class Subcommand(object):
             trim_instructions.append("        for (uint32_t i = 0; i < commandBufferCount; i++)")
             trim_instructions.append("        {")
             trim_instructions.append("            trim_remove_CommandBuffer_object(pCommandBuffers[i]);")
+            trim_instructions.append("            trim_remove_CommandBuffer_calls(pCommandBuffers[i]);")
             trim_instructions.append("        }")
         elif 'QueueWaitIdle' is proto.name:
             trim_instructions.append("        trim_mark_Queue_reference(queue);")
@@ -467,7 +468,7 @@ class Subcommand(object):
               'CmdNextSubpass' is proto.name or
               'CmdEndRenderPass' is proto.name or
               'CmdExecuteCommands' is proto.name):
-            trim_instructions.append("        trim_add_CommandBuffer_call(commandBuffer, pHeader);")
+            trim_instructions.append("        if (g_trimIsPreTrim) { trim_add_CommandBuffer_call(commandBuffer, pHeader); }")
         elif 'CreateImageView' is proto.name:
             trim_instructions.append("        Trim_ObjectInfo* pInfo = trim_add_ImageView_object(*pView);")
             trim_instructions.append("        pInfo->belongsToDevice = device;")
