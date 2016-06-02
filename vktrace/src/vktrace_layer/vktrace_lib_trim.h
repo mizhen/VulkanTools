@@ -9,6 +9,20 @@
 #include "vktrace_trace_packet_identifiers.h"
 #include "vulkan.h"
 
+// Trim support
+// Indicates whether trim support will be utilized during this instance of vktrace.
+// Only set once based on the VKTRACE_TRIM_FRAMES env var.
+extern bool g_trimEnabled;
+extern bool g_trimIsPreTrim;
+extern bool g_trimIsInTrim;
+extern bool g_trimIsPostTrim;
+extern uint64_t g_trimFrameCounter;
+extern uint64_t g_trimStartFrame;
+extern uint64_t g_trimEndFrame;
+
+// Use this to snapshot the global state tracker at the start of the trim frames.
+void trim_snapshot_state_tracker();
+
 // Outputs object-related trace packets to the trace file.
 void trim_write_all_referenced_object_calls();
 void trim_add_recorded_packet(vktrace_trace_packet_header* pHeader);
@@ -140,6 +154,10 @@ typedef struct _Trim_ObjectInfo
             vktrace_trace_packet_header* pCreatePacket;
             VkAllocationCallbacks allocator;
         } Framebuffer;
+        struct _Semaphore {           // VkSemaphore
+            vktrace_trace_packet_header* pCreatePacket;
+            VkAllocationCallbacks allocator;
+        } Semaphore;
     } ObjectInfo;
 } Trim_ObjectInfo;
 
@@ -214,5 +232,3 @@ TRIM_DECLARE_OBJECT_TRACKER_FUNCS(PipelineLayout);
 TRIM_DECLARE_OBJECT_TRACKER_FUNCS(Sampler);
 TRIM_DECLARE_OBJECT_TRACKER_FUNCS(DescriptorSetLayout);
 TRIM_DECLARE_OBJECT_TRACKER_FUNCS(DescriptorSet);
-
-extern Trim_StateTracker g_trimGlobalStateTracker;

@@ -2179,6 +2179,7 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkQueuePresentKHR(
         {
             g_trimIsPreTrim = false;
             g_trimIsInTrim = true;
+            trim_snapshot_state_tracker();
         }
         if (g_trimEndFrame < UINT64_MAX &&
             g_trimFrameCounter == g_trimEndFrame + 1)
