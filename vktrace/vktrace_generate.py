@@ -426,7 +426,10 @@ class Subcommand(object):
         elif 'CreateFence' is proto.name:
             trim_instructions.append("        Trim_ObjectInfo* pInfo = trim_add_Fence_object(*pFence);")
             trim_instructions.append("        pInfo->belongsToDevice = device;")
-            trim_instructions.append("        trim_add_Fence_call(*pFence, pHeader);")
+            trim_instructions.append("        pInfo->ObjectInfo.Fence.pCreatePacket = pHeader;")
+            trim_instructions.append("        if (pAllocator != NULL) { pInfo->ObjectInfo.Fence.allocator = *pAllocator; }")
+        elif 'DestroyFence' is proto.name:
+            trim_instructions.append("        trim_remove_Fence_object(fence);")
         elif ('EndCommandBuffer' is proto.name or
               'ResetCommandBuffer' is proto.name or
               'CmdBindPipeline' is proto.name or
@@ -558,11 +561,23 @@ class Subcommand(object):
         elif 'DestroyFramebuffer' is proto.name:
             trim_instructions.append("        trim_remove_Framebuffer_object(framebuffer);")
         elif 'CreateEvent' is proto.name:
-#            trim_instructions.append("        trim_dependency_Event_to_Device[*pEvent] = device;")
-            trim_instructions.append("        trim_add_Event_call(*pEvent, pHeader);")
+            trim_instructions.append("        Trim_ObjectInfo* pInfo = trim_add_Event_object(*pEvent);")
+            trim_instructions.append("        pInfo->belongsToDevice = device;")
+            trim_instructions.append("        pInfo->ObjectInfo.Event.pCreatePacket = pHeader;")
+            trim_instructions.append("        if (pAllocator != NULL) {")
+            trim_instructions.append("            pInfo->ObjectInfo.Event.allocator = *pAllocator;")
+            trim_instructions.append("        }")
+        elif 'DestroyEvent' is proto.name:
+            trim_instructions.append("        trim_remove_Event_object(event);")
         elif 'CreateQueryPool' is proto.name:
-#            trim_instructions.append("        trim_dependency_QueryPool_to_Device[*pQueryPool] = device;")
-            trim_instructions.append("        trim_add_QueryPool_call(*pQueryPool, pHeader);")
+            trim_instructions.append("        Trim_ObjectInfo* pInfo = trim_add_QueryPool_object(*pQueryPool);")
+            trim_instructions.append("        pInfo->belongsToDevice = device;")
+            trim_instructions.append("        pInfo->ObjectInfo.QueryPool.pCreatePacket = pHeader;")
+            trim_instructions.append("        if (pAllocator != NULL) {")
+            trim_instructions.append("            pInfo->ObjectInfo.QueryPool.allocator = *pAllocator;")
+            trim_instructions.append("        }")
+        elif 'DestroyQueryPool' is proto.name:
+            trim_instructions.append("        trim_remove_QueryPool_object(queryPool);")
         elif ('GetPhysicalDeviceSurfaceSupportKHR' is proto.name or
               'GetPhysicalDeviceMemoryProperties' is proto.name):
             trim_instructions.append("        trim_add_PhysicalDevice_call(physicalDevice, pHeader);")

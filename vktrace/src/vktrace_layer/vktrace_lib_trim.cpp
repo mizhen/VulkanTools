@@ -399,6 +399,27 @@ void trim_write_all_referenced_object_calls()
         vktrace_delete_trace_packet(&(obj->second.ObjectInfo.Semaphore.pCreatePacket));
     }
 
+    // Fence
+    for (TrimObjectInfoMap::iterator obj = stateTracker.createdFences.begin(); obj != stateTracker.createdFences.end(); obj++)
+    {
+        vktrace_write_trace_packet(obj->second.ObjectInfo.Fence.pCreatePacket, vktrace_trace_get_trace_file());
+        vktrace_delete_trace_packet(&(obj->second.ObjectInfo.Fence.pCreatePacket));
+    }
+
+    // Event
+    for (TrimObjectInfoMap::iterator obj = stateTracker.createdEvents.begin(); obj != stateTracker.createdEvents.end(); obj++)
+    {
+        vktrace_write_trace_packet(obj->second.ObjectInfo.Event.pCreatePacket, vktrace_trace_get_trace_file());
+        vktrace_delete_trace_packet(&(obj->second.ObjectInfo.Event.pCreatePacket));
+    }
+
+    // QueryPool
+    for (TrimObjectInfoMap::iterator obj = stateTracker.createdQueryPools.begin(); obj != stateTracker.createdQueryPools.end(); obj++)
+    {
+        vktrace_write_trace_packet(obj->second.ObjectInfo.QueryPool.pCreatePacket, vktrace_trace_get_trace_file());
+        vktrace_delete_trace_packet(&(obj->second.ObjectInfo.QueryPool.pCreatePacket));
+    }
+
 /*
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Instance);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(PhysicalDevice);
@@ -406,7 +427,8 @@ void trim_write_all_referenced_object_calls()
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Device);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Queue);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(CommandPool);
-   TRIM_WRITE_REFERENCED_OBJECT_PACKETS(SwapchainKHR);
+   TRIM_WRITE_REFERENCED_OBJECT_PACKETS(CommandBuffer);
+   \TRIM_WRITE_REFERENCED_OBJECT_PACKETS(SwapchainKHR);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(DeviceMemory);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(ImageView);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Image);
@@ -420,13 +442,12 @@ void trim_write_all_referenced_object_calls()
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Pipeline);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(DescriptorPool);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(DescriptorSet);
-
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Framebuffer);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Semaphore);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Fence);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(Event);
    TRIM_WRITE_REFERENCED_OBJECT_PACKETS(QueryPool);
-   TRIM_WRITE_REFERENCED_OBJECT_PACKETS(CommandBuffer);*/
+   */
 }
 
 #define TRIM_ADD_OBJECT_CALL(type) \
@@ -559,6 +580,51 @@ void trim_write_recorded_packets()
 //===============================================
 void trim_write_destroy_packets()
 {
+    // QueryPool
+    for (TrimObjectInfoMap::iterator obj = s_trimGlobalStateTracker.createdQueryPools.begin(); obj != s_trimGlobalStateTracker.createdQueryPools.end(); obj++)
+    {
+        vktrace_trace_packet_header* pHeader;
+        packet_vkDestroyQueryPool* pPacket = NULL;
+        CREATE_TRACE_PACKET(vkDestroyQueryPool, sizeof(VkAllocationCallbacks));
+        vktrace_set_packet_entrypoint_end_time(pHeader);
+        pPacket = interpret_body_as_vkDestroyQueryPool(pHeader);
+        pPacket->device = obj->second.belongsToDevice;
+        pPacket->queryPool = (VkQueryPool)obj->first;
+        vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pAllocator), sizeof(VkAllocationCallbacks), &(obj->second.ObjectInfo.QueryPool.allocator));
+        vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pAllocator));
+        FINISH_TRACE_PACKET();
+    }
+
+    // Event
+    for (TrimObjectInfoMap::iterator obj = s_trimGlobalStateTracker.createdEvents.begin(); obj != s_trimGlobalStateTracker.createdEvents.end(); obj++)
+    {
+        vktrace_trace_packet_header* pHeader;
+        packet_vkDestroyEvent* pPacket = NULL;
+        CREATE_TRACE_PACKET(vkDestroyEvent, sizeof(VkAllocationCallbacks));
+        vktrace_set_packet_entrypoint_end_time(pHeader);
+        pPacket = interpret_body_as_vkDestroyEvent(pHeader);
+        pPacket->device = obj->second.belongsToDevice;
+        pPacket->event = (VkEvent)obj->first;
+        vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pAllocator), sizeof(VkAllocationCallbacks), &(obj->second.ObjectInfo.Event.allocator));
+        vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pAllocator));
+        FINISH_TRACE_PACKET();
+    }
+
+    // Fence
+    for (TrimObjectInfoMap::iterator obj = s_trimGlobalStateTracker.createdFences.begin(); obj != s_trimGlobalStateTracker.createdFences.end(); obj++)
+    {
+        vktrace_trace_packet_header* pHeader;
+        packet_vkDestroyFence* pPacket = NULL;
+        CREATE_TRACE_PACKET(vkDestroyFence, sizeof(VkAllocationCallbacks));
+        vktrace_set_packet_entrypoint_end_time(pHeader);
+        pPacket = interpret_body_as_vkDestroyFence(pHeader);
+        pPacket->device = obj->second.belongsToDevice;
+        pPacket->fence = (VkFence)obj->first;
+        vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pAllocator), sizeof(VkAllocationCallbacks), &(obj->second.ObjectInfo.Fence.allocator));
+        vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pAllocator));
+        FINISH_TRACE_PACKET();
+    }
+
     // Semaphore
     for (TrimObjectInfoMap::iterator obj = s_trimGlobalStateTracker.createdSemaphores.begin(); obj != s_trimGlobalStateTracker.createdSemaphores.end(); obj++)
     {
