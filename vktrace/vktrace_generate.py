@@ -579,9 +579,9 @@ class Subcommand(object):
             trim_instructions.append("        }")
         elif 'DestroyQueryPool' is proto.name:
             trim_instructions.append("        trim_remove_QueryPool_object(queryPool);")
-        elif ('GetPhysicalDeviceSurfaceSupportKHR' is proto.name or
-              'GetPhysicalDeviceMemoryProperties' is proto.name):
-            trim_instructions.append("        trim_add_PhysicalDevice_call(physicalDevice, pHeader);")
+#        elif ('GetPhysicalDeviceSurfaceSupportKHR' is proto.name or
+#              'GetPhysicalDeviceMemoryProperties' is proto.name):
+#            trim_instructions.append("        trim_add_PhysicalDevice_call(physicalDevice, pHeader);")
         else:
             return None
         return "\n".join(trim_instructions)            

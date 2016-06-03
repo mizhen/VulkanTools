@@ -30,6 +30,7 @@ void trim_write_recorded_packets();
 void trim_write_destroy_packets();
 void trim_delete_all_packets();
 
+void trim_add_CommandBuffer_call(VkCommandBuffer var, vktrace_trace_packet_header* pHeader);
 void trim_remove_CommandBuffer_calls(VkCommandBuffer var);
 
 // some of the items in this struct are based on what is tracked in the 'VkLayer_object_tracker' (struct _OBJTRACK_NODE).
@@ -41,7 +42,6 @@ typedef struct _Trim_ObjectInfo
     VkInstance belongsToInstance;                    // owning Instance
     VkPhysicalDevice belongsToPhysicalDevice;        // owning PhysicalDevice
     VkDevice belongsToDevice;                        // owning Device
-//    std::list<vktrace_trace_packet_header*> packets; // trace packets needed to recreate the object
     union _ObjectInfo {                              // additional object-specific information
         struct _Instance {              // VkInstance
             vktrace_trace_packet_header* pCreatePacket;
@@ -77,8 +77,6 @@ typedef struct _Trim_ObjectInfo
         struct _CommandBuffer {         // VkCommandBuffer
             VkCommandPool commandPool;
             VkCommandBufferLevel level;
-            //VkCommandBufferUsageFlags beginInfo_flags;
-            //VkCommandBufferInheritanceInfo beginInfo_inheritenceInfo;
         } CommandBuffer;
         struct _DeviceMemory {          // VkDeviceMemory
             vktrace_trace_packet_header* pCreatePacket;
@@ -180,13 +178,6 @@ typedef std::unordered_map<void*, Trim_ObjectInfo> TrimObjectInfoMap;
 #define TRIM_DECLARE_OBJECT_TRACKERS(type) \
 TrimObjectInfoMap created##type##s; 
 
-#define TRIM_DECLARE_OBJECT_TRACKER_FUNCS(type) \
-Trim_ObjectInfo* trim_add_##type##_object(Vk##type var); \
-void trim_remove_##type##_object(Vk##type var); \
-Trim_ObjectInfo* trim_get_##type##_objectInfo(Vk##type var); \
-void trim_add_##type##_call(Vk##type var, vktrace_trace_packet_header* pHeader); \
-void trim_mark_##type##_reference(Vk##type var);
-
 typedef struct _Trim_StateTracker
 {
     TRIM_DECLARE_OBJECT_TRACKERS(Instance);
@@ -218,6 +209,11 @@ typedef struct _Trim_StateTracker
     TRIM_DECLARE_OBJECT_TRACKERS(DescriptorSet);
 } Trim_StateTracker;
 
+#define TRIM_DECLARE_OBJECT_TRACKER_FUNCS(type) \
+Trim_ObjectInfo* trim_add_##type##_object(Vk##type var); \
+void trim_remove_##type##_object(Vk##type var); \
+Trim_ObjectInfo* trim_get_##type##_objectInfo(Vk##type var); \
+void trim_mark_##type##_reference(Vk##type var);
 
 TRIM_DECLARE_OBJECT_TRACKER_FUNCS(Instance);
 TRIM_DECLARE_OBJECT_TRACKER_FUNCS(PhysicalDevice);

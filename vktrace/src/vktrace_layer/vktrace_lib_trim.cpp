@@ -435,14 +435,6 @@ void trim_write_all_referenced_object_calls()
     }
 }
 
-#define TRIM_ADD_OBJECT_CALL(type) \
-void trim_add_##type##_call(Vk##type var, vktrace_trace_packet_header* pHeader) { \
-    /* if it's in the created list, add it there*/ \
-    TrimObjectInfoMap::iterator iter = s_trimGlobalStateTracker.created##type##s.find(var); \
-    /*assert(iter != s_trimGlobalStateTracker.created##type##s.end()); */ \
-    /*if (iter != s_trimGlobalStateTracker.created##type##s.end() ) { iter->second.packets.push_back(pHeader); } */ \
-}
-
 #define TRIM_MARK_OBJECT_REFERENCE(type) \
 void trim_mark_##type##_reference(Vk##type var) { \
     Trim_ObjectInfo* info = &s_trimGlobalStateTracker.created##type##s[var]; \
@@ -459,22 +451,8 @@ void trim_mark_##type##_reference(Vk##type var) { \
 //===============================================
 // Object tracking
 //===============================================
-void trim_add_Instance_call(VkInstance var, vktrace_trace_packet_header* pHeader) {
-//    TrimObjectInfoMap::iterator iter = s_trimGlobalStateTracker.createdInstances.find(var);
-//    assert(iter != s_trimGlobalStateTracker.createdInstances.end());
-    //if (iter != s_trimGlobalStateTracker.createdInstances.end())
-    //{
-    //    iter->second.packets.push_back(pHeader);
-    //}
-}
-
-TRIM_ADD_OBJECT_CALL(PhysicalDevice)
-TRIM_ADD_OBJECT_CALL(Device)
-
-TRIM_ADD_OBJECT_CALL(CommandPool)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(CommandPool)
 
-//TRIM_ADD_OBJECT_CALL(CommandBuffer)
 void trim_add_CommandBuffer_call(VkCommandBuffer var, vktrace_trace_packet_header* pHeader) {
     s_cmdBufferPackets[var].push_back(pHeader);
 }
@@ -485,68 +463,26 @@ void trim_remove_CommandBuffer_calls(VkCommandBuffer var)
 }
 
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(CommandBuffer)
-
-TRIM_ADD_OBJECT_CALL(DescriptorPool)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(DescriptorPool)
-
-TRIM_ADD_OBJECT_CALL(DescriptorSet)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(DescriptorSet)
-
-TRIM_ADD_OBJECT_CALL(RenderPass)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(RenderPass)
-
-TRIM_ADD_OBJECT_CALL(PipelineCache)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(PipelineCache)
-
-TRIM_ADD_OBJECT_CALL(Pipeline)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(Pipeline)
-
-TRIM_ADD_OBJECT_CALL(Queue)
-TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(Queue);
-
-TRIM_ADD_OBJECT_CALL(Semaphore)
+TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(Queue)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(Semaphore)
-
-TRIM_ADD_OBJECT_CALL(DeviceMemory)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(DeviceMemory)
-
-TRIM_ADD_OBJECT_CALL(Fence)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(Fence)
-
-TRIM_ADD_OBJECT_CALL(SwapchainKHR)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(SwapchainKHR)
-
-TRIM_ADD_OBJECT_CALL(Image)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(Image)
-
-TRIM_ADD_OBJECT_CALL(ImageView)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(ImageView)
-
-TRIM_ADD_OBJECT_CALL(Buffer)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(Buffer)
-
-TRIM_ADD_OBJECT_CALL(BufferView)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(BufferView)
-
-TRIM_ADD_OBJECT_CALL(Framebuffer)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(Framebuffer)
-
-TRIM_ADD_OBJECT_CALL(Event)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(Event)
-
-TRIM_ADD_OBJECT_CALL(QueryPool)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(QueryPool)
-
-TRIM_ADD_OBJECT_CALL(ShaderModule)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(ShaderModule)
-
-TRIM_ADD_OBJECT_CALL(PipelineLayout)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(PipelineLayout)
-
-TRIM_ADD_OBJECT_CALL(Sampler)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(Sampler)
-
-TRIM_ADD_OBJECT_CALL(DescriptorSetLayout)
 TRIM_MARK_OBJECT_REFERENCE_WITH_DEVICE_DEPENDENCY(DescriptorSetLayout)
 
 //===============================================

@@ -168,7 +168,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkAllocateMemory(
         {
             pInfo->ObjectInfo.DeviceMemory.allocator = *pAllocator;
         }
-        trim_add_DeviceMemory_call(*pMemory, pHeader);
         if (g_trimIsInTrim)
         {
             trim_add_recorded_packet(pHeader);
@@ -412,7 +411,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkFlushMappedMemoryRange
     else if (g_trimIsPreTrim)
     {
         vktrace_finalize_trace_packet(pHeader);
-//        trim_add_Device_call(device, pHeader);
     }
     else if (g_trimIsInTrim)
     {
@@ -942,7 +940,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkEnumerateDeviceExtensi
     else if (g_trimIsPreTrim)
     {
         vktrace_finalize_trace_packet(pHeader);
-        trim_add_PhysicalDevice_call(physicalDevice, pHeader);
     }
     else if (g_trimIsInTrim)
     {
@@ -990,7 +987,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkEnumerateDeviceLayerPr
     else if (g_trimIsPreTrim)
     {
         vktrace_finalize_trace_packet(pHeader);
-        trim_add_PhysicalDevice_call(physicalDevice, pHeader);
     }
     else if (g_trimIsInTrim)
     {
@@ -1037,7 +1033,6 @@ VKTRACER_EXPORT VKAPI_ATTR void VKAPI_CALL __HOOKED_vkGetPhysicalDeviceQueueFami
     else if (g_trimIsPreTrim)
     {
         vktrace_finalize_trace_packet(pHeader);
-        trim_add_PhysicalDevice_call(physicalDevice, pHeader);
     }
     else if (g_trimIsInTrim)
     {
@@ -1159,7 +1154,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkGetQueryPoolResults(
     else if (g_trimIsPreTrim)
     {
         vktrace_finalize_trace_packet(pHeader);
-        trim_add_QueryPool_call(queryPool, pHeader);
     }
     else if (g_trimIsInTrim)
     {
@@ -1328,11 +1322,11 @@ VKTRACER_EXPORT VKAPI_ATTR void VKAPI_CALL __HOOKED_vkUpdateDescriptorSets(
         vktrace_finalize_trace_packet(pHeader);
         if (descriptorWriteCount > 0)
         {
-            trim_add_DescriptorSet_call(pDescriptorWrites[0].dstSet, pHeader);
+//            trim_add_DescriptorSet_call(pDescriptorWrites[0].dstSet, pHeader);
         }
         else if (descriptorCopyCount > 0)
         {
-            trim_add_DescriptorSet_call(pDescriptorCopies[0].dstSet, pHeader);
+//            trim_add_DescriptorSet_call(pDescriptorCopies[0].dstSet, pHeader);
         }
     }
     else if (g_trimIsInTrim)
@@ -1874,7 +1868,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkGetPhysicalDeviceSurfa
     else if (g_trimIsPreTrim)
     {
         vktrace_finalize_trace_packet(pHeader);
-        trim_add_PhysicalDevice_call(physicalDevice, pHeader);
     }
     else if (g_trimIsInTrim)
     {
@@ -1926,7 +1919,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkGetPhysicalDeviceSurfa
     else if (g_trimIsPreTrim)
     {
         vktrace_finalize_trace_packet(pHeader);
-        trim_add_PhysicalDevice_call(physicalDevice, pHeader);
     }
     else if (g_trimIsInTrim)
     {
@@ -1978,7 +1970,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkGetPhysicalDeviceSurfa
     else if (g_trimIsPreTrim)
     {
         vktrace_finalize_trace_packet(pHeader);
-        trim_add_PhysicalDevice_call(physicalDevice, pHeader);
     }
     else if (g_trimIsInTrim)
     {
@@ -2263,7 +2254,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkBool32 VKAPI_CALL __HOOKED_vkGetPhysicalDeviceWin32
     else if (g_trimIsPreTrim)
     {
         vktrace_finalize_trace_packet(pHeader);
-        trim_add_PhysicalDevice_call(physicalDevice, pHeader);
     }
     else if (g_trimIsInTrim)
     {
@@ -2355,7 +2345,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkBool32 VKAPI_CALL __HOOKED_vkGetPhysicalDeviceXcbPr
         else
         {
             vktrace_finalize_trace_packet(pHeader);
-            trim_add_PhysicalDevice_call(physicalDevice, pHeader);
         }
     }
     return result;
@@ -2429,7 +2418,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkBool32 VKAPI_CALL __HOOKED_vkGetPhysicalDeviceXlibP
     //    else
     //    {
     //        vktrace_finalize_trace_packet(pHeader);
-    //        trim_add_PhysicalDevice_call(physicalDevice, pHeader);
     //    }
     //}
 
@@ -2484,7 +2472,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkGetPhysicalDeviceSurfa
         else
         {
             vktrace_finalize_trace_packet(pHeader);
-            trim_add_PhysicalDevice_call(physicalDevice, pHeader);
         }
     }
     return result;
@@ -2807,7 +2794,6 @@ VKTRACER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vktraceGetDeviceProcAdd
     else if (g_trimIsPreTrim)
     {
         vktrace_finalize_trace_packet(pHeader);
-        trim_add_Device_call(device, pHeader);
     }
     else if (g_trimIsInTrim)
     {
@@ -2891,8 +2877,6 @@ VKTRACER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vktraceGetInstanceProcA
     else if (g_trimIsPreTrim)
     {
         vktrace_finalize_trace_packet(pHeader);
-        // push onto instance list
-        trim_add_Instance_call(instance, pHeader);
     }
     else if (g_trimIsInTrim)
     {
