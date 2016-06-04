@@ -556,6 +556,8 @@ class Subcommand(object):
         elif 'DestroyShaderModule' is proto.name:
             trim_instructions.append("        //Don't want to remove shader modules because they can be deleted after the pipeline is created, and we don't track that properly yet")
             trim_instructions.append("        //trim_remove_ShaderModule_object(shaderModule);")
+            trim_instructions.append("        //Remove the shadermodule if we've recorded this in-trim, because we don't want to delete it twice.")
+            trim_instructions.append("        if (g_trimIsInTrim) { trim_remove_ShaderModule_object(shaderModule); }")
         elif 'DestroyPipeline' is proto.name:
             trim_instructions.append("        trim_remove_Pipeline_object(pipeline);")
         elif 'DestroyDescriptorPool' is proto.name:
@@ -735,13 +737,16 @@ class Subcommand(object):
                         func_body.append('        vktrace_finalize_trace_packet(pHeader);')
                         pretrim_instructions = self._generate_trim_statetracking_instructions(proto);
                         if pretrim_instructions is None:
-                            func_body.append('        vktrace_delete_trace_packet(&pHeader);')
+                            func_body.append('        if (g_trimIsPreTrim)')
+                            func_body.append('        {')
+                            func_body.append('            vktrace_delete_trace_packet(&pHeader);')
+                            func_body.append('        }')
                         else:
                             func_body.append(pretrim_instructions)
-                            func_body.append('        if (g_trimIsInTrim)')
-                            func_body.append('        {')
-                            func_body.append('            trim_add_recorded_packet(pHeader);')
-                            func_body.append('        }')
+                        func_body.append('        if (g_trimIsInTrim)')
+                        func_body.append('        {')
+                        func_body.append('            trim_add_recorded_packet(pHeader);')
+                        func_body.append('        }')
                         func_body.append('    }')
                         func_body.append('    else // g_trimIsPostTrim')
                         func_body.append('    {')
