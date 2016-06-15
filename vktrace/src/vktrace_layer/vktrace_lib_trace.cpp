@@ -2977,10 +2977,6 @@ VKTRACER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL __HOOKED_vkGetDevicePro
         }
     }
 
-    if (device == VK_NULL_HANDLE) {
-        return NULL;
-    }
-
     layer_device_data  *devData = mdd(device);
     if (gMessageStream != NULL) {
 
@@ -3003,6 +2999,11 @@ VKTRACER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL __HOOKED_vkGetDevicePro
                 return (PFN_vkVoidFunction) __HOOKED_vkQueuePresentKHR;
         }
     }
+
+    if (device == VK_NULL_HANDLE) {
+        return NULL;
+    }
+
     VkLayerDispatchTable *pDisp =  &devData->devTable;
     if (pDisp->GetDeviceProcAddr == NULL)
         return NULL;
@@ -3142,6 +3143,9 @@ VKTRACER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL __HOOKED_vkGetInstanceP
         }
 #endif
     } else {
+        if (instance == VK_NULL_HANDLE) {
+            return NULL;
+        }
         instData = mid(instance);
     }
     VkLayerInstanceDispatchTable* pTable = &instData->instTable;

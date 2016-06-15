@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 #
 # VK
 #
@@ -164,8 +164,8 @@ def get_object_uses(obj_list, params):
     return (obj_uses, local_decls)
 
 class Subcommand(object):
-    def __init__(self, argv):
-        self.argv = argv
+    def __init__(self, outfile):
+        self.outfile = outfile
         self.headers = vulkan.headers
         self.protos = vulkan.protos
         self.no_addr = False
@@ -174,7 +174,11 @@ class Subcommand(object):
         self.wsi = sys.argv[1]
 
     def run(self):
-        print(self.generate())
+        if self.outfile:
+            with open(self.outfile, "w") as outfile:
+                outfile.write(self.generate())
+        else:
+            print(self.generate())
 
     def generate(self):
         copyright = self.generate_copyright()
@@ -268,19 +272,19 @@ class Subcommand(object):
                 if 'pUserData' == name:
                     return ("%i", "((pUserData == 0) ? 0 : *(pUserData))")
                 if 'const' in vk_type.lower():
-                    return ("%p", "(void*)(%s)" % name)
+                    return ("0x%p", "(void*)(%s)" % name)
                 return ("%i", "*(%s)" % name)
             return ("%i", name)
         # TODO : This is special-cased as there's only one "format" param currently and it's nice to expand it
         if "VkFormat" == vk_type:
             if cpp:
-                return ("%p", "&%s" % name)
+                return ("0x%p", "&%s" % name)
             return ("{%s.channelFormat = %%s, %s.numericFormat = %%s}" % (name, name), "string_VK_COLOR_COMPONENT_FORMAT(%s.channelFormat), string_VK_FORMAT_RANGE_SIZE(%s.numericFormat)" % (name, name))
         if output_param:
-            return ("%p", "(void*)*%s" % name)
+            return ("0x%p", "(void*)*%s" % name)
         if vk_helper.is_type(vk_type, 'struct') and '*' not in vk_type:
-            return ("%p", "(void*)(&%s)" % name)
-        return ("%p", "(void*)(%s)" % name)
+            return ("0x%p", "(void*)(&%s)" % name)
+        return ("0x%p", "(void*)(%s)" % name)
 
     def _gen_create_msg_callback(self):
         r_body = []
@@ -715,10 +719,10 @@ class ObjectTrackerSubcommand(Subcommand):
         header_txt.append('#include <stdio.h>')
         header_txt.append('#include <stdlib.h>')
         header_txt.append('#include <string.h>')
-        header_txt.append('#include <inttypes.h>')
+        header_txt.append('#include <cinttypes>')
         header_txt.append('')
         header_txt.append('#include <unordered_map>')
-        header_txt.append('using namespace std;')
+        header_txt.append('')
         header_txt.append('#include "vulkan/vk_layer.h"')
         header_txt.append('#include "vk_layer_config.h"')
         header_txt.append('#include "vk_layer_table.h"')
@@ -733,7 +737,7 @@ class ObjectTrackerSubcommand(Subcommand):
     def generate_maps(self):
         maps_txt = []
         for o in vulkan.object_type_list:
-            maps_txt.append('unordered_map<uint64_t, OBJTRACK_NODE*> %sMap;' % (o))
+            maps_txt.append('std::unordered_map<uint64_t, OBJTRACK_NODE*> %sMap;' % (o))
         return "\n".join(maps_txt)
 
     def _gather_object_uses(self, obj_list, struct_type, obj_set):
@@ -812,89 +816,13 @@ class ObjectTrackerSubcommand(Subcommand):
             procs_txt.append('        delete pNode;')
             procs_txt.append('        %sMap.erase(it);' % (o))
             procs_txt.append('    } else {')
-            procs_txt.append('        log_msg(mdd(dispatchable_object), VK_DEBUG_REPORT_ERROR_BIT_EXT, (VkDebugReportObjectTypeEXT ) 0, object_handle, __LINE__, OBJTRACK_NONE, "OBJTRACK",')
+            procs_txt.append('        log_msg(mdd(dispatchable_object), VK_DEBUG_REPORT_ERROR_BIT_EXT, (VkDebugReportObjectTypeEXT ) 0,')
+            procs_txt.append('            object_handle, __LINE__, OBJTRACK_UNKNOWN_OBJECT, "OBJTRACK",')
             procs_txt.append('            "Unable to remove obj 0x%" PRIxLEAST64 ". Was it created? Has it already been destroyed?",')
-            procs_txt.append('           object_handle);')
+            procs_txt.append('            object_handle);')
             procs_txt.append('    }')
             procs_txt.append('}')
             procs_txt.append('')
-            procs_txt.append('%s' % self.lineinfo.get())
-            if o in vulkan.object_dispatch_list:
-                procs_txt.append('static VkBool32 set_%s_status(%s dispatchable_object, %s object, VkDebugReportObjectTypeEXT objType, ObjectStatusFlags status_flag)' % (name, o, o))
-            else:
-                procs_txt.append('static VkBool32 set_%s_status(VkDevice dispatchable_object, %s object, VkDebugReportObjectTypeEXT objType, ObjectStatusFlags status_flag)' % (name, o))
-            procs_txt.append('{')
-            procs_txt.append('    if (object != VK_NULL_HANDLE) {')
-            procs_txt.append('        uint64_t object_handle = (uint64_t)(object);')
-            procs_txt.append('        auto it = %sMap.find(object_handle);' % o)
-            procs_txt.append('        if (it != %sMap.end()) {' % o)
-            procs_txt.append('            it->second->status |= status_flag;')
-            procs_txt.append('        }')
-            procs_txt.append('        else {')
-            procs_txt.append('            // If we do not find it print an error')
-            procs_txt.append('            return log_msg(mdd(dispatchable_object), VK_DEBUG_REPORT_ERROR_BIT_EXT, (VkDebugReportObjectTypeEXT ) 0, object_handle, __LINE__, OBJTRACK_NONE, "OBJTRACK",')
-            procs_txt.append('                "Unable to set status for non-existent object 0x%" PRIxLEAST64 " of %s type",')
-            procs_txt.append('                object_handle, string_VkDebugReportObjectTypeEXT(objType));')
-            procs_txt.append('        }')
-            procs_txt.append('    }')
-            procs_txt.append('    return VK_FALSE;')
-            procs_txt.append('}')
-            procs_txt.append('')
-            procs_txt.append('%s' % self.lineinfo.get())
-            procs_txt.append('static VkBool32 validate_%s_status(' % (name))
-            if o in vulkan.object_dispatch_list:
-                procs_txt.append('%s dispatchable_object, %s object,' % (o, o))
-            else:
-                procs_txt.append('VkDevice dispatchable_object, %s object,' % (o))
-            procs_txt.append('    VkDebugReportObjectTypeEXT     objType,')
-            procs_txt.append('    ObjectStatusFlags   status_mask,')
-            procs_txt.append('    ObjectStatusFlags   status_flag,')
-            procs_txt.append('    VkFlags             msg_flags,')
-            procs_txt.append('    OBJECT_TRACK_ERROR  error_code,')
-            procs_txt.append('    const char         *fail_msg)')
-            procs_txt.append('{')
-            procs_txt.append('    uint64_t object_handle = (uint64_t)(object);')
-            procs_txt.append('    auto it = %sMap.find(object_handle);' % o)
-            procs_txt.append('    if (it != %sMap.end()) {' % o)
-            procs_txt.append('        OBJTRACK_NODE* pNode = it->second;')
-            procs_txt.append('        if ((pNode->status & status_mask) != status_flag) {')
-            procs_txt.append('            log_msg(mdd(dispatchable_object), msg_flags, pNode->objType, object_handle, __LINE__, OBJTRACK_UNKNOWN_OBJECT, "OBJTRACK",')
-            procs_txt.append('                "OBJECT VALIDATION WARNING: %s object 0x%" PRIxLEAST64 ": %s", string_VkDebugReportObjectTypeEXT(objType),')
-            procs_txt.append('                 object_handle, fail_msg);')
-            procs_txt.append('            return VK_FALSE;')
-            procs_txt.append('        }')
-            procs_txt.append('        return VK_TRUE;')
-            procs_txt.append('    }')
-            procs_txt.append('    else {')
-            procs_txt.append('        // If we do not find it print an error')
-            procs_txt.append('        log_msg(mdd(dispatchable_object), msg_flags, (VkDebugReportObjectTypeEXT) 0, object_handle, __LINE__, OBJTRACK_UNKNOWN_OBJECT, "OBJTRACK",')
-            procs_txt.append('            "Unable to obtain status for non-existent object 0x%" PRIxLEAST64 " of %s type",')
-            procs_txt.append('            object_handle, string_VkDebugReportObjectTypeEXT(objType));')
-            procs_txt.append('        return VK_FALSE;')
-            procs_txt.append('    }')
-            procs_txt.append('}')
-            procs_txt.append('')
-            procs_txt.append('%s' % self.lineinfo.get())
-            if o in vulkan.object_dispatch_list:
-                procs_txt.append('static VkBool32 reset_%s_status(%s dispatchable_object, %s object, VkDebugReportObjectTypeEXT objType, ObjectStatusFlags status_flag)' % (name, o, o))
-            else:
-                procs_txt.append('static VkBool32 reset_%s_status(VkDevice dispatchable_object, %s object, VkDebugReportObjectTypeEXT objType, ObjectStatusFlags status_flag)' % (name, o))
-            procs_txt.append('{')
-            procs_txt.append('    uint64_t object_handle = (uint64_t)(object);')
-            procs_txt.append('    auto it = %sMap.find(object_handle);' % o)
-            procs_txt.append('    if (it != %sMap.end()) {' % o)
-            procs_txt.append('        it->second->status &= ~status_flag;')
-            procs_txt.append('    }')
-            procs_txt.append('    else {')
-            procs_txt.append('        // If we do not find it print an error')
-            procs_txt.append('        return log_msg(mdd(dispatchable_object), VK_DEBUG_REPORT_ERROR_BIT_EXT, objType, object_handle, __LINE__, OBJTRACK_UNKNOWN_OBJECT, "OBJTRACK",')
-            procs_txt.append('            "Unable to reset status for non-existent object 0x%" PRIxLEAST64 " of %s type",')
-            procs_txt.append('            object_handle, string_VkDebugReportObjectTypeEXT(objType));')
-            procs_txt.append('    }')
-            procs_txt.append('    return VK_FALSE;')
-            procs_txt.append('}')
-            procs_txt.append('')
-        procs_txt.append('%s' % self.lineinfo.get())
         # Generate the permutations of validate_* functions where for each
         #  dispatchable object type, we have a corresponding validate_* function
         #  for that object and all non-dispatchable objects that are used in API
@@ -905,15 +833,15 @@ class ObjectTrackerSubcommand(Subcommand):
             name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', name).lower()[3:]
             # First create validate_* func for disp obj
             procs_txt.append('%s' % self.lineinfo.get())
-            procs_txt.append('static VkBool32 validate_%s(%s dispatchable_object, %s object, VkDebugReportObjectTypeEXT objType, bool null_allowed)' % (name, do, do))
+            procs_txt.append('static bool validate_%s(%s dispatchable_object, %s object, VkDebugReportObjectTypeEXT objType, bool null_allowed)' % (name, do, do))
             procs_txt.append('{')
             procs_txt.append('    if (null_allowed && (object == VK_NULL_HANDLE))')
-            procs_txt.append('        return VK_FALSE;')
+            procs_txt.append('        return false;')
             procs_txt.append('    if (%sMap.find((uint64_t)object) == %sMap.end()) {' % (do, do))
             procs_txt.append('        return log_msg(mdd(dispatchable_object), VK_DEBUG_REPORT_ERROR_BIT_EXT, objType, (uint64_t)(object), __LINE__, OBJTRACK_INVALID_OBJECT, "OBJTRACK",')
             procs_txt.append('            "Invalid %s Object 0x%%" PRIx64 ,(uint64_t)(object));' % do)
             procs_txt.append('    }')
-            procs_txt.append('    return VK_FALSE;')
+            procs_txt.append('    return false;')
             procs_txt.append('}')
             procs_txt.append('')
             for o in sorted(obj_use_dict[do]):
@@ -922,10 +850,10 @@ class ObjectTrackerSubcommand(Subcommand):
                 name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', o)
                 name = re.sub('([a-z0-9])([A-Z])', r'\1_\2', name).lower()[3:]
                 procs_txt.append('%s' % self.lineinfo.get())
-                procs_txt.append('static VkBool32 validate_%s(%s dispatchable_object, %s object, VkDebugReportObjectTypeEXT objType, bool null_allowed)' % (name, do, o))
+                procs_txt.append('static bool validate_%s(%s dispatchable_object, %s object, VkDebugReportObjectTypeEXT objType, bool null_allowed)' % (name, do, o))
                 procs_txt.append('{')
                 procs_txt.append('    if (null_allowed && (object == VK_NULL_HANDLE))')
-                procs_txt.append('        return VK_FALSE;')
+                procs_txt.append('        return false;')
                 if o == "VkImage":
                     procs_txt.append('    // We need to validate normal image objects and those from the swapchain')
                     procs_txt.append('    if ((%sMap.find((uint64_t)object) == %sMap.end()) &&' % (o, o))
@@ -935,7 +863,7 @@ class ObjectTrackerSubcommand(Subcommand):
                 procs_txt.append('        return log_msg(mdd(dispatchable_object), VK_DEBUG_REPORT_ERROR_BIT_EXT, objType, (uint64_t)(object), __LINE__, OBJTRACK_INVALID_OBJECT, "OBJTRACK",')
                 procs_txt.append('            "Invalid %s Object 0x%%" PRIx64, (uint64_t)(object));' % o)
                 procs_txt.append('    }')
-                procs_txt.append('    return VK_FALSE;')
+                procs_txt.append('    return false;')
                 procs_txt.append('}')
             procs_txt.append('')
         procs_txt.append('')
@@ -949,6 +877,21 @@ class ObjectTrackerSubcommand(Subcommand):
         gedi_txt.append('const VkAllocationCallbacks* pAllocator)')
         gedi_txt.append('{')
         gedi_txt.append('    std::unique_lock<std::mutex> lock(global_lock);')
+        gedi_txt.append('')
+        gedi_txt.append('    dispatch_key key = get_dispatch_key(instance);')
+        gedi_txt.append('    layer_data *my_data = get_my_data_ptr(key, layer_data_map);')
+        gedi_txt.append('')
+        gedi_txt.append('    // Enable the temporary callback(s) here to catch cleanup issues:')
+        gedi_txt.append('    bool callback_setup = false;')
+        gedi_txt.append('    if (my_data->num_tmp_callbacks > 0) {')
+        gedi_txt.append('        if (!layer_enable_tmp_callbacks(my_data->report_data,')
+        gedi_txt.append('                                        my_data->num_tmp_callbacks,')
+        gedi_txt.append('                                        my_data->tmp_dbg_create_infos,')
+        gedi_txt.append('                                        my_data->tmp_callbacks)) {')
+        gedi_txt.append('            callback_setup = true;')
+        gedi_txt.append('        }')
+        gedi_txt.append('    }')
+        gedi_txt.append('')
         gedi_txt.append('    validate_instance(instance, instance, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT, false);')
         gedi_txt.append('')
         gedi_txt.append('    destroy_instance(instance, instance);')
@@ -980,11 +923,21 @@ class ObjectTrackerSubcommand(Subcommand):
         gedi_txt.append('        }')
         gedi_txt.append('    }')
         gedi_txt.append('')
-        gedi_txt.append('    dispatch_key key = get_dispatch_key(instance);')
         gedi_txt.append('    VkLayerInstanceDispatchTable *pInstanceTable = get_dispatch_table(object_tracker_instance_table_map, instance);')
         gedi_txt.append('    pInstanceTable->DestroyInstance(instance, pAllocator);')
         gedi_txt.append('')
-        gedi_txt.append('    layer_data *my_data = get_my_data_ptr(key, layer_data_map);')
+        gedi_txt.append('    // Disable and cleanup the temporary callback(s):')
+        gedi_txt.append('    if (callback_setup) {')
+        gedi_txt.append('        layer_disable_tmp_callbacks(my_data->report_data,')
+        gedi_txt.append('                                    my_data->num_tmp_callbacks,')
+        gedi_txt.append('                                    my_data->tmp_callbacks);')
+        gedi_txt.append('    }')
+        gedi_txt.append('    if (my_data->num_tmp_callbacks > 0) {')
+        gedi_txt.append('        layer_free_tmp_callbacks(my_data->tmp_dbg_create_infos,')
+        gedi_txt.append('                                 my_data->tmp_callbacks);')
+        gedi_txt.append('        my_data->num_tmp_callbacks = 0;')
+        gedi_txt.append('    }')
+        gedi_txt.append('')
         gedi_txt.append('    // Clean up logging callback, if any')
         gedi_txt.append('    while (my_data->logging_callback.size() > 0) {')
         gedi_txt.append('        VkDebugReportCallbackEXT callback = my_data->logging_callback.back();')
@@ -1295,7 +1248,7 @@ class ObjectTrackerSubcommand(Subcommand):
                 destroy_line += '    }\n'
             indent = '    '
             if len(struct_uses) > 0:
-                using_line += '%sVkBool32 skipCall = VK_FALSE;\n' % (indent)
+                using_line += '%sbool skipCall = false;\n' % (indent)
                 if not mutex_unlock:
                     using_line += '%s{\n' % (indent)
                     indent += '    '
@@ -1308,7 +1261,9 @@ class ObjectTrackerSubcommand(Subcommand):
                 using_line += '%s}\n' % (indent)
             if len(struct_uses) > 0:
                 using_line += '    if (skipCall)\n'
-                if proto.ret == "VkBool32":
+                if proto.ret == "bool":
+                    using_line += '        return false;\n'
+                elif proto.ret == "VkBool32":
                     using_line += '        return VK_FALSE;\n'
                 elif proto.ret != "void":
                     using_line += '        return VK_ERROR_VALIDATION_FAILED_EXT;\n'
@@ -1559,11 +1514,12 @@ class UniqueObjectsSubcommand(Subcommand):
             if len(local_decls) > 0:
                 pre_call_txt += '//LOCAL DECLS:%s\n' % sorted(local_decls)
             if destroy_func: # only one object
+                pre_call_txt += '%sstd::unique_lock<std::mutex> lock(global_lock);\n' % (indent)
                 for del_obj in sorted(struct_uses):
-                    #pre_call_txt += '%s%s local_%s = %s;\n' % (indent, struct_uses[del_obj], del_obj, del_obj)
                     pre_call_txt += '%suint64_t local_%s = reinterpret_cast<uint64_t &>(%s);\n' % (indent, del_obj, del_obj)
                     pre_call_txt += '%s%s = (%s)my_map_data->unique_id_mapping[local_%s];\n' % (indent, del_obj, struct_uses[del_obj], del_obj)
-                    (pre_decl, pre_code, post_code) = ('', '', '')
+                pre_call_txt += '%slock.unlock();\n' % (indent)
+                (pre_decl, pre_code, post_code) = ('', '', '')
             else:
                 (pre_decl, pre_code, post_code) = self._gen_obj_code(struct_uses, local_decls, '    ', '', 0, set(), True)
             # This is a bit hacky but works for now. Need to decl local versions of top-level structs
@@ -1602,14 +1558,14 @@ class UniqueObjectsSubcommand(Subcommand):
                     local_name = '%ss' % (local_name) # add 's' to end for vector of many
                     post_call_txt += '%sfor (uint32_t i=0; i<%s; ++i) {\n' % (indent, custom_create_dict[obj_name])
                     indent += '    '
-                    post_call_txt += '%suint64_t unique_id = my_map_data->unique_id++;\n' % (indent)
+                    post_call_txt += '%suint64_t unique_id = global_unique_id++;\n' % (indent)
                     post_call_txt += '%smy_map_data->unique_id_mapping[unique_id] = reinterpret_cast<uint64_t &>(%s[i]);\n' % (indent, obj_name)
                     post_call_txt += '%s%s[i] = reinterpret_cast<%s&>(unique_id);\n' % (indent, obj_name, obj_type)
                     indent = indent[4:]
                     post_call_txt += '%s}\n' % (indent)
                 else:
                     post_call_txt += '%s\n' % (self.lineinfo.get())
-                    post_call_txt += '%suint64_t unique_id = my_map_data->unique_id++;\n' % (indent)
+                    post_call_txt += '%suint64_t unique_id = global_unique_id++;\n' % (indent)
                     post_call_txt += '%smy_map_data->unique_id_mapping[unique_id] = reinterpret_cast<uint64_t &>(*%s);\n' % (indent, obj_name)
                     post_call_txt += '%s*%s = reinterpret_cast<%s&>(unique_id);\n' % (indent, obj_name, obj_type)
                 indent = indent[4:]
@@ -1626,7 +1582,7 @@ class UniqueObjectsSubcommand(Subcommand):
                 post_call_txt += '%s}\n' % (indent)
             else:
                 post_call_txt += '%s\n' % (self.lineinfo.get())
-                post_call_txt += '%sstd::lock_guard<std::mutex> lock(global_lock);\n' % (indent)
+                post_call_txt += '%slock.lock();\n' % (indent)
                 post_call_txt += '%smy_map_data->unique_id_mapping.erase(local_%s);\n' % (indent, proto.params[-2].name)
 
         call_sig = proto.c_call()
@@ -1714,7 +1670,7 @@ def main():
     }
 
     if len(sys.argv) < 4 or sys.argv[1] not in wsi or sys.argv[2] not in subcommands or not os.path.exists(sys.argv[3]):
-        print("Usage: %s <wsi> <subcommand> <input_header> [options]" % sys.argv[0])
+        print("Usage: %s <wsi> <subcommand> <input_header> [outdir]" % sys.argv[0])
         print
         print("Available subcommands are: %s" % " ".join(subcommands))
         exit(1)
@@ -1728,7 +1684,11 @@ def main():
     vk_helper.typedef_rev_dict = hfp.get_typedef_rev_dict()
     vk_helper.types_dict = hfp.get_types_dict()
 
-    subcmd = subcommands[sys.argv[2]](sys.argv[3:])
+    outfile = None
+    if len(sys.argv) >= 5:
+        outfile = sys.argv[4]
+
+    subcmd = subcommands[sys.argv[2]](outfile)
     subcmd.run()
 
 if __name__ == "__main__":

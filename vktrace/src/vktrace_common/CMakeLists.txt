@@ -21,9 +21,11 @@ set(SRC_LIST
     vktrace_settings.c
     vktrace_tracelog.c
     vktrace_trace_packet_utils.c
+    optimization_function.cpp
 )
 
 set_source_files_properties( ${SRC_LIST} PROPERTIES LANGUAGE C)
+set_source_files_properties( optimization_function.cpp PROPERTIES LANGUAGE CXX)
 
 file( GLOB_RECURSE HDRS *.[h|inl] )
 
