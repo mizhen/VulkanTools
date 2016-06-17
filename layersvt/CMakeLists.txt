@@ -1,6 +1,17 @@
 cmake_minimum_required (VERSION 2.8.11)
-find_library(LIBPNG libpng16 ${PROJECT_SOURCE_DIR}/libs/libpng-1.6.21/x64)
-find_library(ZLIB zlib ${PROJECT_SOURCE_DIR}/libs/zlib-1.2.8/x64)
+
+#message("MSVC_VERSION is: " ${MSVC_VERSION} )
+if (MSVC_VERSION EQUAL 1900)
+    #message ("Microsoft Visual Studio 2015")
+    find_library(LIBPNG libpng16 ${PROJECT_SOURCE_DIR}/libs/libpng-1.6.21/x64/msvc19/)
+    find_library(ZLIB zlib ${PROJECT_SOURCE_DIR}/libs/zlib-1.2.8/x64/msvc19/)
+elseif(MSVC_VERSION EQUAL 1800)
+    #message ("Microsoft Visual Studio 2013")
+	find_library(LIBPNG libpng16 ${PROJECT_SOURCE_DIR}/libs/libpng-1.6.21/x64/msvc18)
+	find_library(ZLIB zlib ${PROJECT_SOURCE_DIR}/libs/zlib-1.2.8/x64/msvc18/)
+else()
+    message (WARNING "VulkanTools repository may not include a version of libpng16.lib or zlib.lib for your compiler.")
+endif()
 
 macro(run_vk_helper subcmd)
     add_custom_command(OUTPUT ${ARGN}
@@ -80,8 +91,9 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/vulkan
     ${CMAKE_CURRENT_BINARY_DIR}
     ${GLSLANG_SPIRV_INCLUDE_DIR}
-    ${PROJECT_SOURCE_DIR}/libs/libpng-1.6.21/inc
-    ${PROJECT_SOURCE_DIR}/libs/zlib-1.2.8/inc
+	${PROJECT_SOURCE_DIR}/libs/libpng-1.6.21/inc
+	${PROJECT_SOURCE_DIR}/libs/zlib-1.2.8/inc
+
 )
 
 if (WIN32)

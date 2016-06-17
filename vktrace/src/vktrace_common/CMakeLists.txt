@@ -24,8 +24,12 @@ set(SRC_LIST
     optimization_function.cpp
 )
 
+set (CXX_SRC_LIST
+     optimization_function.cpp
+)
+
 set_source_files_properties( ${SRC_LIST} PROPERTIES LANGUAGE C)
-set_source_files_properties( optimization_function.cpp PROPERTIES LANGUAGE CXX)
+set_source_files_properties( ${CXX_SRC_LIST} PROPERTIES LANGUAGE CXX)
 
 file( GLOB_RECURSE HDRS *.[h|inl] )
 
@@ -33,7 +37,7 @@ if (NOT MSVC)
     add_compiler_flag("-fPIC")
 endif()
 
-add_library(${PROJECT_NAME} STATIC ${SRC_LIST} ${HDRS})
+add_library(${PROJECT_NAME} STATIC ${SRC_LIST} ${CXX_SRC_LIST} ${HDRS})
 
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
