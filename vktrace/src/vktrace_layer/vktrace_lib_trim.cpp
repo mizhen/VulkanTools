@@ -166,6 +166,9 @@ void trim_remove_##type##_object(Vk##type var) { \
 } \
 Trim_ObjectInfo* trim_get_##type##_objectInfo(Vk##type var) { \
    TrimObjectInfoMap::iterator iter  = s_trimGlobalStateTracker.created##type##s.find(var); \
+   if (iter == s_trimGlobalStateTracker.created##type##s.end()) { \
+       return NULL; \
+   } \
    return &(iter->second); \
 }
 
@@ -212,34 +215,6 @@ TRIM_DEFINE_OBJECT_TRACKER_FUNCS(Event);
 TRIM_DEFINE_OBJECT_TRACKER_FUNCS(QueryPool);
 TRIM_DEFINE_OBJECT_TRACKER_FUNCS(DescriptorSet);
 
-//===============================================
-// Write all stored trace packets to the trace file
-//===============================================
-#define TRIM_WRITE_OBJECT_PACKETS(type) \
-    for (TrimObjectInfoMap::iterator iter = s_trimGlobalStateTracker.created##type##s.begin(); iter != s_trimGlobalStateTracker.created##type##s.end(); iter++) { \
-        Trim_ObjectInfo info = iter->second; \
-        for (std::list<vktrace_trace_packet_header*>::iterator call = info.packets.begin(); call != info.packets.end(); call++) { \
-            vktrace_write_trace_packet(*call, vktrace_trace_get_trace_file()); \
-        } \
-    }
-
-//===============================================
-// Write trace packets only for referenced objects to the trace file
-//===============================================
-#define TRIM_WRITE_REFERENCED_OBJECT_PACKETS(type) \
-    for (TrimObjectInfoMap::iterator iter = s_trimGlobalStateTracker.created##type##s.begin(); iter != s_trimGlobalStateTracker.created##type##s.end(); iter++) { \
-        Trim_ObjectInfo info = iter->second; \
-        if (info.bReferencedInTrim) { \
-            for (std::list<vktrace_trace_packet_header*>::iterator call = info.packets.begin(); call != info.packets.end(); call++) { \
-                if (*call != NULL) { \
-                    vktrace_write_trace_packet(*call, vktrace_trace_get_trace_file()); \
-                } \
-            } \
-            /*info.packets.clear(); */\
-        } \
-    } \
-    /*s_trimGlobalStateTracker.created##type##s.clear(); */
-
 //=============================================================================
 // Recreate all objects
 //=============================================================================
@@ -254,11 +229,17 @@ void trim_write_all_referenced_object_calls()
         vktrace_write_trace_packet(obj->second.ObjectInfo.Instance.pCreatePacket, vktrace_trace_get_trace_file());
         vktrace_delete_trace_packet(&(obj->second.ObjectInfo.Instance.pCreatePacket));
 
-        vktrace_write_trace_packet(obj->second.ObjectInfo.Instance.pEnumeratePhysicalDevicesCountPacket, vktrace_trace_get_trace_file());
-        vktrace_delete_trace_packet(&(obj->second.ObjectInfo.Instance.pEnumeratePhysicalDevicesCountPacket));
+        if (obj->second.ObjectInfo.Instance.pEnumeratePhysicalDevicesCountPacket != NULL)
+        {
+            vktrace_write_trace_packet(obj->second.ObjectInfo.Instance.pEnumeratePhysicalDevicesCountPacket, vktrace_trace_get_trace_file());
+            vktrace_delete_trace_packet(&(obj->second.ObjectInfo.Instance.pEnumeratePhysicalDevicesCountPacket));
+        }
 
-        vktrace_write_trace_packet(obj->second.ObjectInfo.Instance.pEnumeratePhysicalDevicesPacket, vktrace_trace_get_trace_file());
-        vktrace_delete_trace_packet(&(obj->second.ObjectInfo.Instance.pEnumeratePhysicalDevicesPacket));
+        if (obj->second.ObjectInfo.Instance.pEnumeratePhysicalDevicesPacket != NULL)
+        {
+            vktrace_write_trace_packet(obj->second.ObjectInfo.Instance.pEnumeratePhysicalDevicesPacket, vktrace_trace_get_trace_file());
+            vktrace_delete_trace_packet(&(obj->second.ObjectInfo.Instance.pEnumeratePhysicalDevicesPacket));
+        }
     }
 
     // SurfaceKHR
