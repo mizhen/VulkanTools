@@ -1,5 +1,5 @@
 #!/bin/bash
-# Update source for glslang, LunarGLASS, spirv-tools
+# Update source for LunarGLASS
 
 set -e
 
@@ -120,14 +120,16 @@ function build_LunarGLASS () {
    make install
 }
 
-function build_spirv-tools () {
-   echo "Building $BASEDIR/spirv-tools"
-   cd $BASEDIR/spirv-tools
-   mkdir -p build
-   cd build
-   cmake -D CMAKE_BUILD_TYPE=Release ..
-   make -j $(nproc)
-}
+# Verify glslang is built
+if [ ! -d "$BASEDIR/glslang" ]; then
+  echo "glslang missing"
+  if [ ! -d "$BASEDIR/LoaderAndValidationLayers" ]; then
+    echo "LoaderAndValidationLayers  missing"
+    echo "Install LoaderAndValidationLayers in $BASEDIR"
+  fi
+  echo "Run $BASEDIR/LoaderAndValidationLayers/update_external_sources.sh"
+  exit 1
+fi
 
 # If any options are provided, just compile those tools
 # If no options are provided, build everything

@@ -9,7 +9,6 @@ else()
     set(PYTHON_CMD "py")
 endif()
 
-
 # if Vktrace is being built as part of a vulkan driver build, then use that target instead of the locally-commited binary.
 #if (TARGET vulkan)
 #    message(STATUS "Using external Vulkan header and library.")
