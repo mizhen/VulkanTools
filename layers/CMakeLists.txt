@@ -1,4 +1,6 @@
 cmake_minimum_required (VERSION 2.8.11)
+find_library(LIBPNG libpng16 ${PROJECT_SOURCE_DIR}/libs/libpng-1.6.21/x64)
+find_library(ZLIB zlib ${PROJECT_SOURCE_DIR}/libs/zlib-1.2.8/x64)
 
 macro(run_vk_helper subcmd)
     add_custom_command(OUTPUT ${ARGN}

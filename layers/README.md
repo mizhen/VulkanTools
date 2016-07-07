@@ -70,7 +70,7 @@ layers/device_limits.cpp (name=`VK_LAYER_LUNARG_device_limits`) - This layer is 
 1. Build VK loader using normal steps (cmake and make)
 2. Place `libVkLayer_<name>.so` in the same directory as your VK test or app:
 
-    `cp build/layer/libVkLayer_threading.so  build/tests`
+    `cp build/layer/libVkLayer_<name>.so  build/tests`
 
     This is required for the Loader to be able to scan and enumerate your library.
     Alternatively, use the `VK_LAYER_PATH` environment variable to specify where the layer libraries reside.

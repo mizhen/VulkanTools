@@ -1,6 +1,6 @@
 # The name of our project is "VULKAN". CMakeLists files in this project can
-# refer to the root source directory of the project as ${VULKAN_SOURCE_DIR} and
-# to the root binary directory of the project as ${VULKAN_BINARY_DIR}.
+# refer to the root source directory of the project as ${VULKANTOOLS_SOURCE_DIR} and
+# to the root binary directory of the project as ${VULKANTOOLS_BINARY_DIR}.
 cmake_minimum_required(VERSION 2.8.11)
 project (VULKAN_TOOLS)
 # set (CMAKE_VERBOSE_MAKEFILE 1)
@@ -318,3 +318,4 @@ endif()
 if(BUILD_VKJSON)
     add_subdirectory(libs/vkjson)
 endif()
+

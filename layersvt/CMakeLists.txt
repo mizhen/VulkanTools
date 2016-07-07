@@ -1,5 +1,18 @@
 cmake_minimum_required (VERSION 2.8.11)
 
+#message("MSVC_VERSION is: " ${MSVC_VERSION} )
+if (MSVC_VERSION EQUAL 1900)
+    #message ("Microsoft Visual Studio 2015")
+    find_library(LIBPNG libpng16 ${PROJECT_SOURCE_DIR}/libs/libpng-1.6.21/x64/msvc19/)
+    find_library(ZLIB zlib ${PROJECT_SOURCE_DIR}/libs/zlib-1.2.8/x64/msvc19/)
+elseif(MSVC_VERSION EQUAL 1800)
+    #message ("Microsoft Visual Studio 2013")
+	find_library(LIBPNG libpng16 ${PROJECT_SOURCE_DIR}/libs/libpng-1.6.21/x64/msvc18)
+	find_library(ZLIB zlib ${PROJECT_SOURCE_DIR}/libs/zlib-1.2.8/x64/msvc18/)
+else()
+    message (WARNING "VulkanTools repository may not include a version of libpng16.lib or zlib.lib for your compiler.")
+endif()
+
 macro(run_vk_helper subcmd)
     add_custom_command(OUTPUT ${ARGN}
         COMMAND ${PYTHON_CMD} ${PROJECT_SOURCE_DIR}/vk_helper.py --${subcmd} ${PROJECT_SOURCE_DIR}/include/vulkan/vulkan.h --abs_out_dir ${CMAKE_CURRENT_BINARY_DIR}
@@ -28,6 +41,7 @@ set(LAYER_JSON_FILES
     VkLayer_generic
     VkLayer_multi
     VkLayer_screenshot
+    VkLayer_png_screenshot
     )
 
 set(VK_LAYER_RPATH /usr/lib/x86_64-linux-gnu/vulkan/layer:/usr/lib/i386-linux-gnu/vulkan/layer)
@@ -94,7 +108,10 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../layers
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/vulkan
     ${CMAKE_CURRENT_BINARY_DIR}
-    ${PROJECT_SOURCE_DIR}/../glslang/SPIRV
+    ${GLSLANG_SPIRV_INCLUDE_DIR}
+	${PROJECT_SOURCE_DIR}/libs/libpng-1.6.21/inc
+	${PROJECT_SOURCE_DIR}/libs/zlib-1.2.8/inc
+
 )
 
 if (WIN32)
@@ -175,4 +192,8 @@ add_vk_layer(multi multi.cpp ../layers/vk_layer_table.cpp)
 add_vk_layer(generic generic_layer.cpp ../layers/vk_layer_table.cpp)
 add_vk_layer(api_dump api_dump.cpp ../layers/vk_layer_table.cpp)
 add_vk_layer(screenshot screenshot.cpp ../layers/vk_layer_table.cpp)
+# AMD added
+add_vk_layer(png_screenshot png_screenshot.cpp ../layers/vk_layer_table.cpp)
+target_link_Libraries(VkLayer_png_screenshot ${LIBPNG})
+target_link_Libraries(VkLayer_png_screenshot ${ZLIB})
 

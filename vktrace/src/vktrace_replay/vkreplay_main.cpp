@@ -41,6 +41,7 @@ vktrace_SettingInfo g_settings_info[] =
     { "lsf", "LoopStartFrame", VKTRACE_SETTING_INT, &replaySettings.loopStartFrame, &replaySettings.loopStartFrame, TRUE, "The start frame number of the loop range." },
     { "lef", "LoopEndFrame", VKTRACE_SETTING_INT, &replaySettings.loopEndFrame, &replaySettings.loopEndFrame, TRUE, "The end frame number of the loop range." },
     { "s", "Screenshot", VKTRACE_SETTING_STRING, &replaySettings.screenshotList, &replaySettings.screenshotList, TRUE, "Comma separated list of frames to take a snapshot of."},
+    { "png", "PngScreenshot", VKTRACE_SETTING_STRING, &replaySettings.pngScreenshotList, &replaySettings.pngScreenshotList, TRUE, "Saves a PNG screenshot of frames identified by: <startFrame>-<endFrame>,<stepFrames>." },
 #if _DEBUG
     { "v", "Verbosity", VKTRACE_SETTING_STRING, &replaySettings.verbosity, &replaySettings.verbosity, TRUE, "Verbosity mode. Modes are \"quiet\", \"errors\", \"warnings\", \"full\", \"debug\"."},
 #else
@@ -109,7 +110,11 @@ int main_loop(Sequencer &seq, vktrace_trace_packet_replay_library *replayerArray
                         if (res != VKTRACE_REPLAY_SUCCESS)
                         {
                            vktrace_LogError("Failed to replay packet_id %d.",packet->packet_id);
-                           return -1;
+						   static BOOL QuitOnAnyError=FALSE;
+                           if(QuitOnAnyError)
+                           {
+                              return -1;
+                           }
                         }
 
                         // frame control logic
@@ -218,17 +223,52 @@ int main(int argc, char **argv)
         vktrace_SettingGroup_print(&g_replaySettingGroup);
         return 1;
     }
-
+    
     // Set up environment for screenshot
     if (replaySettings.screenshotList != NULL)
     {
         // Set env var that communicates list to ScreenShot layer
         vktrace_set_global_var("_VK_SCREENSHOT", replaySettings.screenshotList);
-
     }
     else
     {
-        vktrace_set_global_var("_VK_SCREENSHOT","");
+        vktrace_set_global_var("_VK_SCREENSHOT", "");
+    }
+
+    if (replaySettings.pngScreenshotList != NULL)
+    {
+		unsigned long startFrame = 0;
+		unsigned long endFrame = 0;
+		unsigned long stepFrame = 0;
+		if (sscanf(replaySettings.pngScreenshotList, "%lu-%lu,%lu", &startFrame, &endFrame, &stepFrame) == 3)
+		{
+			// Validate supplying a range of frames, and a step count.
+			// example 1: every frame between 10 and 100: "10-100,1"
+			// example 2: every 2nd frame between 10 and 100: "10-100,2"
+			if (startFrame >= endFrame)
+			{
+				vktrace_LogError("Screenshot start frame (%ul) must come BEFORE the end frame (%ul).", startFrame, endFrame);
+				return 1;
+			}
+			else if (endFrame - startFrame < stepFrame)
+			{
+				vktrace_LogError("Screenshot step frame count (%ul) is greater than the start/end frame range. It must be less than %ul.", stepFrame, endFrame-startFrame);
+				return 1;
+			}
+
+			// set env var that communicates with the PNG ScreenShot layer
+			vktrace_set_global_var("_VK_PNG_SCREENSHOT", replaySettings.pngScreenshotList);
+		}
+		else
+		{
+			// Set env var that communicates list to ScreenShot layer
+			vktrace_LogError("PNG Screenshot option must be formatted as: \"<startFrame>-<endFrame>,<stepFrames>\".");
+			return 1;
+		}
+    }
+    else
+    {
+		vktrace_set_global_var("_VK_PNG_SCREENSHOT", "");
     }
 
     // open trace file and read in header
