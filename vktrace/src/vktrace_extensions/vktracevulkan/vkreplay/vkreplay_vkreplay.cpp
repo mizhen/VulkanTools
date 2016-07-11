@@ -1150,6 +1150,8 @@ VkResult vkReplay::manually_replay_vkCreateComputePipelines(packet_vkCreateCompu
     // Fix up stage sub-elements
     for (i=0; i<pPacket->createInfoCount; i++)
     {
+        pLocalCIs[i].stage.module = m_objMapper.remap_shadermodules(pLocalCIs[i].stage.module);
+
         if (pLocalCIs[i].stage.pName)
             pLocalCIs[i].stage.pName = (const char*)(vktrace_trace_packet_interpret_buffer_pointer(pPacket->header, (intptr_t)pLocalCIs[i].stage.pName));
 
@@ -1165,6 +1167,7 @@ VkResult vkReplay::manually_replay_vkCreateComputePipelines(packet_vkCreateCompu
             pLocalCIs[i].stage.pSpecializationInfo = si;
         }
 
+        pLocalCIs[i].layout = m_objMapper.remap_pipelinelayouts(pLocalCIs[i].layout);
         pLocalCIs[i].basePipelineHandle = m_objMapper.remap_pipelines(pLocalCIs[i].basePipelineHandle);
     }
 
@@ -1988,6 +1991,32 @@ VkResult vkReplay::manually_replay_vkCreateXcbSurfaceKHR(packet_vkCreateXcbSurfa
 }
 #endif
 
+#ifdef VK_USE_PLATFORM_XLIB_KHR
+VkResult vkReplay::manually_replay_vkCreateXlibSurfaceKHR(packet_vkCreateXlibSurfaceKHR* pPacket)
+{
+    VkResult replayResult;
+    VkSurfaceKHR local_pSurface;
+    VkInstance remappedinstance = m_objMapper.remap_instances(pPacket->instance);
+
+    if (pPacket->instance != VK_NULL_HANDLE && remappedinstance == VK_NULL_HANDLE) {
+        return VK_ERROR_VALIDATION_FAILED_EXT;
+    }
+
+    VkIcdSurfaceXlib *pSurf = (VkIcdSurfaceXlib *) m_display->get_surface();
+    VkXlibSurfaceCreateInfoKHR createInfo;
+    createInfo.sType = pPacket->pCreateInfo->sType;
+    createInfo.pNext = pPacket->pCreateInfo->pNext;
+    createInfo.flags = pPacket->pCreateInfo->flags;
+    createInfo.dpy = pSurf->dpy;
+    createInfo.window = pSurf->window;
+    replayResult = m_vkFuncs.real_vkCreateXlibSurfaceKHR(remappedinstance, &createInfo, pPacket->pAllocator, &local_pSurface);
+    if (replayResult == VK_SUCCESS) {
+        m_objMapper.add_to_surfacekhrs_map(*(pPacket->pSurface), local_pSurface);
+    }
+    return replayResult;
+}
+#endif
+
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 VkResult vkReplay::manually_replay_vkCreateWin32SurfaceKHR(packet_vkCreateWin32SurfaceKHR* pPacket)
 {
@@ -2099,7 +2128,6 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceXcbPresentationSupportKHR(
 }
 #endif
 
-// Stub for XLIB support
 #ifdef VK_USE_PLATFORM_XLIB_KHR
 VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceXlibPresentationSupportKHR(packet_vkGetPhysicalDeviceXlibPresentationSupportKHR* pPacket)
 {

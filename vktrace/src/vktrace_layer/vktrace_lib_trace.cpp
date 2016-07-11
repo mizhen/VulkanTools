@@ -255,6 +255,8 @@ VKTRACER_EXPORT VKAPI_ATTR void VKAPI_CALL __HOOKED_vkUnmapMemory(
     packet_vkUnmapMemory* pPacket;
     VKAllocInfo *entry;
     size_t siz = 0;
+    uint64_t trace_begin_time = vktrace_get_time();
+
     // insert into packet the data that was written by CPU between the vkMapMemory call and here
     // Note must do this prior to the real vkUnMap() or else may get a FAULT
     vktrace_enter_critical_section(&g_memInfoLock);
@@ -268,6 +270,7 @@ VKTRACER_EXPORT VKAPI_ATTR void VKAPI_CALL __HOOKED_vkUnmapMemory(
         }
     }
     CREATE_TRACE_PACKET(vkUnmapMemory, siz);
+    pHeader->vktrace_begin_time = trace_begin_time;
     pPacket = interpret_body_as_vkUnmapMemory(pHeader);
     if (siz)
     {
@@ -277,6 +280,7 @@ VKTRACER_EXPORT VKAPI_ATTR void VKAPI_CALL __HOOKED_vkUnmapMemory(
         entry->pData = NULL;
     }
     vktrace_leave_critical_section(&g_memInfoLock);
+    pHeader->entrypoint_begin_time = vktrace_get_time();
     mdd(device)->devTable.UnmapMemory(device, memory);
     vktrace_set_packet_entrypoint_end_time(pHeader);
     pPacket->device = device;
@@ -357,6 +361,7 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkFlushMappedMemoryRange
     size_t dataSize = 0;
     uint32_t iter;
     packet_vkFlushMappedMemoryRanges* pPacket = NULL;
+    uint64_t trace_begin_time = vktrace_get_time();
 
     // find out how much memory is in the ranges
     for (iter = 0; iter < memoryRangeCount; iter++)
@@ -367,6 +372,7 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkFlushMappedMemoryRange
     }
 
     CREATE_TRACE_PACKET(vkFlushMappedMemoryRanges, rangesSize + sizeof(void*)*memoryRangeCount + dataSize);
+    pHeader->vktrace_begin_time = trace_begin_time;
     pPacket = interpret_body_as_vkFlushMappedMemoryRanges(pHeader);
 
     vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pMemoryRanges), rangesSize, pMemoryRanges);
@@ -405,6 +411,7 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkFlushMappedMemoryRange
     // now finalize the ppData array since it is done being updated
     vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->ppData));
 
+    pHeader->entrypoint_begin_time = vktrace_get_time();
     result = mdd(device)->devTable.FlushMappedMemoryRanges(device, memoryRangeCount, pMemoryRanges);
     vktrace_set_packet_entrypoint_end_time(pHeader);
     pPacket->device = device;
@@ -1848,7 +1855,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateComputePipelines
     uint32_t i;
     size_t total_size;
 
-    //TODO: Need to write code to decipher these buffers during replay
     total_size = createInfoCount*sizeof(VkComputePipelineCreateInfo) + sizeof(VkAllocationCallbacks) + createInfoCount*sizeof(VkPipeline);
     for (i=0; i < createInfoCount; i++) {
         total_size += (strlen(pCreateInfos[i].stage.pName)+1);
@@ -2599,28 +2605,46 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateXlibSurfaceKHR(
     const VkAllocationCallbacks*                pAllocator,
     VkSurfaceKHR*                               pSurface)
 {
+    vktrace_trace_packet_header* pHeader;
     VkResult result;
-    // TODO: Implement.
+    packet_vkCreateXlibSurfaceKHR* pPacket = NULL;
+    // don't bother with copying the actual xlib window and connection into the trace packet, vkreplay has to use it's own anyway
+    CREATE_TRACE_PACKET(vkCreateXlibSurfaceKHR, sizeof(VkSurfaceKHR) + sizeof(VkAllocationCallbacks) + sizeof(VkXlibSurfaceCreateInfoKHR));
     result = mid(instance)->instTable.CreateXlibSurfaceKHR(instance, pCreateInfo, pAllocator, pSurface);
-    //if (!g_trimEnabled)
-    //{
-    //    // trim not enabled, send packet as usual
-    //    FINISH_TRACE_PACKET();
-    //}
-    //else // trim is enabled
-    //{
-    //    if (g_trimTraceFunc[VKTRACE_TPI_VK_vkCreateXlibSurfaceKHR])
-    //    {
-    //        // Currently tracing the frame, so need to track references & store packet to write post-tracing.
-    //        vktrace_finalize_trace_packet(pHeader);
-    //        trim_add_recorded_packet(pHeader);
-    //    }
-    //    else
-    //    {
-    //        vktrace_finalize_trace_packet(pHeader);
-    //    }
-    //}
-
+    pPacket = interpret_body_as_vkCreateXlibSurfaceKHR(pHeader);
+    pPacket->instance = instance;
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pCreateInfo), sizeof(VkXlibSurfaceCreateInfoKHR), pCreateInfo);
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pAllocator), sizeof(VkAllocationCallbacks), NULL);
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pSurface), sizeof(VkSurfaceKHR), pSurface);
+    pPacket->result = result;
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pCreateInfo));
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pAllocator));
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pSurface));
+    if (!g_trimEnabled)
+    {
+        // trim not enabled, send packet as usual
+        FINISH_TRACE_PACKET();
+    }
+    else if (g_trimIsPreTrim || g_trimIsInTrim)
+    {
+        vktrace_finalize_trace_packet(pHeader);
+        Trim_ObjectInfo* pInfo = trim_add_SurfaceKHR_object(*pSurface);
+        pInfo->belongsToInstance = instance;
+        pInfo->ObjectInfo.SurfaceKHR.pCreatePacket = pHeader;
+        if (pAllocator != NULL)
+        {
+            pInfo->ObjectInfo.SurfaceKHR.pAllocator = &(*pAllocator);
+            trim_add_Allocator(pAllocator);
+        }
+        if (g_trimIsInTrim)
+        {
+            trim_add_recorded_packet(pHeader);
+        }
+    }
+    else // g_trimIsPostTrim
+    {
+        vktrace_delete_trace_packet(&pHeader);
+    }
     return result;
 }
 
