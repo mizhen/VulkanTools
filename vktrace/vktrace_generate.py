@@ -2131,15 +2131,6 @@ class VktraceReplayC(Subcommand):
 
 def main():
 
-    wsi = {
-            "Win32",
-            "Android",
-            "Xcb",
-            "Xlib",
-            "Wayland",
-            "Mir"
-    }
-
     subcommands = {
             "vktrace-trace-h" : VktraceTraceHeader,
             "vktrace-trace-c" : VktraceTraceC,
@@ -2153,7 +2144,7 @@ def main():
             "vktrace-replay-c" : VktraceReplayC,
     }
 
-    if len(sys.argv) < 3 or sys.argv[1] not in wsi or sys.argv[2] not in subcommands:
+    if len(sys.argv) < 3 or sys.argv[1] != "AllPlatforms" or sys.argv[2] not in subcommands:
         print("Usage: %s <wsi> <subcommand> [options]" % sys.argv[0])
         print
         print("Available wsi (displayservers) are: %s" % " ".join(wsi))

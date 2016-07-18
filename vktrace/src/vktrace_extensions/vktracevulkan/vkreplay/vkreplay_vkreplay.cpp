@@ -54,7 +54,7 @@ vkReplay::~vkReplay()
     vktrace_platform_close_library(m_vkFuncs.m_libHandle);
 }
 
-int vkReplay::init(vktrace_replay::Display & disp)
+int vkReplay::init(vktrace_replay::ReplayDisplay & disp)
 {
     int err;
 #if defined PLATFORM_LINUX
@@ -1951,9 +1951,9 @@ VkResult vkReplay::manually_replay_vkQueuePresentKHR(packet_vkQueuePresentKHR* p
     return replayResult;
 }
 
-#ifdef VK_USE_PLATFORM_XCB_KHR
 VkResult vkReplay::manually_replay_vkCreateXcbSurfaceKHR(packet_vkCreateXcbSurfaceKHR* pPacket)
 {
+#ifdef VK_USE_PLATFORM_XCB_KHR
     VkResult replayResult;
     VkSurfaceKHR local_pSurface;
     VkInstance remappedinstance = m_objMapper.remap_instances(pPacket->instance);
@@ -1974,12 +1974,15 @@ VkResult vkReplay::manually_replay_vkCreateXcbSurfaceKHR(packet_vkCreateXcbSurfa
         m_objMapper.add_to_surfacekhrs_map(*(pPacket->pSurface), local_pSurface);
     }
     return replayResult;
-}
+#else
+    // Todo: implement
+    return VK_SUCCESS;
 #endif
+}
 
-#ifdef VK_USE_PLATFORM_XLIB_KHR
 VkResult vkReplay::manually_replay_vkCreateXlibSurfaceKHR(packet_vkCreateXlibSurfaceKHR* pPacket)
 {
+#ifdef VK_USE_PLATFORM_XLIB_KHR
     VkResult replayResult;
     VkSurfaceKHR local_pSurface;
     VkInstance remappedinstance = m_objMapper.remap_instances(pPacket->instance);
@@ -2000,12 +2003,15 @@ VkResult vkReplay::manually_replay_vkCreateXlibSurfaceKHR(packet_vkCreateXlibSur
         m_objMapper.add_to_surfacekhrs_map(*(pPacket->pSurface), local_pSurface);
     }
     return replayResult;
-}
+#else
+    // Todo: implement
+    return VK_SUCCESS;
 #endif
+}
 
-#ifdef VK_USE_PLATFORM_WIN32_KHR
 VkResult vkReplay::manually_replay_vkCreateWin32SurfaceKHR(packet_vkCreateWin32SurfaceKHR* pPacket)
 {
+#ifdef VK_USE_PLATFORM_WIN32_KHR
     VkResult replayResult;
     VkSurfaceKHR local_pSurface;
     VkInstance remappedinstance = m_objMapper.remap_instances(pPacket->instance);
@@ -2026,8 +2032,11 @@ VkResult vkReplay::manually_replay_vkCreateWin32SurfaceKHR(packet_vkCreateWin32S
         m_objMapper.add_to_surfacekhrs_map(*(pPacket->pSurface), local_pSurface);
     }
     return replayResult;
-}
+#else
+    // Todo: implement
+    return VK_SUCCESS;
 #endif
+}
 
 VkResult  vkReplay::manually_replay_vkCreateDebugReportCallbackEXT(packet_vkCreateDebugReportCallbackEXT* pPacket)
 {
@@ -2038,7 +2047,7 @@ VkResult  vkReplay::manually_replay_vkCreateDebugReportCallbackEXT(packet_vkCrea
     if (remappedInstance == NULL)
         return replayResult;
 
-    if (!g_fpDbgMsgCallback) {
+    if (!g_fpDbgMsgCallback || !m_vkFuncs.real_vkCreateDebugReportCallbackEXT) {
         // just eat this call as we don't have local call back function defined
         return VK_SUCCESS;
     } else
@@ -2100,9 +2109,9 @@ VkResult vkReplay::manually_replay_vkAllocateCommandBuffers(packet_vkAllocateCom
     return replayResult;
 }
 
-#ifdef VK_USE_PLATFORM_XCB_KHR
 VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceXcbPresentationSupportKHR(packet_vkGetPhysicalDeviceXcbPresentationSupportKHR* pPacket)
 {
+#ifdef VK_USE_PLATFORM_XCB_KHR
     VkPhysicalDevice remappedphysicalDevice = m_objMapper.remap_physicaldevices(pPacket->physicalDevice);
     if (pPacket->physicalDevice != VK_NULL_HANDLE && remappedphysicalDevice == VK_NULL_HANDLE)
     {
@@ -2111,12 +2120,15 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceXcbPresentationSupportKHR(
     VkIcdSurfaceXcb *pSurf = (VkIcdSurfaceXcb *) m_display->get_surface();
     m_display->get_window_handle();
     return (m_vkFuncs.real_vkGetPhysicalDeviceXcbPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex, pSurf->connection, m_display->get_screen_handle()->root_visual));
-}
+#else
+    // Todo: implement
+    return true;
 #endif
+}
 
-#ifdef VK_USE_PLATFORM_XLIB_KHR
 VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceXlibPresentationSupportKHR(packet_vkGetPhysicalDeviceXlibPresentationSupportKHR* pPacket)
 {
+#ifdef VK_USE_PLATFORM_XLIB_KHR
     VkPhysicalDevice remappedphysicalDevice = m_objMapper.remap_physicaldevices(pPacket->physicalDevice);
     if (pPacket->physicalDevice != VK_NULL_HANDLE && remappedphysicalDevice == VK_NULL_HANDLE)
     {
@@ -2125,5 +2137,24 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceXlibPresentationSupportKHR
     VkIcdSurfaceXlib *pSurf = (VkIcdSurfaceXlib *) m_display->get_surface();
     m_display->get_window_handle();
     return (m_vkFuncs.real_vkGetPhysicalDeviceXlibPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex, pSurf->dpy, m_display->get_screen_handle()->root_visual));
-}
+#else
+    // Todo: implement
+    return true;
 #endif
+}
+
+VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceWin32PresentationSupportKHR(packet_vkGetPhysicalDeviceWin32PresentationSupportKHR* pPacket)
+{
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    VkPhysicalDevice remappedphysicalDevice = m_objMapper.remap_physicaldevices(pPacket->physicalDevice);
+    if (pPacket->physicalDevice != VK_NULL_HANDLE && remappedphysicalDevice == VK_NULL_HANDLE)
+    {
+        return VK_FALSE;
+    }
+    return (m_vkFuncs.real_vkGetPhysicalDeviceWin32PresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex));
+
+#else
+    // Todo: implement
+    return true;
+#endif
+}
