@@ -1612,6 +1612,17 @@ class Subcommand(object):
         cb_body.append('            }')
         return "\n".join(cb_body)
 
+    def _gen_replay_GetPhysicalDeviceWin32PresentationSupportKHR (self):
+        cb_body = []
+        cb_body.append('            VkBool32 rval = manually_replay_vkGetPhysicalDeviceWin32PresentationSupportKHR(pPacket);')
+        cb_body.append('            if (rval != pPacket->result)')
+        cb_body.append('            {')
+        cb_body.append('                vktrace_LogError("Return value %d from API call (vkGetPhysicalDeviceWin32PresentationSupportKHR) does not match return value from trace file %d.",')
+        cb_body.append('                                 rval, pPacket->result);')
+        cb_body.append('                returnValue = vktrace_replay::VKTRACE_REPLAY_BAD_RETURN;')
+        cb_body.append('            }')
+        return "\n".join(cb_body)
+
     # Generate main replay case statements where actual replay API call is dispatched based on input packet data
     def _generate_replay(self):
         manually_replay_funcs = ['AllocateMemory',
@@ -1648,7 +1659,10 @@ class Subcommand(object):
                                  'GetSwapchainImagesKHR',
                                  'CreateXcbSurfaceKHR',
                                  'CreateXlibSurfaceKHR',
+                                 'GetPhysicalDeviceXcbPresentationSupportKHR',
+                                 'GetPhysicalDeviceXlibPresentationSupportKHR',
                                  'CreateWin32SurfaceKHR',
+                                 'GetPhysicalDeviceWin32PresentationSupportKHR',
                                  #TODO Wayland, Mir, Xlib
                                  #'GetPhysicalDeviceInfo',
                                  'MapMemory',
@@ -1675,7 +1689,8 @@ class Subcommand(object):
                             'CreateBuffer': self._gen_replay_create_buffer,
                             'CreateInstance': self._gen_replay_create_instance,
                             'GetPhysicalDeviceXcbPresentationSupportKHR': self._gen_replay_GetPhysicalDeviceXcbPresentationSupportKHR,
-                            'GetPhysicalDeviceXlibPresentationSupportKHR': self._gen_replay_GetPhysicalDeviceXlibPresentationSupportKHR }
+                            'GetPhysicalDeviceXlibPresentationSupportKHR': self._gen_replay_GetPhysicalDeviceXlibPresentationSupportKHR,
+                            'GetPhysicalDeviceWin32PresentationSupportKHR': self._gen_replay_GetPhysicalDeviceWin32PresentationSupportKHR }
         # multi-gpu Open funcs w/ list of local params to create
         custom_open_params = {'OpenSharedMemory': (-1,),
                               'OpenSharedSemaphore': (-1,),
