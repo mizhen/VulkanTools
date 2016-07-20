@@ -2150,7 +2150,7 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceXcbPresentationSupportKHR(
     VkIcdSurfaceXcb *pSurf = (VkIcdSurfaceXcb *) m_display->get_surface();
     m_display->get_window_handle();
     return (m_vkFuncs.real_vkGetPhysicalDeviceXcbPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex, pSurf->connection, m_display->get_screen_handle()->root_visual));
-#elif define WIN32
+#elif defined WIN32
     return (m_vkFuncs.real_vkGetPhysicalDeviceWin32PresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex));
 #else
     vktrace_LogError("manually_replay_vkGetPhysicalDeviceXcbPresentationSupportKHR not implemented on this playback platform");
@@ -2170,7 +2170,7 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceXlibPresentationSupportKHR
     VkIcdSurfaceXlib *pSurf = (VkIcdSurfaceXlib *) m_display->get_surface();
     m_display->get_window_handle();
     return (m_vkFuncs.real_vkGetPhysicalDeviceXlibPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex, pSurf->dpy, m_display->get_screen_handle()->root_visual));
-#elif define WIN32
+#elif defined WIN32
     return (m_vkFuncs.real_vkGetPhysicalDeviceWin32PresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex));
 #else
     vktrace_LogError("manually_replay_vkGetPhysicalDeviceXlibPresentationSupportKHR not implemented on this playback platform");
