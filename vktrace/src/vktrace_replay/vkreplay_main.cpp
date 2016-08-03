@@ -109,8 +109,8 @@ int main_loop(Sequencer &seq, vktrace_trace_packet_replay_library *replayerArray
                         res = replayer->Replay(replayer->Interpret(packet));
                         if (res != VKTRACE_REPLAY_SUCCESS)
                         {
-                           vktrace_LogError("Failed to replay packet_id %d.",packet->packet_id);
-						   static BOOL QuitOnAnyError=FALSE;
+                           vktrace_LogError("Failed to replay packet_id %d, with global_packet_index %d.", packet->packet_id, packet->global_packet_index);
+                           static BOOL QuitOnAnyError=FALSE;
                            if(QuitOnAnyError)
                            {
                               return -1;
@@ -321,7 +321,7 @@ int main(int argc, char **argv)
 
     // Create window. Initial size is 100x100. It will later get resized to the size
     // used by the traced app. The resize will happen  during playback of swapchain functions.
-    Display disp(100, 100, 0, false);
+    ReplayDisplay disp(100, 100, 0, false);
 
     for (int i = 0; i < VKTRACE_MAX_TRACER_ID_ARRAY_SIZE; i++)
     {

@@ -147,8 +147,8 @@ class Subcommand(object):
             return ("%p", "(void*)&%s" % name, deref)
         if "_type" in vk_type.lower(): # TODO : This should be generic ENUM check
             return ("%s", "string_%s(%s)" % (vk_type.replace('const ', '').strip('*'), name), deref)
-        if "char*" == vk_type:
-            return ("%s", name, "*")
+        if "char*" in vk_type:
+            return ("\\\"%s\\\"", name, "*")
         if "uint64_t" in vk_type:
             if '*' in vk_type:
                 return ("%lu",  "(%s == NULL) ? 0 : *(%s)" % (name, name), "*")
@@ -182,7 +182,7 @@ class Subcommand(object):
                 return ("%i", "(%s == NULL) ? 0 : *(%s)" % (name, name), "*")
             return ("%i", name, deref)
         if output_param:
-            return ("%p", "(void*)%s" % name, deref)
+            return ("%p {%p}", "(void*)%s, (%s == NULL) ? 0 : *(%s)" % (name, name, name), deref)
         return ("%p", "(void*)(%s)" % name, deref)
 
     def _generate_init_funcs(self):
@@ -232,6 +232,10 @@ class Subcommand(object):
                                                  'finalize_txt': ''},
                            'VkPhysicalDevice': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pGpus), *pGpuCount*sizeof(VkPhysicalDevice), pGpus)',
                                                 'finalize_txt': 'default'},
+                           'VkImageCreateInfo': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pCreateInfo), sizeof(VkImageCreateInfo), pCreateInfo);\n'
+						                                    '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pCreateInfo->pQueueFamilyIndices), sizeof(uint32_t) * pCreateInfo->queueFamilyIndexCount, pCreateInfo->pQueueFamilyIndices)',
+                                               'finalize_txt': 'vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pCreateInfo->pQueueFamilyIndices));\n'
+											                   '    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pCreateInfo))'},
                            'pDataSize': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pDataSize), sizeof(size_t), &_dataSize)',
                                          'finalize_txt': 'vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pDataSize))'},
                            'pData': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pData), _dataSize, pData)',
@@ -1301,6 +1305,8 @@ class Subcommand(object):
                                                                                           '*ppCV = (VkClearValue*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)(pPacket->pRenderPassBegin->pClearValues));']},
                              'CreateShaderModule' : {'param': 'pCreateInfo', 'txt': ['void** ppCode = (void**)&(pPacket->pCreateInfo->pCode);\n',
                                                                                      '*ppCode = (void*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pPacket->pCreateInfo->pCode);']},
+                             'CreateImage' : {'param': 'pCreateInfo', 'txt': ['uint32_t** ppQueueFamilyIndices = (uint32_t**)&(pPacket->pCreateInfo->pQueueFamilyIndices);\n',
+                                                                              '*ppQueueFamilyIndices = (uint32_t*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pPacket->pCreateInfo->pQueueFamilyIndices);']},
                              'FlushMappedMemoryRanges' : {'param': 'ppData', 'txt': ['uint32_t i = 0;\n',
                                                                                      'for (i = 0; i < pPacket->memoryRangeCount; i++)\n',
                                                                                      '{\n',
@@ -1436,7 +1442,7 @@ class Subcommand(object):
         txt = '    %s remap_%s(const %s& value)\n    {\n' % (ty, name[2:], ty)
         txt += '        if (value == 0) { return 0; }\n'
         txt += '        std::map<%s, %s>::const_iterator q = %s.find(value);\n' % (ty, ty, name)
-        txt += '        if (q == %s.end()) { vktrace_LogError("Failed to remap %s."); return value; }\n' % (name, ty)
+        txt += '        if (q == %s.end()) { vktrace_LogError("Failed to remap %s."); return VK_NULL_HANDLE; }\n' % (name, ty)
         txt += '        return q->second;\n    }\n'
         return txt
 
@@ -1678,7 +1684,7 @@ class Subcommand(object):
                 rc_body.append('        if (value == 0) { return 0; }')
                 rc_body.append('')
                 rc_body.append('        std::map<VkImage, imageObj>::const_iterator q = m_images.find(value);')
-                rc_body.append('        if (q == m_images.end()) { vktrace_LogError("Failed to remap VkImage."); return value; }\n')
+                rc_body.append('        if (q == m_images.end()) { vktrace_LogError("Failed to remap VkImage."); return VK_NULL_HANDLE; }\n')
                 rc_body.append('        return q->second.replayImage;')
                 rc_body.append('    }\n')
             elif obj_map_dict[var] == 'VkBuffer':
@@ -1690,7 +1696,7 @@ class Subcommand(object):
                 rc_body.append('        if (value == 0) { return 0; }')
                 rc_body.append('')
                 rc_body.append('        std::map<VkBuffer, bufferObj>::const_iterator q = m_buffers.find(value);')
-                rc_body.append('        if (q == m_buffers.end()) { vktrace_LogError("Failed to remap VkBuffer."); return value; }\n')
+                rc_body.append('        if (q == m_buffers.end()) { vktrace_LogError("Failed to remap VkBuffer."); return VK_NULL_HANDLE; }\n')
                 rc_body.append('        return q->second.replayBuffer;')
                 rc_body.append('    }\n')
             elif obj_map_dict[var] == 'VkDeviceMemory':
@@ -1702,7 +1708,7 @@ class Subcommand(object):
                 rc_body.append('        if (value == 0) { return 0; }')
                 rc_body.append('')
                 rc_body.append('        std::map<VkDeviceMemory, gpuMemObj>::const_iterator q = m_devicememorys.find(value);')
-                rc_body.append('        if (q == m_devicememorys.end()) { vktrace_LogError("Failed to remap VkDeviceMemory."); return value; }')
+                rc_body.append('        if (q == m_devicememorys.end()) { vktrace_LogError("Failed to remap VkDeviceMemory."); return VK_NULL_HANDLE; }')
                 rc_body.append('        return q->second.replayGpuMem;')
                 rc_body.append('    }\n')
             else:
@@ -1774,6 +1780,7 @@ class Subcommand(object):
                         result = '        %s remapped%s = m_objMapper.remap_%ss(*pPacket->%s%s);\n' % (cleanParamType, paramName, paramName.lower(), paramName, objectTypeRemapParam)
                         result += '        if (pPacket->%s != VK_NULL_HANDLE && remapped%s == VK_NULL_HANDLE)\n' % (paramName, paramName)
                         result += '        {\n'
+                        result += '            vktrace_LogError("Error detected in %s() due to invalid remapped %s.");\n' % (funcName, cleanParamType)
                         result += '            return vktrace_replay::VKTRACE_REPLAY_ERROR;\n'
                         result += '        }\n'
                         return result
@@ -1787,6 +1794,7 @@ class Subcommand(object):
                         result += '                remapped%s[i] = m_objMapper.remap_%ss(pPacket->%s[i]%s);\n' % (paramName, cleanParamType.lower()[2:], paramName, objectTypeRemapParam)
                         result += '                if (pPacket->%s[i] != VK_NULL_HANDLE && remapped%s[i] == VK_NULL_HANDLE)\n' % (paramName, paramName)
                         result += '                {\n'
+                        result += '                    vktrace_LogError("Error detected in %s() due to invalid remapped %s.");\n' % (funcName, cleanParamType)
                         result += '                    return vktrace_replay::VKTRACE_REPLAY_ERROR;\n'
                         result += '                }\n'
                         result += '            }\n'
@@ -1796,6 +1804,7 @@ class Subcommand(object):
                 result += '%s\n' % self.lineinfo.get()
                 result += '            if (pPacket->%s != VK_NULL_HANDLE && remapped%s == VK_NULL_HANDLE)\n' % (paramName, paramName)
                 result += '            {\n'
+                result += '                vktrace_LogError("Error detected in %s() due to invalid remapped %s.");\n' % (funcName, cleanParamType)
                 result += '                return vktrace_replay::VKTRACE_REPLAY_ERROR;\n'
                 result += '            }\n'
                 return result
@@ -1823,6 +1832,7 @@ class Subcommand(object):
         ci_body.append('            VkDevice remappedDevice = m_objMapper.remap_devices(pPacket->device);')
         ci_body.append('            if (remappedDevice == VK_NULL_HANDLE)')
         ci_body.append('            {')
+        ci_body.append('                vktrace_LogError("Error detected in vkCreateImage() due to invalid remapped VkDevice.");')
         ci_body.append('                return vktrace_replay::VKTRACE_REPLAY_ERROR;')
         ci_body.append('            }')
         ci_body.append('            replayResult = m_vkFuncs.real_vkCreateImage(remappedDevice, pPacket->pCreateInfo, NULL, &local_imageObj.replayImage);')
@@ -1838,6 +1848,7 @@ class Subcommand(object):
         cb_body.append('            VkDevice remappedDevice = m_objMapper.remap_devices(pPacket->device);')
         cb_body.append('            if (remappedDevice == VK_NULL_HANDLE)')
         cb_body.append('            {')
+        cb_body.append('                vktrace_LogError("Error detected in vkCreateBuffer() due to invalid remapped VkDevice.");')
         cb_body.append('                return vktrace_replay::VKTRACE_REPLAY_ERROR;')
         cb_body.append('            }')
         cb_body.append('            replayResult = m_vkFuncs.real_vkCreateBuffer(remappedDevice, pPacket->pCreateInfo, NULL, &local_bufferObj.replayBuffer);')
@@ -1854,6 +1865,7 @@ class Subcommand(object):
         cb_body.append('            if (replayResult == VK_SUCCESS) {')
         cb_body.append('                VkInstance remappedInstance = m_objMapper.remap_instances(*pPacket->pInstance);')
         cb_body.append('                if (remappedInstance == VK_NULL_HANDLE) {')
+        cb_body.append('                    vktrace_LogError("Error detected in vkCreateInstance() due to invalid remapped VkInstance.");')
         cb_body.append('                    returnValue = vktrace_replay::VKTRACE_REPLAY_ERROR;')
         cb_body.append('                    break;')
         cb_body.append('                }')
@@ -1898,6 +1910,17 @@ class Subcommand(object):
         cb_body.append('            }')
         return "\n".join(cb_body)
 
+    def _gen_replay_GetPhysicalDeviceWin32PresentationSupportKHR (self):
+        cb_body = []
+        cb_body.append('            VkBool32 rval = manually_replay_vkGetPhysicalDeviceWin32PresentationSupportKHR(pPacket);')
+        cb_body.append('            if (rval != pPacket->result)')
+        cb_body.append('            {')
+        cb_body.append('                vktrace_LogError("Return value %d from API call (vkGetPhysicalDeviceWin32PresentationSupportKHR) does not match return value from trace file %d.",')
+        cb_body.append('                                 rval, pPacket->result);')
+        cb_body.append('                returnValue = vktrace_replay::VKTRACE_REPLAY_BAD_RETURN;')
+        cb_body.append('            }')
+        return "\n".join(cb_body)
+
     # Generate main replay case statements where actual replay API call is dispatched based on input packet data
     def _generate_replay(self):
         manually_replay_funcs = ['AllocateMemory',
@@ -1934,7 +1957,10 @@ class Subcommand(object):
                                  'GetSwapchainImagesKHR',
                                  'CreateXcbSurfaceKHR',
                                  'CreateXlibSurfaceKHR',
+                                 'GetPhysicalDeviceXcbPresentationSupportKHR',
+                                 'GetPhysicalDeviceXlibPresentationSupportKHR',
                                  'CreateWin32SurfaceKHR',
+                                 'GetPhysicalDeviceWin32PresentationSupportKHR',
                                  #TODO Wayland, Mir, Xlib
                                  #'GetPhysicalDeviceInfo',
                                  'MapMemory',
@@ -1961,7 +1987,8 @@ class Subcommand(object):
                             'CreateBuffer': self._gen_replay_create_buffer,
                             'CreateInstance': self._gen_replay_create_instance,
                             'GetPhysicalDeviceXcbPresentationSupportKHR': self._gen_replay_GetPhysicalDeviceXcbPresentationSupportKHR,
-                            'GetPhysicalDeviceXlibPresentationSupportKHR': self._gen_replay_GetPhysicalDeviceXlibPresentationSupportKHR }
+                            'GetPhysicalDeviceXlibPresentationSupportKHR': self._gen_replay_GetPhysicalDeviceXlibPresentationSupportKHR,
+                            'GetPhysicalDeviceWin32PresentationSupportKHR': self._gen_replay_GetPhysicalDeviceWin32PresentationSupportKHR }
         # multi-gpu Open funcs w/ list of local params to create
         custom_open_params = {'OpenSharedMemory': (-1,),
                               'OpenSharedSemaphore': (-1,),
@@ -2025,10 +2052,25 @@ class Subcommand(object):
                     rbody.append('            memcpy(&createInfo, pPacket->pCreateInfo, sizeof(%s));' % (proto.params[1].ty.strip('*').replace('const ', '')))
                     if 'CreateComputePipeline' == proto.name:
                         rbody.append('            createInfo.cs.shader = m_objMapper.remap_shaders(pPacket->pCreateInfo->cs.shader);')
+                        rbody.append('            if (createInfo.cs.shader == VK_NULL_HANDLE && pPacket->pCreateInfo->cs.shader != VK_NULL_HANDLE)')
+                        rbody.append('            {')
+                        rbody.append('                vktrace_LogError("Error detected in vkCreateComputePipelines() due to invalid remapped VkShader.");')
+                        rbody.append('                return vktrace_replay::VKTRACE_REPLAY_ERROR;')
+                        rbody.append('            }')
                     elif 'CreateBufferView' == proto.name:
                         rbody.append('            createInfo.buffer = m_objMapper.remap_buffers(pPacket->pCreateInfo->buffer);')
+                        rbody.append('            if (createInfo.buffer == VK_NULL_HANDLE && pPacket->pCreateInfo->buffer != VK_NULL_HANDLE)')
+                        rbody.append('            {')
+                        rbody.append('                vktrace_LogError("Error detected in vkCreateBufferView() due to invalid remapped VkBuffer.");')
+                        rbody.append('                return vktrace_replay::VKTRACE_REPLAY_ERROR;')
+                        rbody.append('            }')
                     else:
                         rbody.append('            createInfo.image = m_objMapper.remap_images(pPacket->pCreateInfo->image);')
+                        rbody.append('            if (createInfo.image == VK_NULL_HANDLE && pPacket->pCreateInfo->image != VK_NULL_HANDLE)')
+                        rbody.append('            {')
+                        rbody.append('                vktrace_LogError("Error detected in vkCreateImageView() due to invalid remapped VkImage.");')
+                        rbody.append('                return vktrace_replay::VKTRACE_REPLAY_ERROR;')
+                        rbody.append('            }')
                     rbody.append('            %s local_%s;' % (proto.params[-1].ty.strip('*').replace('const ', ''), proto.params[-1].name))
                 elif create_func: # Declare local var to store created handle into
                     if 'AllocateDescriptorSets' == proto.name:
@@ -2038,9 +2080,19 @@ class Subcommand(object):
                         rbody.append('            VkDescriptorSetAllocateInfo local_AllocInfo, *local_pAllocateInfo = &local_AllocInfo;')
                         rbody.append('            VkDescriptorPool local_descPool;')
                         rbody.append('            local_descPool = m_objMapper.remap_descriptorpools(pPacket->pAllocateInfo->descriptorPool);')
+                        rbody.append('            if (local_descPool == VK_NULL_HANDLE)')
+                        rbody.append('            {')
+                        rbody.append('                vktrace_LogError("Error detected in vkAllocateDescriptorSets() due to invalid remapped VkDescriptorPool.");')
+                        rbody.append('                return vktrace_replay::VKTRACE_REPLAY_ERROR;')
+                        rbody.append('            }')
                         rbody.append('            for (uint32_t i = 0; i < pPacket->pAllocateInfo->descriptorSetCount; i++)')
                         rbody.append('            {')
                         rbody.append('                local_pSetLayouts[i] = m_objMapper.remap_descriptorsetlayouts(pPacket->%s->pSetLayouts[i]);' % (proto.params[-2].name))
+                        rbody.append('                if (local_pSetLayouts[i] == VK_NULL_HANDLE)')
+                        rbody.append('                {')
+                        rbody.append('                    vktrace_LogError("Error detected in vkAllocateDescriptorSets() due to invalid remapped VkDescriptorSetLayout.");')
+                        rbody.append('                    return vktrace_replay::VKTRACE_REPLAY_ERROR;')
+                        rbody.append('                }')
                         rbody.append('            }')
                         rbody.append('            memcpy(local_pAllocateInfo, pPacket->pAllocateInfo, sizeof(VkDescriptorSetAllocateInfo));')
                         rbody.append('            local_pAllocateInfo->pSetLayouts = local_pSetLayouts;')
@@ -2052,6 +2104,11 @@ class Subcommand(object):
                     rbody.append('            for (uint32_t i = 0; i < pPacket->fenceCount; i++)')
                     rbody.append('            {')
                     rbody.append('                fences[i] = m_objMapper.remap_fences(pPacket->%s[i]);' % (proto.params[-1].name))
+                    rbody.append('                if (fences[i] == VK_NULL_HANDLE)')
+                    rbody.append('                {')
+                    rbody.append('                    vktrace_LogError("Error detected in vkResetFences() due to invalid remapped VkFence.");')
+                    rbody.append('                    return vktrace_replay::VKTRACE_REPLAY_ERROR;')
+                    rbody.append('                }')
                     rbody.append('            }')
                 elif proto.name in do_while_dict:
                     rbody.append('            do {')
@@ -2418,15 +2475,6 @@ class VktraceReplayC(Subcommand):
 
 def main():
 
-    wsi = {
-            "Win32",
-            "Android",
-            "Xcb",
-            "Xlib",
-            "Wayland",
-            "Mir"
-    }
-
     subcommands = {
             "vktrace-trace-h" : VktraceTraceHeader,
             "vktrace-trace-c" : VktraceTraceC,
@@ -2440,10 +2488,7 @@ def main():
             "vktrace-replay-c" : VktraceReplayC,
     }
 
-    if len(sys.argv) < 3 or sys.argv[1] not in wsi or sys.argv[2] not in subcommands:
-        print("Usage: %s <wsi> <subcommand> [options]" % sys.argv[0])
-        print
-        print("Available wsi (displayservers) are: %s" % " ".join(wsi))
+    if len(sys.argv) < 3 or sys.argv[2] not in subcommands:
         print("Available subcommands are: %s" % " ".join(subcommands))
         exit(1)
 
