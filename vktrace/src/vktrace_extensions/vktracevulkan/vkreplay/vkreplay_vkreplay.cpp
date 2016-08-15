@@ -30,9 +30,12 @@
 
 #include <algorithm>
 #include <queue>
+#include <unordered_map>
 
 #include "vktrace_vk_vk_packets.h"
 #include "vk_enum_string_helper.h"
+
+using namespace std;
 
 vkreplayer_settings *g_pReplaySettings;
 
@@ -193,8 +196,8 @@ VkResult vkReplay::manually_replay_vkCreateInstance(packet_vkCreateInstance* pPa
 
         char **saved_ppExtensions = (char **)pCreateInfo->ppEnabledExtensionNames;
         int savedExtensionCount = pCreateInfo->enabledExtensionCount;
-        std::vector<const char *> extension_names;
-        std::vector<std::string> outlist;
+        vector<const char *> extension_names;
+        vector<string> outlist;
 
 #if defined PLATFORM_LINUX
         extension_names.push_back(VK_KHR_XCB_SURFACE_EXTENSION_NAME);
@@ -208,7 +211,7 @@ VkResult vkReplay::manually_replay_vkCreateInstance(packet_vkCreateInstance* pPa
 #endif
 
         for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
-            if ( std::find(outlist.begin(), outlist.end(), pCreateInfo->ppEnabledExtensionNames[i]) == outlist.end() ) {
+            if ( find(outlist.begin(), outlist.end(), pCreateInfo->ppEnabledExtensionNames[i]) == outlist.end() ) {
                 extension_names.push_back(pCreateInfo->ppEnabledExtensionNames[i]);
             }
         }
@@ -233,6 +236,9 @@ VkResult vkReplay::manually_replay_vkCreateInstance(packet_vkCreateInstance* pPa
     }
     return replayResult;
 }
+
+static unordered_map<VkDevice, VkPhysicalDevice> tracePhysicalDevices;
+static unordered_map<VkDevice, VkPhysicalDevice> replayPhysicalDevices;
 
 VkResult vkReplay::manually_replay_vkCreateDevice(packet_vkCreateDevice* pPacket)
 {
@@ -301,6 +307,8 @@ VkResult vkReplay::manually_replay_vkCreateDevice(packet_vkCreateDevice* pPacket
         if (replayResult == VK_SUCCESS)
         {
             m_objMapper.add_to_devices_map(*(pPacket->pDevice), device);
+            tracePhysicalDevices[*(pPacket->pDevice)] = pPacket->physicalDevice;
+            replayPhysicalDevices[device] = remappedPhysicalDevice;
         }
     }
     return replayResult;
@@ -1825,6 +1833,61 @@ VkResult vkReplay::manually_replay_vkWaitForFences(packet_vkWaitForFences* pPack
     return replayResult;
 }
 
+static unordered_map<VkPhysicalDevice, VkPhysicalDeviceMemoryProperties> traceMemoryProperties;
+static unordered_map<VkPhysicalDevice, VkPhysicalDeviceMemoryProperties> replayMemoryProperties;
+
+static bool getMemoryTypeIdx(VkDevice traceDevice,
+                             VkDevice replayDevice,
+                             uint32_t traceIdx,
+                             uint32_t* pReplayIdx)
+{
+    VkPhysicalDevice tracePhysicalDevice;
+    VkPhysicalDevice replayPhysicalDevice;
+
+    if (tracePhysicalDevices.find(traceDevice) == tracePhysicalDevices.end() ||
+        replayPhysicalDevices.find(replayDevice) == replayPhysicalDevices.end())
+    {
+        vktrace_LogWarning("Cannot determine memory type during vkAllocateMemory - vkGetPhysicalDeviceMemoryProperties should be called before vkAllocateMemory.");
+        return false;
+    }
+
+    tracePhysicalDevice = tracePhysicalDevices[traceDevice];
+    replayPhysicalDevice = replayPhysicalDevices[replayDevice];
+
+    for (uint32_t i = 0; i < min(traceMemoryProperties[tracePhysicalDevice].memoryTypeCount, replayMemoryProperties[replayPhysicalDevice].memoryTypeCount); i++)
+    {
+        if (traceMemoryProperties[tracePhysicalDevice].memoryTypes[traceIdx].propertyFlags == replayMemoryProperties[replayPhysicalDevice].memoryTypes[i].propertyFlags)
+        {
+            *pReplayIdx = i;
+            return true;
+        }
+    }
+
+    // Didn't find an exact match, search for a superset
+    for (uint32_t i = 0; i < min(traceMemoryProperties[tracePhysicalDevice].memoryTypeCount, replayMemoryProperties[replayPhysicalDevice].memoryTypeCount); i++)
+    {
+        if (traceMemoryProperties[tracePhysicalDevice].memoryTypes[traceIdx].propertyFlags ==
+            (traceMemoryProperties[tracePhysicalDevice].memoryTypes[traceIdx].propertyFlags & replayMemoryProperties[replayPhysicalDevice].memoryTypes[i].propertyFlags))
+        {
+            *pReplayIdx = i;
+            return true;
+        }
+    }
+
+    // Didn't find a superset, search for mem type with both HOST_VISIBLE and HOST_COHERENT set
+    for (uint32_t i = 0; i < min(traceMemoryProperties[tracePhysicalDevice].memoryTypeCount, replayMemoryProperties[replayPhysicalDevice].memoryTypeCount); i++)
+    {
+        if ((VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) & replayMemoryProperties[replayPhysicalDevice].memoryTypes[i].propertyFlags)
+        {
+            *pReplayIdx = i;
+            return true;
+        }
+    }
+
+    // Didn't find a match
+    return false;
+}
+
 VkResult vkReplay::manually_replay_vkAllocateMemory(packet_vkAllocateMemory* pPacket)
 {
     VkResult replayResult = VK_ERROR_VALIDATION_FAILED_EXT;
@@ -1839,7 +1902,17 @@ VkResult vkReplay::manually_replay_vkAllocateMemory(packet_vkAllocateMemory* pPa
     gpuMemObj local_mem;
 
     if (!m_objMapper.m_adjustForGPU)
-        replayResult = m_vkFuncs.real_vkAllocateMemory(remappedDevice, pPacket->pAllocateInfo, NULL, &local_mem.replayGpuMem);
+    {
+        uint32_t replayIdx;
+        if (getMemoryTypeIdx(pPacket->device, remappedDevice, pPacket->pAllocateInfo->memoryTypeIndex, &replayIdx))
+        {
+            *((uint32_t*)&pPacket->pAllocateInfo->memoryTypeIndex) = replayIdx;
+            replayResult = m_vkFuncs.real_vkAllocateMemory(remappedDevice, pPacket->pAllocateInfo, NULL, &local_mem.replayGpuMem);
+        } else {
+            vktrace_LogError("vkAllocateMemory() failed, couldn't find memory type for memoryTypeIndex");
+            return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
     if (replayResult == VK_SUCCESS || m_objMapper.m_adjustForGPU)
     {
         local_mem.pGpuMem = new (gpuMemory);
@@ -1988,6 +2061,62 @@ VkResult vkReplay::manually_replay_vkFlushMappedMemoryRanges(packet_vkFlushMappe
     return replayResult;
 }
 
+//InvalidateMappedMemory Ranges and flushMappedMemoryRanges are similar but keep it seperate until
+//functionality tested fully
+VkResult vkReplay::manually_replay_vkInvalidateMappedMemoryRanges(packet_vkInvalidateMappedMemoryRanges* pPacket)
+{
+    VkResult replayResult = VK_ERROR_VALIDATION_FAILED_EXT;
+
+    VkDevice remappedDevice = m_objMapper.remap_devices(pPacket->device);
+    if (remappedDevice == VK_NULL_HANDLE)
+    {
+        vktrace_LogError("Skipping vkInvalidateMappedMemoryRanges() due to invalid remapped VkDevice.");
+        return VK_ERROR_VALIDATION_FAILED_EXT;
+    }
+
+    VkMappedMemoryRange* localRanges = VKTRACE_NEW_ARRAY(VkMappedMemoryRange, pPacket->memoryRangeCount);
+    memcpy(localRanges, pPacket->pMemoryRanges, sizeof(VkMappedMemoryRange) * (pPacket->memoryRangeCount));
+
+    gpuMemObj* pLocalMems = VKTRACE_NEW_ARRAY(gpuMemObj, pPacket->memoryRangeCount);
+    for (uint32_t i = 0; i < pPacket->memoryRangeCount; i++)
+    {
+        pLocalMems[i] = m_objMapper.m_devicememorys.find(pPacket->pMemoryRanges[i].memory)->second;
+        localRanges[i].memory = m_objMapper.remap_devicememorys(pPacket->pMemoryRanges[i].memory);
+        if (localRanges[i].memory == VK_NULL_HANDLE || pLocalMems[i].pGpuMem == NULL)
+        {
+            vktrace_LogError("Skipping vkInvalidsateMappedMemoryRanges() due to invalid remapped VkDeviceMemory.");
+            VKTRACE_DELETE(localRanges);
+            VKTRACE_DELETE(pLocalMems);
+            return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+
+        if (!pLocalMems[i].pGpuMem->isPendingAlloc())
+        {
+            if (pPacket->pMemoryRanges[i].size != 0)
+            {
+                pLocalMems[i].pGpuMem->copyMappingData(pPacket->ppData[i], false, (size_t)pPacket->pMemoryRanges[i].size, (size_t)pPacket->pMemoryRanges[i].offset);
+            }
+        }
+        else
+        {
+            unsigned char *pBuf = (unsigned char *) vktrace_malloc(pLocalMems[i].pGpuMem->getMemoryMapSize());
+            if (!pBuf)
+            {
+                vktrace_LogError("vkInvalidateMappedMemoryRanges() malloc failed.");
+            }
+            pLocalMems[i].pGpuMem->setMemoryDataAddr(pBuf);
+            pLocalMems[i].pGpuMem->copyMappingData(pPacket->ppData[i], false, (size_t)pPacket->pMemoryRanges[i].size, (size_t)pPacket->pMemoryRanges[i].offset);
+        }
+    }
+
+    replayResult = m_vkFuncs.real_vkInvalidateMappedMemoryRanges(remappedDevice, pPacket->memoryRangeCount, localRanges);
+
+    VKTRACE_DELETE(localRanges);
+    VKTRACE_DELETE(pLocalMems);
+
+    return replayResult;
+}
+
 VkResult vkReplay::manually_replay_vkGetPhysicalDeviceSurfaceSupportKHR(packet_vkGetPhysicalDeviceSurfaceSupportKHR* pPacket)
 {
     VkResult replayResult = VK_ERROR_VALIDATION_FAILED_EXT;
@@ -2009,6 +2138,21 @@ VkResult vkReplay::manually_replay_vkGetPhysicalDeviceSurfaceSupportKHR(packet_v
     replayResult = m_vkFuncs.real_vkGetPhysicalDeviceSurfaceSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex, remappedSurfaceKHR, pPacket->pSupported);
 
     return replayResult;
+}
+
+void vkReplay::manually_replay_vkGetPhysicalDeviceMemoryProperties(packet_vkGetPhysicalDeviceMemoryProperties* pPacket)
+{
+    VkPhysicalDevice remappedphysicalDevice = m_objMapper.remap_physicaldevices(pPacket->physicalDevice);
+    if (remappedphysicalDevice == VK_NULL_HANDLE)
+    {
+        vktrace_LogError("Skipping vkGetPhysicalDeviceMemoryProperties() due to invalid remapped VkPhysicalDevice.");
+        return;
+    }
+
+    traceMemoryProperties[pPacket->physicalDevice] = *pPacket->pMemoryProperties;
+    m_vkFuncs.real_vkGetPhysicalDeviceMemoryProperties(remappedphysicalDevice, pPacket->pMemoryProperties);
+    replayMemoryProperties[remappedphysicalDevice] = *pPacket->pMemoryProperties;
+    return;
 }
 
 VkResult vkReplay::manually_replay_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(packet_vkGetPhysicalDeviceSurfaceCapabilitiesKHR* pPacket)

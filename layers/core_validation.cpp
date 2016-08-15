@@ -2623,14 +2623,14 @@ static uint32_t descriptor_type_to_reqs(shader_module const *module, uint32_t ty
 
             switch (dim) {
             case spv::Dim1D:
-                return DESCRIPTOR_REQ_VIEW_TYPE_1D << arrayed;
+                return arrayed ? DESCRIPTOR_REQ_VIEW_TYPE_1D_ARRAY : DESCRIPTOR_REQ_VIEW_TYPE_1D;
             case spv::Dim2D:
                 return (msaa ? DESCRIPTOR_REQ_MULTI_SAMPLE : DESCRIPTOR_REQ_SINGLE_SAMPLE) |
-                    (DESCRIPTOR_REQ_VIEW_TYPE_2D << arrayed);
+                    (arrayed ? DESCRIPTOR_REQ_VIEW_TYPE_2D_ARRAY : DESCRIPTOR_REQ_VIEW_TYPE_2D);
             case spv::Dim3D:
                 return DESCRIPTOR_REQ_VIEW_TYPE_3D;
             case spv::DimCube:
-                return DESCRIPTOR_REQ_VIEW_TYPE_CUBE << arrayed;
+                return arrayed ? DESCRIPTOR_REQ_VIEW_TYPE_CUBE_ARRAY : DESCRIPTOR_REQ_VIEW_TYPE_CUBE;
             default:  // subpass, buffer, etc.
                 return 0;
             }
@@ -2873,13 +2873,16 @@ static bool validatePipelineDrawtimeState(layer_data const *my_data,
     // Verify Vtx binding
     if (pPipeline->vertexBindingDescriptions.size() > 0) {
         for (size_t i = 0; i < pPipeline->vertexBindingDescriptions.size(); i++) {
-            if ((pCB->currentDrawData.buffers.size() < (i + 1)) || (pCB->currentDrawData.buffers[i] == VK_NULL_HANDLE)) {
-                skip_call |= log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, (VkDebugReportObjectTypeEXT)0, 0,
-                                  __LINE__, DRAWSTATE_VTX_INDEX_OUT_OF_BOUNDS, "DS",
-                                  "The Pipeline State Object (0x%" PRIxLEAST64
-                                  ") expects that this Command Buffer's vertex binding Index " PRINTF_SIZE_T_SPECIFIER
-                                  " should be set via vkCmdBindVertexBuffers.",
-                                  (uint64_t)state.pipeline, i);
+            auto vertex_binding = pPipeline->vertexBindingDescriptions[i].binding;
+            if ((pCB->currentDrawData.buffers.size() < (vertex_binding + 1)) ||
+                (pCB->currentDrawData.buffers[vertex_binding] == VK_NULL_HANDLE)) {
+                skip_call |= log_msg(
+                    my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, (VkDebugReportObjectTypeEXT)0, 0, __LINE__,
+                    DRAWSTATE_VTX_INDEX_OUT_OF_BOUNDS, "DS",
+                    "The Pipeline State Object (0x%" PRIxLEAST64 ") expects that this Command Buffer's vertex binding Index %u "
+                    "should be set via vkCmdBindVertexBuffers. This is because VkVertexInputBindingDescription struct "
+                    "at index " PRINTF_SIZE_T_SPECIFIER " of pVertexBindingDescriptions has a binding value of %u.",
+                    (uint64_t)state.pipeline, vertex_binding, i, vertex_binding);
             }
         }
     } else {
@@ -3592,6 +3595,14 @@ void SetLayout(const layer_data *dev_data, GLOBAL_CB_NODE *pCB, VkImageView imag
         for (uint32_t k = 0; k < subRange.layerCount; k++) {
             uint32_t layer = subRange.baseArrayLayer + k;
             VkImageSubresource sub = {subRange.aspectMask, level, layer};
+            // TODO: If ImageView was created with depth or stencil, transition both layouts as
+            // the aspectMask is ignored and both are used. Verify that the extra implicit layout
+            // is OK for descriptor set layout validation
+            if (subRange.aspectMask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
+                if (vk_format_is_depth_and_stencil(iv_data->format)) {
+                    sub.aspectMask |= (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+                }
+            }
             SetLayout(pCB, image, sub, layout);
         }
     }
@@ -5643,8 +5654,15 @@ DestroyCommandPool(VkDevice device, VkCommandPool commandPool, const VkAllocatio
     for (auto cb : pPool->commandBuffers) {
         clear_cmd_buf_and_mem_references(dev_data, cb);
         auto cb_node = getCBNode(dev_data, cb);
+        // Remove references to this cb_node prior to delete
+        // TODO : Need better solution here, resetCB?
         for (auto obj : cb_node->object_bindings) {
             removeCommandBufferBinding(dev_data, &obj, cb_node);
+        }
+        for (auto framebuffer : cb_node->framebuffers) {
+            auto fb_node = getFramebuffer(dev_data, framebuffer);
+            if (fb_node)
+                fb_node->cb_bindings.erase(cb_node);
         }
         dev_data->commandBufferMap.erase(cb); // Remove this command buffer
         delete cb_node;                       // delete CB info structure
@@ -9833,10 +9851,12 @@ static bool validateFramebuffer(layer_data *dev_data, VkCommandBuffer primaryBuf
     if (secondary_fb != VK_NULL_HANDLE) {
         if (primary_fb != secondary_fb) {
             skip_call |= log_msg(dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, (VkDebugReportObjectTypeEXT)0, 0, __LINE__,
-                                 DRAWSTATE_INVALID_SECONDARY_COMMAND_BUFFER, "DS",
-                                 "vkCmdExecuteCommands() called w/ invalid Cmd Buffer 0x%p which has a framebuffer 0x%" PRIx64
-                                 " that is not compatible with the current framebuffer 0x%" PRIx64 ".",
-                                 (void *)secondaryBuffer, (uint64_t)(secondary_fb), (uint64_t)(primary_fb));
+                                 DRAWSTATE_FRAMEBUFFER_INCOMPATIBLE, "DS",
+                                 "vkCmdExecuteCommands() called w/ invalid secondary Cmd Buffer 0x%" PRIx64
+                                 " which has a framebuffer 0x%" PRIx64
+                                 " that is not the same as the primaryCB's current active framebuffer 0x%" PRIx64 ".",
+                                 reinterpret_cast<uint64_t &>(secondaryBuffer), reinterpret_cast<uint64_t &>(secondary_fb),
+                                 reinterpret_cast<uint64_t &>(primary_fb));
         }
         auto fb = getFramebuffer(dev_data, secondary_fb);
         if (!fb) {
@@ -9931,9 +9951,11 @@ CmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t commandBuffersCount, 
                         skip_call |= validateRenderPassCompatibility(dev_data, commandBuffer, pCB->activeRenderPass->pCreateInfo,
                                                                     pCommandBuffers[i], secondary_rp_node->pCreateInfo);
                     }
+                    //  If framebuffer for secondary CB is not NULL, then it must match active FB from primaryCB
                     skip_call |= validateFramebuffer(dev_data, commandBuffer, pCB, pCommandBuffers[i], pSubCB);
                 }
                 string errorString = "";
+                // secondaryCB must have been created w/ RP compatible w/ primaryCB active renderpass
                 if ((pCB->activeRenderPass->renderPass != secondary_rp_node->renderPass) &&
                     !verify_renderpass_compatibility(dev_data, pCB->activeRenderPass->pCreateInfo, secondary_rp_node->pCreateInfo,
                                                      errorString)) {
@@ -9944,19 +9966,6 @@ CmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t commandBuffersCount, 
                         ") is incompatible w/ primary command buffer (0x%p) w/ render pass (0x%" PRIxLEAST64 ") due to: %s",
                         (void *)pCommandBuffers[i], (uint64_t)pSubCB->beginInfo.pInheritanceInfo->renderPass, (void *)commandBuffer,
                         (uint64_t)pCB->activeRenderPass->renderPass, errorString.c_str());
-                }
-                //  If framebuffer for secondary CB is not NULL, then it must match FB from vkCmdBeginRenderPass()
-                //   that this CB will be executed in AND framebuffer must have been created w/ RP compatible w/ renderpass
-                if (pSubCB->beginInfo.pInheritanceInfo->framebuffer) {
-                    if (pSubCB->beginInfo.pInheritanceInfo->framebuffer != pCB->activeRenderPassBeginInfo.framebuffer) {
-                        skip_call |= log_msg(
-                            dev_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_COMMAND_BUFFER_EXT,
-                            (uint64_t)pCommandBuffers[i], __LINE__, DRAWSTATE_FRAMEBUFFER_INCOMPATIBLE, "DS",
-                            "vkCmdExecuteCommands(): Secondary Command Buffer (0x%p) references framebuffer (0x%" PRIxLEAST64
-                            ") that does not match framebuffer (0x%" PRIxLEAST64 ") in active renderpass (0x%" PRIxLEAST64 ").",
-                            (void *)pCommandBuffers[i], (uint64_t)pSubCB->beginInfo.pInheritanceInfo->framebuffer,
-                            (uint64_t)pCB->activeRenderPassBeginInfo.framebuffer, (uint64_t)pCB->activeRenderPass->renderPass);
-                    }
                 }
             }
             // TODO(mlentine): Move more logic into this method

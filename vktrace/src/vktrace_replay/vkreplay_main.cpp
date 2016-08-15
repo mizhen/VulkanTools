@@ -144,6 +144,12 @@ int main_loop(Sequencer &seq, vktrace_trace_packet_replay_library *replayerArray
             }
         }
         settings.numLoops--;
+        //if screenshot is enabled run it for one cycle only
+        //as all consecutive cycles must generate same screen
+        if (replaySettings.screenshotList != NULL)
+        {
+            vktrace_free((char*)replaySettings.screenshotList);
+        }
         seq.set_bookmark(startingPacket);
         trace_running = true;
         if (replayer != NULL)
