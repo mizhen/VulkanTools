@@ -124,7 +124,7 @@ vktrace_thread vktrace_platform_create_thread(VKTRACE_THREAD_ROUTINE_RETURN_TYPE
 void vktrace_platform_resume_thread(vktrace_thread* pThread);
 void vktrace_platform_sync_wait_for_thread(vktrace_thread* pThread);
 void vktrace_platform_delete_thread(vktrace_thread* pThread);
-void vktrace_platform_thread_once(void *ctl, void (* func) (void));
+void vktrace_platform_thread_once(void *ctl, BOOL (CALLBACK * func) (_Inout_ PINIT_ONCE initOnce, _Inout_opt_ PVOID param, _Out_opt_ PVOID *lpContext));
 
 void vktrace_create_critical_section(VKTRACE_CRITICAL_SECTION* pCriticalSection);
 void vktrace_enter_critical_section(VKTRACE_CRITICAL_SECTION* pCriticalSection);

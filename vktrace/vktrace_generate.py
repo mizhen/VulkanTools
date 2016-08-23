@@ -206,7 +206,7 @@ class Subcommand(object):
         init_tracer.append('    FINISH_TRACE_PACKET();\n}\n')
 
         init_tracer.append('extern VKTRACE_CRITICAL_SECTION g_memInfoLock;')
-        init_tracer.append('void InitTracer(void)\n{')
+        init_tracer.append('BOOL CALLBACK InitTracer(_Inout_ PINIT_ONCE initOnce, _Inout_opt_ PVOID param, _Out_opt_ PVOID *lpContext)\n{')
         init_tracer.append('    const char *ipAddr = vktrace_get_global_var("VKTRACE_LIB_IPADDR");')
         init_tracer.append('    if (ipAddr == NULL)')
         init_tracer.append('        ipAddr = "127.0.0.1";')
@@ -2017,7 +2017,7 @@ class VktraceTraceHeader(Subcommand):
         header_txt = []
         header_txt.append('#include "vktrace_vk_vk_packets.h"')
         header_txt.append('#include "vktrace_vk_packet_id.h"\n\n')
-        header_txt.append('void InitTracer(void);\n\n')
+        header_txt.append('BOOL CALLBACK InitTracer(_Inout_ PINIT_ONCE initOnce, _Inout_opt_ PVOID param, _Out_opt_ PVOID *lpContext);\n\n')
         header_txt.append('#ifdef WIN32')
         header_txt.append('extern INIT_ONCE gInitOnce;')
         header_txt.append('\n#elif defined(PLATFORM_LINUX)')
