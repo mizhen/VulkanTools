@@ -236,15 +236,19 @@ class Subcommand(object):
 						                                    '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pCreateInfo->pQueueFamilyIndices), sizeof(uint32_t) * pCreateInfo->queueFamilyIndexCount, pCreateInfo->pQueueFamilyIndices)',
                                                'finalize_txt': 'vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pCreateInfo->pQueueFamilyIndices));\n'
 											                   '    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pCreateInfo))'},
+                           'VkBufferCreateInfo': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pCreateInfo), sizeof(VkBufferCreateInfo), pCreateInfo);\n'
+                                                            '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pCreateInfo->pQueueFamilyIndices), sizeof(uint32_t) * pCreateInfo->queueFamilyIndexCount, pCreateInfo->pQueueFamilyIndices)',
+                                               'finalize_txt': 'vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pCreateInfo->pQueueFamilyIndices));\n'
+                                                               '    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pCreateInfo))'},
                            'pDataSize': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pDataSize), sizeof(size_t), &_dataSize)',
                                          'finalize_txt': 'vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pDataSize))'},
                            'pData': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pData), _dataSize, pData)',
                                      'finalize_txt': 'default'},
-                           'pName': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pName), ((pName != NULL) ? strlen(pName) + 1 : 0), pName)',
+                           'pName': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pName), ((pName != NULL) ? ROUNDUP_TO_4(strlen(pName) + 1) : 0), pName)',
                                      'finalize_txt': 'default'},
-                           'pMarker': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pMarker), ((pMarker != NULL) ? strlen(pMarker) + 1 : 0), pMarker)',
+                           'pMarker': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pMarker), ((pMarker != NULL) ? ROUNDUP_TO_4(strlen(pMarker) + 1) : 0), pMarker)',
                                        'finalize_txt': 'default'},
-                           'pExtName': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pExtName), ((pExtName != NULL) ? strlen(pExtName) + 1 : 0), pExtName)',
+                           'pExtName': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pExtName), ((pExtName != NULL) ? ROUNDUP_TO_4(strlen(pExtName) + 1) : 0), pExtName)',
                                         'finalize_txt': 'default'},
                            'pDescriptorSets': {'add_txt': 'vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pDescriptorSets), customSize, pDescriptorSets)',
                                                'finalize_txt': 'default'},
@@ -390,7 +394,7 @@ class Subcommand(object):
                 elif 'void' in p.ty:
                     ps.append('sizeof(%s)' % p.name)
                 elif 'char' in p.ty:
-                    ps.append('((%s != NULL) ? strlen(%s) + 1 : 0)' % (p.name, p.name))
+                    ps.append('((%s != NULL) ? ROUNDUP_TO_4(strlen(%s) + 1) : 0)' % (p.name, p.name))
                 elif 'pDataSize' in p.name:
                     ps.append('((pDataSize != NULL) ? sizeof(size_t) : 0)')
                 elif 'IMAGE_SUBRESOURCE' in p.ty and 'pSubresource' == p.name:
@@ -676,6 +680,7 @@ class Subcommand(object):
                                          'FreeMemory',
                                          'FreeDescriptorSets',
                                          'QueueSubmit',
+                                         'QueueBindSparse',
                                          'FlushMappedMemoryRanges',
                                          'InvalidateMappedMemoryRanges',
                                          'GetDeviceProcAddr',
@@ -948,8 +953,8 @@ class Subcommand(object):
         pid_enum.append('static void add_VkApplicationInfo_to_packet(vktrace_trace_packet_header*  pHeader, VkApplicationInfo** ppStruct, const VkApplicationInfo *pInStruct)')
         pid_enum.append('{')
         pid_enum.append('    vktrace_add_buffer_to_trace_packet(pHeader, (void**)ppStruct, sizeof(VkApplicationInfo), pInStruct);')
-        pid_enum.append('    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&((*ppStruct)->pApplicationName), (pInStruct->pApplicationName != NULL) ? strlen(pInStruct->pApplicationName) + 1 : 0, pInStruct->pApplicationName);')
-        pid_enum.append('    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&((*ppStruct)->pEngineName), (pInStruct->pEngineName != NULL) ? strlen(pInStruct->pEngineName) + 1 : 0, pInStruct->pEngineName);')
+        pid_enum.append('    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&((*ppStruct)->pApplicationName), (pInStruct->pApplicationName != NULL) ? ROUNDUP_TO_4(strlen(pInStruct->pApplicationName) + 1) : 0, pInStruct->pApplicationName);')
+        pid_enum.append('    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&((*ppStruct)->pEngineName), (pInStruct->pEngineName != NULL) ? ROUNDUP_TO_4(strlen(pInStruct->pEngineName) + 1) : 0, pInStruct->pEngineName);')
         pid_enum.append('    vktrace_finalize_buffer_address(pHeader, (void**)&((*ppStruct)->pApplicationName));')
         pid_enum.append('    vktrace_finalize_buffer_address(pHeader, (void**)&((*ppStruct)->pEngineName));')
         pid_enum.append('    vktrace_finalize_buffer_address(pHeader, (void**)&*ppStruct);')
@@ -965,7 +970,7 @@ class Subcommand(object):
         pid_enum.append('    if (pInStruct->enabledLayerCount > 0) ')
         pid_enum.append('    {')
         pid_enum.append('        for (i = 0; i < pInStruct->enabledLayerCount; i++) {')
-        pid_enum.append('            siz = (uint32_t) (1 + strlen(pInStruct->ppEnabledLayerNames[i]));')
+        pid_enum.append('            siz = (uint32_t) ROUNDUP_TO_4(1 + strlen(pInStruct->ppEnabledLayerNames[i]));')
         pid_enum.append('            vktrace_add_buffer_to_trace_packet(pHeader, (void**)(&(*ppStruct)->ppEnabledLayerNames[i]), siz, pInStruct->ppEnabledLayerNames[i]);')
         pid_enum.append('            vktrace_finalize_buffer_address(pHeader, (void **)&(*ppStruct)->ppEnabledLayerNames[i]);')
         pid_enum.append('        }')
@@ -975,7 +980,7 @@ class Subcommand(object):
         pid_enum.append('    if (pInStruct->enabledExtensionCount > 0) ')
         pid_enum.append('    {')
         pid_enum.append('        for (i = 0; i < pInStruct->enabledExtensionCount; i++) {')
-        pid_enum.append('            siz = (uint32_t) (1 + strlen(pInStruct->ppEnabledExtensionNames[i]));')
+        pid_enum.append('            siz = (uint32_t) ROUNDUP_TO_4(1 + strlen(pInStruct->ppEnabledExtensionNames[i]));')
         pid_enum.append('            vktrace_add_buffer_to_trace_packet(pHeader, (void**)(&(*ppStruct)->ppEnabledExtensionNames[i]), siz, pInStruct->ppEnabledExtensionNames[i]);')
         pid_enum.append('            vktrace_finalize_buffer_address(pHeader, (void **)&(*ppStruct)->ppEnabledExtensionNames[i]);')
         pid_enum.append('        }')
@@ -1001,7 +1006,7 @@ class Subcommand(object):
         pid_enum.append('    if (pInStruct->enabledLayerCount > 0) ')
         pid_enum.append('    {')
         pid_enum.append('        for (i = 0; i < pInStruct->enabledLayerCount; i++) {')
-        pid_enum.append('            siz = (uint32_t) (1 + strlen(pInStruct->ppEnabledLayerNames[i]));')
+        pid_enum.append('            siz = (uint32_t) ROUNDUP_TO_4(1 + strlen(pInStruct->ppEnabledLayerNames[i]));')
         pid_enum.append('            vktrace_add_buffer_to_trace_packet(pHeader, (void**)(&(*ppStruct)->ppEnabledLayerNames[i]), siz, pInStruct->ppEnabledLayerNames[i]);')
         pid_enum.append('            vktrace_finalize_buffer_address(pHeader, (void **)&(*ppStruct)->ppEnabledLayerNames[i]);')
         pid_enum.append('        }')
@@ -1011,7 +1016,7 @@ class Subcommand(object):
         pid_enum.append('    if (pInStruct->enabledExtensionCount > 0) ')
         pid_enum.append('    {')
         pid_enum.append('        for (i = 0; i < pInStruct->enabledExtensionCount; i++) {')
-        pid_enum.append('            siz = (uint32_t) (1 + strlen(pInStruct->ppEnabledExtensionNames[i]));')
+        pid_enum.append('            siz = (uint32_t) ROUNDUP_TO_4(1 + strlen(pInStruct->ppEnabledExtensionNames[i]));')
         pid_enum.append('            vktrace_add_buffer_to_trace_packet(pHeader, (void**)(&(*ppStruct)->ppEnabledExtensionNames[i]), siz, pInStruct->ppEnabledExtensionNames[i]);')
         pid_enum.append('            vktrace_finalize_buffer_address(pHeader, (void **)&(*ppStruct)->ppEnabledExtensionNames[i]);')
         pid_enum.append('        }')
@@ -1307,6 +1312,8 @@ class Subcommand(object):
                              'CreateShaderModule' : {'param': 'pCreateInfo', 'txt': ['void** ppCode = (void**)&(pPacket->pCreateInfo->pCode);\n',
                                                                                      '*ppCode = (void*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pPacket->pCreateInfo->pCode);']},
                              'CreateImage' : {'param': 'pCreateInfo', 'txt': ['uint32_t** ppQueueFamilyIndices = (uint32_t**)&(pPacket->pCreateInfo->pQueueFamilyIndices);\n',
+                                                                              '*ppQueueFamilyIndices = (uint32_t*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pPacket->pCreateInfo->pQueueFamilyIndices);']},
+                             'CreateBuffer' : {'param': 'pCreateInfo', 'txt': ['uint32_t** ppQueueFamilyIndices = (uint32_t**)&(pPacket->pCreateInfo->pQueueFamilyIndices);\n',
                                                                               '*ppQueueFamilyIndices = (uint32_t*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pPacket->pCreateInfo->pQueueFamilyIndices);']},
                              'FlushMappedMemoryRanges' : {'param': 'ppData', 'txt': ['uint32_t i = 0;\n',
                                                                                      'for (i = 0; i < pPacket->memoryRangeCount; i++)\n',
@@ -1834,38 +1841,6 @@ class Subcommand(object):
                 return 'remapped%s' % (paramName)
         return 'pPacket->%s' % (paramName)
 
-    def _gen_replay_create_image(self):
-        ci_body = []
-        ci_body.append('            imageObj local_imageObj;')
-        ci_body.append('            VkDevice remappedDevice = m_objMapper.remap_devices(pPacket->device);')
-        ci_body.append('            if (remappedDevice == VK_NULL_HANDLE)')
-        ci_body.append('            {')
-        ci_body.append('                vktrace_LogError("Error detected in vkCreateImage() due to invalid remapped VkDevice.");')
-        ci_body.append('                return vktrace_replay::VKTRACE_REPLAY_ERROR;')
-        ci_body.append('            }')
-        ci_body.append('            replayResult = m_vkFuncs.real_vkCreateImage(remappedDevice, pPacket->pCreateInfo, NULL, &local_imageObj.replayImage);')
-        ci_body.append('            if (replayResult == VK_SUCCESS)')
-        ci_body.append('            {')
-        ci_body.append('                m_objMapper.add_to_images_map(*(pPacket->pImage), local_imageObj);')
-        ci_body.append('            }')
-        return "\n".join(ci_body)
-
-    def _gen_replay_create_buffer(self):
-        cb_body = []
-        cb_body.append('            bufferObj local_bufferObj;')
-        cb_body.append('            VkDevice remappedDevice = m_objMapper.remap_devices(pPacket->device);')
-        cb_body.append('            if (remappedDevice == VK_NULL_HANDLE)')
-        cb_body.append('            {')
-        cb_body.append('                vktrace_LogError("Error detected in vkCreateBuffer() due to invalid remapped VkDevice.");')
-        cb_body.append('                return vktrace_replay::VKTRACE_REPLAY_ERROR;')
-        cb_body.append('            }')
-        cb_body.append('            replayResult = m_vkFuncs.real_vkCreateBuffer(remappedDevice, pPacket->pCreateInfo, NULL, &local_bufferObj.replayBuffer);')
-        cb_body.append('            if (replayResult == VK_SUCCESS)')
-        cb_body.append('            {')
-        cb_body.append('                m_objMapper.add_to_buffers_map(*(pPacket->pBuffer), local_bufferObj);')
-        cb_body.append('            }')
-        return "\n".join(cb_body)
-
     def _gen_replay_create_instance(self):
         cb_body = []
         cb_body.append('            replayResult = manually_replay_vkCreateInstance(pPacket);')
@@ -1935,6 +1910,9 @@ class Subcommand(object):
                                  'BeginCommandBuffer',
                                  'CreateDescriptorSetLayout',
                                  'CreateDevice',
+                                 'CreateBuffer',
+                                 'CreateImage',
+                                 'CreateCommandPool',
                                  'CreateFramebuffer',
                                  'GetPipelineCacheData',
                                  'CreateGraphicsPipelines',
@@ -1959,6 +1937,7 @@ class Subcommand(object):
                                  #'GetObjectInfo',
                                  #'GetPhysicalDeviceExtensionInfo',
                                  'GetPhysicalDeviceMemoryProperties',
+                                 'GetPhysicalDeviceQueueFamilyProperties',
                                  'GetPhysicalDeviceSurfaceSupportKHR',
                                  'GetPhysicalDeviceSurfaceCapabilitiesKHR',
                                  'GetPhysicalDeviceSurfaceFormatsKHR',
@@ -1975,6 +1954,7 @@ class Subcommand(object):
                                  #'GetPhysicalDeviceInfo',
                                  'MapMemory',
                                  'QueueSubmit',
+                                 'QueueBindSparse',
                                  #'StorePipeline',
                                  'UnmapMemory',
                                  'UpdateDescriptorSets',
@@ -1993,9 +1973,7 @@ class Subcommand(object):
                 sys.exit("Entry '%s' in manually_replay_funcs list is not in the vulkan function prototypes" % func)
 
         # map protos to custom functions if body is fully custom
-        custom_body_dict = {'CreateImage': self._gen_replay_create_image,
-                            'CreateBuffer': self._gen_replay_create_buffer,
-                            'CreateInstance': self._gen_replay_create_instance,
+        custom_body_dict = {'CreateInstance': self._gen_replay_create_instance,
                             'GetPhysicalDeviceXcbPresentationSupportKHR': self._gen_replay_GetPhysicalDeviceXcbPresentationSupportKHR,
                             'GetPhysicalDeviceXlibPresentationSupportKHR': self._gen_replay_GetPhysicalDeviceXlibPresentationSupportKHR,
                             'GetPhysicalDeviceWin32PresentationSupportKHR': self._gen_replay_GetPhysicalDeviceWin32PresentationSupportKHR }
