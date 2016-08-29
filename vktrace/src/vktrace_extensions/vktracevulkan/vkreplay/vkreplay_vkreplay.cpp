@@ -2293,50 +2293,78 @@ bool vkReplay::getMemoryTypeIdx(VkDevice traceDevice,
 {
     VkPhysicalDevice tracePhysicalDevice;
     VkPhysicalDevice replayPhysicalDevice;
+    bool foundMatch = false;
+    uint32_t i,j;
 
     if (tracePhysicalDevices.find(traceDevice) == tracePhysicalDevices.end() ||
         replayPhysicalDevices.find(replayDevice) == replayPhysicalDevices.end())
     {
-        vktrace_LogWarning("Cannot determine memory type during vkAllocateMemory - vkGetPhysicalDeviceMemoryProperties should be called before vkAllocateMemory.");
+        vktrace_LogError("Cannot determine memory type during vkAllocateMemory - vkGetPhysicalDeviceMemoryProperties should be called before vkAllocateMemory.");
         return false;
     }
 
     tracePhysicalDevice = tracePhysicalDevices[traceDevice];
     replayPhysicalDevice = replayPhysicalDevices[replayDevice];
 
-    for (uint32_t i = 0; i < min(traceMemoryProperties[tracePhysicalDevice].memoryTypeCount, replayMemoryProperties[replayPhysicalDevice].memoryTypeCount); i++)
+    for (i = 0; i < min(traceMemoryProperties[tracePhysicalDevice].memoryTypeCount, replayMemoryProperties[replayPhysicalDevice].memoryTypeCount); i++)
     {
         if (traceMemoryProperties[tracePhysicalDevice].memoryTypes[traceIdx].propertyFlags == replayMemoryProperties[replayPhysicalDevice].memoryTypes[i].propertyFlags)
         {
             *pReplayIdx = i;
-            return true;
+            foundMatch = true;
+            break;
         }
     }
 
-    // Didn't find an exact match, search for a superset
-    for (uint32_t i = 0; i < min(traceMemoryProperties[tracePhysicalDevice].memoryTypeCount, replayMemoryProperties[replayPhysicalDevice].memoryTypeCount); i++)
+    if (!foundMatch)
     {
-        if (traceMemoryProperties[tracePhysicalDevice].memoryTypes[traceIdx].propertyFlags ==
-            (traceMemoryProperties[tracePhysicalDevice].memoryTypes[traceIdx].propertyFlags & replayMemoryProperties[replayPhysicalDevice].memoryTypes[i].propertyFlags))
+        // Didn't find an exact match, search for a superset
+        for (i = 0; i < min(traceMemoryProperties[tracePhysicalDevice].memoryTypeCount, replayMemoryProperties[replayPhysicalDevice].memoryTypeCount); i++)
         {
-            *pReplayIdx = i;
-            return true;
+            if (traceMemoryProperties[tracePhysicalDevice].memoryTypes[traceIdx].propertyFlags ==
+                (traceMemoryProperties[tracePhysicalDevice].memoryTypes[traceIdx].propertyFlags & replayMemoryProperties[replayPhysicalDevice].memoryTypes[i].propertyFlags))
+            {
+                *pReplayIdx = i;
+                foundMatch = true;
+                break;
+            }
         }
     }
 
-    // Didn't find a superset, search for mem type with both HOST_VISIBLE and HOST_COHERENT set
-    for (uint32_t i = 0; i < min(traceMemoryProperties[tracePhysicalDevice].memoryTypeCount, replayMemoryProperties[replayPhysicalDevice].memoryTypeCount); i++)
+    if (!foundMatch)
     {
-        if ((VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) & replayMemoryProperties[replayPhysicalDevice].memoryTypes[i].propertyFlags)
+        // Didn't find a superset, search for mem type with both HOST_VISIBLE and HOST_COHERENT set
+        for (i = 0; i < min(traceMemoryProperties[tracePhysicalDevice].memoryTypeCount, replayMemoryProperties[replayPhysicalDevice].memoryTypeCount); i++)
         {
-            *pReplayIdx = i;
-            return true;
+            if ((VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) & replayMemoryProperties[replayPhysicalDevice].memoryTypes[i].propertyFlags)
+            {
+                *pReplayIdx = i;
+                foundMatch = true;
+                break;
+            }
         }
     }
+
+    if (foundMatch)
+    {
+        // Check to see if there are other replayMemoryProperties identical to the one that matched.
+        // If there are, print a warning and use the index from the trace file.
+        for (j = i+1; j < replayMemoryProperties[replayPhysicalDevice].memoryTypeCount; j++)
+        {
+            if (replayMemoryProperties[replayPhysicalDevice].memoryTypes[i].propertyFlags == replayMemoryProperties[replayPhysicalDevice].memoryTypes[j].propertyFlags)
+            {
+                vktrace_LogWarning("memoryTypes propertyFlags identical in two or more entries, using idx %d from trace", traceIdx);
+                *pReplayIdx = traceIdx;
+                return true;
+            }
+         }
+        return true;
+     }
 
     // Didn't find a match
     return false;
 }
+
 
 VkResult vkReplay::manually_replay_vkAllocateMemory(packet_vkAllocateMemory* pPacket)
 {
@@ -2614,15 +2642,16 @@ void vkReplay::manually_replay_vkGetPhysicalDeviceQueueFamilyProperties(packet_v
         return;
     }
 
-    // If we previously allocated queueFamilyProperities for the trace physical device, or the
+    // If we previously allocated queueFamilyProperities for the trace physical device and the
     // size of this query is larger than what we saved last time, then free the last properties
     // array (if we have one), and allocate a new array.
     if (traceQueueFamilyProperties.find(pPacket->physicalDevice) == traceQueueFamilyProperties.end() ||
-        *pPacket->pQueueFamilyPropertyCount >= traceQueueFamilyProperties[pPacket->physicalDevice].count)
+        *pPacket->pQueueFamilyPropertyCount > traceQueueFamilyProperties[pPacket->physicalDevice].count)
     {
         if (traceQueueFamilyProperties.find(pPacket->physicalDevice) != traceQueueFamilyProperties.end())
         {
             free(traceQueueFamilyProperties[pPacket->physicalDevice].queueFamilyProperties);
+            traceQueueFamilyProperties.erase(pPacket->physicalDevice);
         }
         if (pPacket->pQueueFamilyProperties)
         {
@@ -2637,15 +2666,16 @@ void vkReplay::manually_replay_vkGetPhysicalDeviceQueueFamilyProperties(packet_v
 
     m_vkFuncs.real_vkGetPhysicalDeviceQueueFamilyProperties(remappedphysicalDevice, pPacket->pQueueFamilyPropertyCount, pPacket->pQueueFamilyProperties);
 
-    // If we previously allocated queueFamilyProperities for the replay physical device, or the
+    // If we previously allocated queueFamilyProperities for the replay physical device and the
     // size of this query is larger than what we saved last time, then free the last properties
     // array (if we have one), and allocate a new array.
     if (replayQueueFamilyProperties.find(remappedphysicalDevice) == replayQueueFamilyProperties.end() ||
-        *pPacket->pQueueFamilyPropertyCount >= replayQueueFamilyProperties[remappedphysicalDevice].count)
+        *pPacket->pQueueFamilyPropertyCount > replayQueueFamilyProperties[remappedphysicalDevice].count)
     {
         if (replayQueueFamilyProperties.find(remappedphysicalDevice) != replayQueueFamilyProperties.end())
         {
             free(replayQueueFamilyProperties[remappedphysicalDevice].queueFamilyProperties);
+            replayQueueFamilyProperties.erase(remappedphysicalDevice);
         }
         if (pPacket->pQueueFamilyProperties)
         {
@@ -3012,7 +3042,7 @@ VkResult vkReplay::manually_replay_vkCreateXlibSurfaceKHR(packet_vkCreateXlibSur
         return VK_ERROR_VALIDATION_FAILED_EXT;
     }
 
-#if defined PLATFORM_LINUX
+#if defined PLATFORM_LINUX && defined VK_USE_PLATFORM_XLIB_KHR
     VkIcdSurfaceXlib *pSurf = (VkIcdSurfaceXlib *) m_display->get_surface();
     VkXlibSurfaceCreateInfoKHR createInfo;
     createInfo.sType = pPacket->pCreateInfo->sType;
@@ -3021,6 +3051,17 @@ VkResult vkReplay::manually_replay_vkCreateXlibSurfaceKHR(packet_vkCreateXlibSur
     createInfo.dpy = pSurf->dpy;
     createInfo.window = pSurf->window;
     replayResult = m_vkFuncs.real_vkCreateXlibSurfaceKHR(remappedinstance, &createInfo, pPacket->pAllocator, &local_pSurface);
+#elif defined PLATFORM_LINUX && defined VK_USE_PLATFORM_XCB_KHR
+    VkIcdSurfaceXcb *pSurf = (VkIcdSurfaceXcb *) m_display->get_surface();
+    VkXcbSurfaceCreateInfoKHR createInfo;
+    createInfo.sType = pPacket->pCreateInfo->sType;
+    createInfo.pNext = pPacket->pCreateInfo->pNext;
+    createInfo.flags = pPacket->pCreateInfo->flags;
+    createInfo.connection = pSurf->connection;
+    createInfo.window = pSurf->window;
+    replayResult = m_vkFuncs.real_vkCreateXcbSurfaceKHR(remappedinstance, &createInfo, pPacket->pAllocator, &local_pSurface);
+#elif defined PLATFORM_LINUX
+#error manually_replay_vkCreateXlibSurfaceKHR on PLATFORM_LINUX requires one of VK_USE_PLATFORM_XLIB_KHR or VK_USE_PLATFORM_XCB_KHR
 #elif defined WIN32
     VkIcdSurfaceWin32 *pSurf = (VkIcdSurfaceWin32 *) m_display->get_surface();
     VkWin32SurfaceCreateInfoKHR createInfo;
@@ -3201,10 +3242,16 @@ VkBool32 vkReplay::manually_replay_vkGetPhysicalDeviceXlibPresentationSupportKHR
         return VK_FALSE;
     }
 
-#if defined PLATFORM_LINUX
+#if defined PLATFORM_LINUX && defined VK_USE_PLATFORM_XLIB_KHR
     VkIcdSurfaceXlib *pSurf = (VkIcdSurfaceXlib *) m_display->get_surface();
     m_display->get_window_handle();
     return (m_vkFuncs.real_vkGetPhysicalDeviceXlibPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex, pSurf->dpy, m_display->get_screen_handle()->root_visual));
+#elif defined PLATFORM_LINUX && defined VK_USE_PLATFORM_XCB_KHR
+    VkIcdSurfaceXcb *pSurf = (VkIcdSurfaceXcb *) m_display->get_surface();
+    m_display->get_window_handle();
+    return (m_vkFuncs.real_vkGetPhysicalDeviceXcbPresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex, pSurf->connection, m_display->get_screen_handle()->root_visual));
+#elif defined PLATFORM_LINUX
+#error manually_replay_vkGetPhysicalDeviceXlibPresentationSupportKHR on PLATFORM_LINUX requires one of VK_USE_PLATFORM_XLIB_KHR or VK_USE_PLATFORM_XCB_KHR
 #elif defined WIN32
     return (m_vkFuncs.real_vkGetPhysicalDeviceWin32PresentationSupportKHR(remappedphysicalDevice, pPacket->queueFamilyIndex));
 #else
