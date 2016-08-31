@@ -215,7 +215,8 @@ class Subcommand(object):
         init_tracer.append('    vktrace_tracelog_set_tracer_id(VKTRACE_TID_VULKAN);')
         init_tracer.append('    vktrace_create_critical_section(&g_memInfoLock);')
         init_tracer.append('    if (gMessageStream != NULL)')
-        init_tracer.append('        send_vk_api_version_packet();\n}\n')
+        init_tracer.append('        send_vk_api_version_packet();\n')
+        init_tracer.append('    return true;\n}\n')
         return "\n".join(init_tracer)
 
     # Take a list of params and return a list of dicts w/ ptr param details
