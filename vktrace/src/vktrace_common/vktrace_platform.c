@@ -354,7 +354,7 @@ void vktrace_platform_delete_thread(vktrace_thread* pThread)
 #endif
 }
 
-void vktrace_platform_thread_once(void *ctl, void (* func) (PINIT_ONCE, PVOID, PVOID *))
+void vktrace_platform_thread_once(void *ctl, void (_CALLBACK_ * func) (_Inout_ PINIT_ONCE))
 {
     assert(func != NULL);
     assert(ctl != NULL);
