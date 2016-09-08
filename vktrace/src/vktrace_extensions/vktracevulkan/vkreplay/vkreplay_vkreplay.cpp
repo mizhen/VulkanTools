@@ -203,6 +203,9 @@ VkResult vkReplay::manually_replay_vkCreateInstance(packet_vkCreateInstance* pPa
 #if !defined(ANDROID)
         extension_names.push_back(VK_KHR_XCB_SURFACE_EXTENSION_NAME);
         outlist.push_back("VK_KHR_win32_surface");
+#else
+	extension_names.push_back(VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
+        outlist.push_back("VK_KHR_win32_surface");
 #endif //ANDROID
 #else
         extension_names.push_back(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);

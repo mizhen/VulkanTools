@@ -205,7 +205,8 @@ int vkreplay_main(int argc, char **argv, ANativeWindow* window)
 
     // Default verbosity level
     vktrace_LogSetCallback(loggingCallback);
-    vktrace_LogSetLevel(VKTRACE_LOG_ERROR);
+    //vktrace_LogSetLevel(VKTRACE_LOG_ERROR);
+    vktrace_LogSetLevel(VKTRACE_LOG_DEBUG);
 
     // apply settings from cmd-line args
     if (vktrace_SettingGroup_init_from_cmdline(&g_replaySettingGroup, argc, argv, &replaySettings.pTraceFilePath) != 0)
