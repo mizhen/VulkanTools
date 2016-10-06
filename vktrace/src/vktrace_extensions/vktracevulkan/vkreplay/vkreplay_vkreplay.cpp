@@ -34,6 +34,7 @@
 #include "vk_enum_string_helper.h"
 
 using namespace std;
+#include "vktrace_pageguard_memorycopy.h"
 
 vkreplayer_settings *g_pReplaySettings;
 
@@ -249,12 +250,12 @@ bool vkReplay::getQueueFamilyIdx(VkPhysicalDevice tracePhysicalDevice,
     if (traceQueueFamilyProperties.find(tracePhysicalDevice) == traceQueueFamilyProperties.end() ||
         replayQueueFamilyProperties.find(replayPhysicalDevice) == replayQueueFamilyProperties.end())
     {
-        return false;
+        goto fail;
     }
 
     if (min(traceQueueFamilyProperties[tracePhysicalDevice].count, replayQueueFamilyProperties[replayPhysicalDevice].count) == 0)
     {
-        return false;
+        goto fail;
     }
 
     for (uint32_t i = 0; i < min(traceQueueFamilyProperties[tracePhysicalDevice].count, replayQueueFamilyProperties[replayPhysicalDevice].count); i++)
@@ -277,6 +278,8 @@ bool vkReplay::getQueueFamilyIdx(VkPhysicalDevice tracePhysicalDevice,
         }
     }
 
+fail:
+    vktrace_LogError("Cannot determine queue family index - has vkGetPhysicalDeviceQueueFamilyProperties been called?");
     // Didn't find a match
     return false;
 }
@@ -872,7 +875,7 @@ VkResult vkReplay::manually_replay_vkQueueBindSparse(packet_vkQueueBindSparse* p
     VkSparseMemoryBind *pRemappedBufferMemories = NULL;
     VkSparseMemoryBind *pRemappedImageOpaqueMemories = NULL;
     VkSemaphore *pRemappedWaitSems = NULL;
-    VkSemaphore	*pRemappedSignalSems = NULL;
+    VkSemaphore *pRemappedSignalSems = NULL;
     VkSparseImageMemoryBindInfo* sIMBinf = NULL;
     VkSparseBufferMemoryBindInfo* sBMBinf = NULL;
     VkSparseImageOpaqueMemoryBindInfo* sIMOBinf = NULL;
@@ -986,7 +989,7 @@ VkResult vkReplay::manually_replay_vkQueueBindSparse(packet_vkQueueBindSparse* p
         if (remappedBindSparseInfos[bindInfo_idx].pWaitSemaphores != NULL) {
             pRemappedWaitSems = VKTRACE_NEW_ARRAY(VkSemaphore, remappedBindSparseInfos[bindInfo_idx].waitSemaphoreCount);
             remappedBindSparseInfos[bindInfo_idx].pWaitSemaphores = pRemappedWaitSems;
-	        for (uint32_t i = 0; i < remappedBindSparseInfos[bindInfo_idx].waitSemaphoreCount; i++) {
+            for (uint32_t i = 0; i < remappedBindSparseInfos[bindInfo_idx].waitSemaphoreCount; i++) {
                 (*(pRemappedWaitSems + i)) = m_objMapper.remap_semaphores((*(remappedBindSparseInfos[bindInfo_idx].pWaitSemaphores + i)));
                 if (*(pRemappedWaitSems + i) == VK_NULL_HANDLE) {
                     vktrace_LogError("Skipping vkQueueSubmit() due to invalid remapped wait VkSemaphore.");
@@ -1652,7 +1655,7 @@ VkResult vkReplay::manually_replay_vkCreateComputePipelines(packet_vkCreateCompu
     memcpy((void*)pLocalCIs, (void*)(pPacket->pCreateInfos), sizeof(VkComputePipelineCreateInfo)*pPacket->createInfoCount);
 
     // Fix up stage sub-elements
-    for (i=0; i<pPacket->createInfoCount; i++)
+    for (i = 0; i<pPacket->createInfoCount; i++)
     {
         pLocalCIs[i].stage.module = m_objMapper.remap_shadermodules(pLocalCIs[i].stage.module);
 
@@ -1687,7 +1690,7 @@ VkResult vkReplay::manually_replay_vkCreateComputePipelines(packet_vkCreateCompu
         }
     }
 
-    for (i=0; i<pPacket->createInfoCount; i++)
+    for (i = 0; i<pPacket->createInfoCount; i++)
         if (pLocalCIs[i].stage.pSpecializationInfo)
             VKTRACE_DELETE((void *)pLocalCIs[i].stage.pSpecializationInfo);
     VKTRACE_DELETE(pLocalCIs);
@@ -2285,7 +2288,6 @@ VkResult vkReplay::manually_replay_vkWaitForFences(packet_vkWaitForFences* pPack
     return replayResult;
 }
 
-
 bool vkReplay::getMemoryTypeIdx(VkDevice traceDevice,
                                 VkDevice replayDevice,
                                 uint32_t traceIdx,
@@ -2299,12 +2301,16 @@ bool vkReplay::getMemoryTypeIdx(VkDevice traceDevice,
     if (tracePhysicalDevices.find(traceDevice) == tracePhysicalDevices.end() ||
         replayPhysicalDevices.find(replayDevice) == replayPhysicalDevices.end())
     {
-        vktrace_LogError("Cannot determine memory type during vkAllocateMemory - vkGetPhysicalDeviceMemoryProperties should be called before vkAllocateMemory.");
-        return false;
+        goto fail;
     }
 
     tracePhysicalDevice = tracePhysicalDevices[traceDevice];
     replayPhysicalDevice = replayPhysicalDevices[replayDevice];
+
+    if (min(traceMemoryProperties[tracePhysicalDevice].memoryTypeCount, replayMemoryProperties[replayPhysicalDevice].memoryTypeCount) == 0)
+    {
+        goto fail;
+    }
 
     for (i = 0; i < min(traceMemoryProperties[tracePhysicalDevice].memoryTypeCount, replayMemoryProperties[replayPhysicalDevice].memoryTypeCount); i++)
     {
@@ -2361,7 +2367,9 @@ bool vkReplay::getMemoryTypeIdx(VkDevice traceDevice,
         return true;
      }
 
+fail:
     // Didn't find a match
+    vktrace_LogError("Cannot determine memory type during vkAllocateMemory - vkGetPhysicalDeviceMemoryProperties should be called before vkAllocateMemory.");
     return false;
 }
 
@@ -2485,6 +2493,19 @@ void vkReplay::manually_replay_vkUnmapMemory(packet_vkUnmapMemory* pPacket)
     }
 }
 
+BOOL isvkFlushMappedMemoryRangesSpecial(PBYTE pOPTPackageData)
+{
+    BOOL bRet = FALSE;
+    PageGuardChangedBlockInfo *pChangedInfoArray = (PageGuardChangedBlockInfo *)pOPTPackageData;
+    if (((uint64_t)pChangedInfoArray[0].reserve0) & PAGEGUARD_SPECIAL_FORMAT_PACKET_FOR_VKFLUSHMAPPEDMEMORYRANGES) // TODO need think about 32bit
+    {
+        bRet = TRUE;
+    }
+    return bRet;
+}
+
+//after OPT speed up, the format of this packet will be different with before, the packet now only include changed block(page).
+//
 VkResult vkReplay::manually_replay_vkFlushMappedMemoryRanges(packet_vkFlushMappedMemoryRanges* pPacket)
 {
     VkResult replayResult = VK_ERROR_VALIDATION_FAILED_EXT;
@@ -2516,7 +2537,14 @@ VkResult vkReplay::manually_replay_vkFlushMappedMemoryRanges(packet_vkFlushMappe
         {
             if (pPacket->pMemoryRanges[i].size != 0)
             {
+#ifdef USE_PAGEGUARD_SPEEDUP
+                if(vktrace_check_min_version(VKTRACE_TRACE_FILE_VERSION_5))
+                    pLocalMems[i].pGpuMem->copyMappingDataPageGuard(pPacket->ppData[i]);
+                else
+                    pLocalMems[i].pGpuMem->copyMappingData(pPacket->ppData[i], false, (size_t)pPacket->pMemoryRanges[i].size, (size_t)pPacket->pMemoryRanges[i].offset);
+#else
                 pLocalMems[i].pGpuMem->copyMappingData(pPacket->ppData[i], false, (size_t)pPacket->pMemoryRanges[i].size, (size_t)pPacket->pMemoryRanges[i].offset);
+#endif
             }
         }
         else
@@ -2527,11 +2555,24 @@ VkResult vkReplay::manually_replay_vkFlushMappedMemoryRanges(packet_vkFlushMappe
                 vktrace_LogError("vkFlushMappedMemoryRanges() malloc failed.");
             }
             pLocalMems[i].pGpuMem->setMemoryDataAddr(pBuf);
+#ifdef USE_PAGEGUARD_SPEEDUP
+            if(vktrace_check_min_version(VKTRACE_TRACE_FILE_VERSION_5))
+                pLocalMems[i].pGpuMem->copyMappingDataPageGuard(pPacket->ppData[i]);
+            else
+                pLocalMems[i].pGpuMem->copyMappingData(pPacket->ppData[i], false, (size_t)pPacket->pMemoryRanges[i].size, (size_t)pPacket->pMemoryRanges[i].offset);
+#else
             pLocalMems[i].pGpuMem->copyMappingData(pPacket->ppData[i], false, (size_t)pPacket->pMemoryRanges[i].size, (size_t)pPacket->pMemoryRanges[i].offset);
+#endif
         }
     }
 
-    replayResult = m_vkFuncs.real_vkFlushMappedMemoryRanges(remappedDevice, pPacket->memoryRangeCount, localRanges);
+#ifdef USE_PAGEGUARD_SPEEDUP
+    replayResult = pPacket->result;//if this is a OPT refresh-all packet, we need avoid to call real api and return original return to avoid error message;
+    if (!vktrace_check_min_version(VKTRACE_TRACE_FILE_VERSION_5) || !isvkFlushMappedMemoryRangesSpecial((PBYTE)pPacket->ppData[0]))
+#endif
+    {
+        replayResult = m_vkFuncs.real_vkFlushMappedMemoryRanges(remappedDevice, pPacket->memoryRangeCount, localRanges);
+    }
 
     VKTRACE_DELETE(localRanges);
     VKTRACE_DELETE(pLocalMems);
@@ -2627,9 +2668,9 @@ void vkReplay::manually_replay_vkGetPhysicalDeviceMemoryProperties(packet_vkGetP
         return;
     }
 
-    traceMemoryProperties[pPacket->physicalDevice] = *pPacket->pMemoryProperties;
+    traceMemoryProperties[pPacket->physicalDevice] = *(pPacket->pMemoryProperties);
     m_vkFuncs.real_vkGetPhysicalDeviceMemoryProperties(remappedphysicalDevice, pPacket->pMemoryProperties);
-    replayMemoryProperties[remappedphysicalDevice] = *pPacket->pMemoryProperties;
+    replayMemoryProperties[remappedphysicalDevice] = *(pPacket->pMemoryProperties);
     return;
 }
 
@@ -2642,9 +2683,9 @@ void vkReplay::manually_replay_vkGetPhysicalDeviceQueueFamilyProperties(packet_v
         return;
     }
 
-    // If we previously allocated queueFamilyProperities for the trace physical device and the
-    // size of this query is larger than what we saved last time, then free the last properties
-    // array (if we have one), and allocate a new array.
+    // If we haven't previously allocated queueFamilyProperties for the trace physical device, allocate it.
+    // If we previously allocated queueFamilyProperities for the trace physical device and the size of this
+    // query is larger than what we saved last time, then free the last properties map and allocate a new map.
     if (traceQueueFamilyProperties.find(pPacket->physicalDevice) == traceQueueFamilyProperties.end() ||
         *pPacket->pQueueFamilyPropertyCount > traceQueueFamilyProperties[pPacket->physicalDevice].count)
     {
@@ -2666,9 +2707,9 @@ void vkReplay::manually_replay_vkGetPhysicalDeviceQueueFamilyProperties(packet_v
 
     m_vkFuncs.real_vkGetPhysicalDeviceQueueFamilyProperties(remappedphysicalDevice, pPacket->pQueueFamilyPropertyCount, pPacket->pQueueFamilyProperties);
 
-    // If we previously allocated queueFamilyProperities for the replay physical device and the
-    // size of this query is larger than what we saved last time, then free the last properties
-    // array (if we have one), and allocate a new array.
+    // If we haven't previously allocated queueFamilyProperties for the replay physical device, allocate it.
+    // If we previously allocated queueFamilyProperities for the replay physical device and the size of this
+    // query is larger than what we saved last time, then free the last properties map and allocate a new map.
     if (replayQueueFamilyProperties.find(remappedphysicalDevice) == replayQueueFamilyProperties.end() ||
         *pPacket->pQueueFamilyPropertyCount > replayQueueFamilyProperties[remappedphysicalDevice].count)
     {

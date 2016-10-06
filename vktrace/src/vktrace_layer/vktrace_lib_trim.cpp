@@ -57,15 +57,6 @@ VkAllocationCallbacks* trim_get_Allocator(const VkAllocationCallbacks* pAllocato
 }
 
 
-// duplicated from vktrace_lib_trace.cpp
-static layer_device_data *mdd(void* object)
-{
-    dispatch_key key = get_dispatch_key(object);
-    std::unordered_map<void *, layer_device_data *>::const_iterator got;
-    got = g_deviceDataMap.find(key);
-    assert(got != g_deviceDataMap.end());
-    return got->second;
-}
 
 //=============================================================================
 // Use this to snapshot the global state tracker at the start of the trim frames.

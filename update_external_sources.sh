@@ -1,5 +1,5 @@
 #!/bin/bash
-# Update source for LunarGLASS
+# Update source for glslang, LunarGLASS, spirv-tools
 
 set -e
 
@@ -29,16 +29,7 @@ function update_glslang () {
    echo "Updating $BASEDIR/glslang"
    cd $BASEDIR/glslang
    git fetch --all
-   git checkout $GLSLANG_REVISION
-   # Revert glslang a5c33d6ffb34ccede5b233bc724c907166b6e479
-   # See https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/issues/681
-   git diff-index --quiet HEAD | true
-   rc=${PIPESTATUS[0]}
-   if (( $rc == 0 ))
-   then
-      echo "applying patch to revert glslang a5c33d"
-      git apply $BUILDDIR/glslang_revert_a5c33d.patch.txt
-   fi
+   git checkout --force $GLSLANG_REVISION
 }
 
 function create_spirv-tools () {
@@ -131,16 +122,14 @@ function build_LunarGLASS () {
    make install
 }
 
-# Verify glslang is built
-if [ ! -d "$BASEDIR/glslang" ]; then
-  echo "glslang missing"
-  if [ ! -d "$BASEDIR/LoaderAndValidationLayers" ]; then
-    echo "LoaderAndValidationLayers  missing"
-    echo "Install LoaderAndValidationLayers in $BASEDIR"
-  fi
-  echo "Run $BASEDIR/LoaderAndValidationLayers/update_external_sources.sh"
-  exit 1
-fi
+function build_spirv-tools () {
+   echo "Building $BASEDIR/spirv-tools"
+   cd $BASEDIR/spirv-tools
+   mkdir -p build
+   cd build
+   cmake -D CMAKE_BUILD_TYPE=Release ..
+   make -j $(nproc)
+}
 
 # If any options are provided, just compile those tools
 # If no options are provided, build everything

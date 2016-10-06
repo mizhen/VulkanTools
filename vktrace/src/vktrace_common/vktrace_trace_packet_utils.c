@@ -2,6 +2,7 @@
  *
  * Copyright 2014-2016 Valve Corporation
  * Copyright (C) 2014-2016 LunarG, Inc.
+ * Copyright (C) 2016 Advanced Micro Devices, Inc.
  * All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +23,8 @@
 #include "vktrace_trace_packet_utils.h"
 #include "vktrace_interconnect.h"
 #include "vktrace_filelike.h"
+#include "vktrace_pageguard_memorycopy.h"
+
 #ifdef WIN32
 #include <rpc.h>
 #pragma comment (lib, "Rpcrt4.lib")
@@ -38,7 +41,7 @@ void vktrace_gen_uuid(uint32_t* pUuid)
 {
     uint32_t buf[] = { 0xABCDEF, 0x12345678, 0xFFFECABC, 0xABCDDEF0 };
     vktrace_platform_rand_s(buf, sizeof(buf)/sizeof(uint32_t));
-    
+
     pUuid[0] = buf[0];
     pUuid[1] = buf[1];
     pUuid[2] = buf[2];
@@ -158,7 +161,7 @@ void* vktrace_trace_packet_get_new_buffer_address(vktrace_trace_packet_header* p
     pHeader->next_buffers_offset += byteCount;
     return pBufferStart;
 }
-#include "optimization_function.h"
+
 void vktrace_add_buffer_to_trace_packet(vktrace_trace_packet_header* pHeader, void** ptr_address, uint64_t size, const void* pBuffer)
 {
 
@@ -179,7 +182,11 @@ void vktrace_add_buffer_to_trace_packet(vktrace_trace_packet_header* pHeader, vo
         assert(((uint64_t)*ptr_address&0x3) == 0);
 
         // copy buffer to the location
+#ifdef WIN32
         opt_memcpy(*ptr_address, pBuffer, (size_t)size);
+#else
+        memcpy(*ptr_address, pBuffer, (size_t)size);
+#endif
     }
 }
 

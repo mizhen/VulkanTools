@@ -53,6 +53,11 @@ using namespace std;
 #include "vk_layer_table.h"
 #include "vk_layer_extension_utils.h"
 
+#ifndef WIN32
+typedef uint64_t UINT_PTR, *PUINT_PTR;
+typedef uint32_t DWORD;
+#endif
+
 // Enabled device extensions
 struct devExts {
     bool wsi_enabled;
