@@ -1,7 +1,7 @@
 # Build Instructions
 This document contains the instructions for building this repository on Linux and Windows.
 
-This repository contains additional layers, tests, and the VkTrace trace/replay tools, supplementing the
+This repository contains additional layers and the VkTrace trace/replay tools, supplementing the
 loader and validation layer core components found at https://github.com/KhronosGroup.
 
 For Linux, this repository also contains a sample Intel Vulkan driver that is being deprecated.
@@ -24,7 +24,7 @@ These additional packages are needed for building the components in this repo.
 # Dependencies from the LoaderAndValidationLayers repo:
 sudo apt-get install git cmake build-essential bison libx11-dev libxcb1-dev
 # Additional dependencies for this repo:
-sudo apt-get install libudev-dev libpciaccess-dev libxcb-dri3-dev libxcb-present-dev libmagickwand-dev libgl1-mesa-dev wget autotools-dev
+sudo apt-get install libudev-dev libpciaccess-dev libxcb-dri3-dev libxcb-present-dev libgl1-mesa-dev wget autotools-dev
 ```
 
 If you are using the sample Intel Vulkan driver in this repo, you will have to ensure that
@@ -50,7 +50,7 @@ cd VulkanTools
 
 ## Linux Build
 
-This build process builds the icd, vktrace and the tests.
+This build process builds the icd, vktrace and the LVL tests.
 
 Example debug build:
 ```
@@ -59,20 +59,6 @@ cmake -H. -Bdbuild -DCMAKE_BUILD_TYPE=Debug
 cd dbuild
 make
 ```
-
-## Linux Test
-
-The test executables can be found in the dbuild/tests directory. The tests use the Google
-gtest infrastructure. Tests available so far:
-- vkbase: Test basic entry points
-- vk_blit_tests: Test VK Blits (copy, clear, and resolve)
-- vk_image_tests: Test VK image related calls needed by render_test
-- vk_render_tests: Render a single triangle with VK. Triangle will be in a .ppm in
-the current directory at the end of the test.
-
-There are also a few shell and Python scripts that run test collections (eg,
-`run_all_tests.sh`).
-
 
 ## Windows System Requirements
 
@@ -85,29 +71,10 @@ Windows 7+ with additional required software packages:
 - Python 3 (from https://www.python.org/downloads).  Notes:
   - Select to install the optional sub-package to add Python to the system PATH environment variable.
   - Need python3.3 or later to get the Windows py.exe launcher that is used to get python3 rather than python2 if both are installed on Windows
-  - Python lxml package must be installed
-  - Download the lxml package from
-        http://www.lfd.uci.edu/~gohlke/pythonlibs/#lxml
-        32-bit latest for Python 3.5 is: lxml-3.5.0-cp35-none-win32.whl
-        64-bit latest for Python 3.5 is: lxml-3.5.0-cp35-none-win_amd64.whl
-  - The package can be installed with pip as follows:
-        pip install lxml-3.5.0-cp35-none-win32.whl
-        If pip is not in your path, you can find it at $PYTHON_HOME\Scripts\pip.exe, where PYTHON_HOME is the folder where you installed Python.
 - Git (from http://git-scm.com/download/win).
   - Note: If you use Cygwin, you can normally use Cygwin's "git.exe".  However, in order to use the "update_external_sources.bat" script, you must have this version.
   - Tell the installer to allow it to be used for "Developer Prompt" as well as "Git Bash".
   - Tell the installer to treat line endings "as is" (i.e. both DOS and Unix-style line endings).
-- Image Magick is used by the tests to compare images (from http://www.imagemagick.org/script/binary-releases.php)
-  - You may use ImageMagick-6 or ImageMagick-7 releases
-  - Install each a 32-bit and a 64-bit version, as the 64-bit installer does not install the 32-bit libraries and tools.
-    - Here are some helpful links (warning they may go out of date with a newer ImageMagick).
-      - 64-bit: http://www.imagemagick.org/download/binaries/ImageMagick-6.9.3-2-Q16-x64-dll.exe
-      - 32-bit: http://www.imagemagick.org/download/binaries/ImageMagick-6.9.3-2-Q16-x86-dll.exe
-  - For each of the installs, be sure to **check** the following boxes:
-      - "Install legacy utilities (e.g. convert)"
-      - "Install development headers and libraries for C and C++"
-  - Make sure to **un-check** the option to add ImageMagick to your PATH
-      - If you fail to do so, CMake will always return the first ImageMagick it encounters
 - glslang is required for tests.
   - You can download and configure it (in a peer directory) here: https://github.com/KhronosGroup/glslang/blob/master/README.md
   - A windows batch file has been included that will pull and build the correct version.  Run it from Developer Command Prompt for VS2013 like so:
@@ -159,4 +126,162 @@ cd build32
 cmake -G "Visual Studio 12" ..
 msbuild ALL_BUILD.vcxproj /p:Platform=x86 /p:Configuration=Release
 ```
+## Android Build
+Install the required tools for Linux and Windows covered above, then add the
+following.
+### Android Studio
+- Install 2.1 or later verion of [Android Studio](http://tools.android.com/download/studio/stable)
+- From the "Welcome to Android Studio" splash screen, add the following components using Configure > SDK Manager:
+  - SDK Tools > Android NDK
 
+#### Add NDK to path
+
+On Linux:
+```
+export PATH=$HOME/Android/sdk/ndk-bundle:$PATH
+```
+On Windows:
+```
+set PATH=%LOCALAPPDATA%\Android\sdk\ndk-bundle;%PATH%
+```
+On OSX:
+```
+export PATH=$HOME/Library/Android/sdk/ndk-bundle:$PATH
+```
+### Additional OSX System Requirements
+Tested on OSX version 10.11.4
+
+ Setup Homebrew and components
+- Follow instructions on [brew.sh](http://brew.sh) to get homebrew installed.
+```
+/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+```
+- Ensure Homebrew is at the beginning of your PATH:
+```
+export PATH=/usr/local/bin:$PATH
+```
+- Add packages with the following (may need refinement)
+```
+brew install cmake python python3 git
+```
+### Build steps for Android
+Use the following to ensure the Android build works.
+#### Linux
+Follow the setup steps for Linux, then from your terminal:
+```
+cd build-android
+./update_external_sources_android.sh
+./android-generate.sh
+ndk-build -j $(nproc)
+```
+#### OSX
+Follow the setup steps for OSX above, then from your terminal:
+```
+cd build-android
+./update_external_sources_android.sh
+./android-generate.sh
+ndk-build -j $(sysctl -n hw.ncpu)
+```
+#### Windows
+Follow the setup steps for Windows above, then from Developer Command Prompt for VS2013:
+```
+cd build-android
+update_external_sources_android.bat
+android-generate.bat
+ndk-build
+```
+
+## Android usage
+This documentation is preliminary and needs to be beefed up.
+
+See the [vktracereplay.sh](https://github.com/LunarG/VulkanTools/blob/master/build-android/vktracereplay.sh) file for a working example of how to use vktrace/vkreplay and screenshot layers.
+
+An example of using the scripts on Linux and macOS:
+```
+./build_vktracereplay.sh
+./vktracereplay.sh \
+ --serial 12345678 \
+ --abi armeabi-v7a \
+ --apk ../demos/android/cube-with-layers/bin/NativeActivity-debug.apk \
+ --package com.example.CubeWithLayers \
+ --frame 50
+```
+And on Windows:
+```
+build_vktracereplay.bat ^
+vktracereplay.bat ^
+ --serial 12345678 ^
+ --abi armeabi-v7a ^
+ --apk ..\demos\android\cube-with-layers\bin\NativeActivity-debug.apk ^
+ --package com.example.CubeWithLayers ^
+ --frame 50
+```
+### api_dump
+To enable, make the following changes to vk_layer_settings.txt
+```
+-lunarg_api_dump.file = FALSE
++lunarg_api_dump.file = TRUE
+
+-lunarg_api_dump.log_filename = stdout
++lunarg_api_dump.log_filename = /sdcard/Android/vk_apidump.txt
+```
+Then:
+```
+adb push vk_layer_settings.txt /sdcard/Android
+```
+And run your application with the following layer enabled:
+```
+VK_LAYER_LUNARG_api_dump
+```
+### screenshot
+To enable, set a property that contains target frame:
+```
+adb shell setprop debug.vulkan.screenshot <framenumber>
+```
+For production builds, be sure your application has access to read and write to external storage by adding the following to AndroidManifest.xml:
+```
+<!-- This allows writing log files to sdcard -->
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+```
+You may also need to grant it access with package manager:
+```
+adb shell pm grant com.example.Cube android.permission.READ_EXTERNAL_STORAGE
+adb shell pm grant com.example.Cube android.permission.WRITE_EXTERNAL_STORAGE
+```
+Run your application with the following layer enabled:
+```
+VK_LAYER_LUNARG_screenshot
+```
+Result screenshot will be in:
+```
+/sdcard/Android/<framenumber>.ppm
+```
+### vktrace
+To record a trace on Android, enable port forwarding from the device to the host:
+```
+adb reverse tcp:34201 tcp:34201
+```
+Start up vktrace on the host in server mode:
+```
+vktrace -v full -o cube.vktrace
+```
+Run your application with the following layer enabled:
+```
+VK_LAYER_LUNARG_vktrace
+```
+The trace will be recorded on the host.
+### vkreplay
+To replay a trace, push the trace to your device
+```
+adb push cube.vktrace /sdcard/cube.vktrace
+```
+Grant vkreplay the ability to read it
+```
+adb shell pm grant com.example.vkreplay android.permission.READ_EXTERNAL_STORAGE
+adb shell pm grant com.example.vkreplay android.permission.WRITE_EXTERNAL_STORAGE
+```
+And start the native activity
+```
+adb shell am start -a android.intent.action.MAIN -c android-intent.category.LAUNCH -n com.example.vkreplay/android.app.NativeActivity --es args "-v\ full\ -t\ /sdcard/cube.vktrace"
+```

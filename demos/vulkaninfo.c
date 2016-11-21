@@ -474,6 +474,7 @@ static void app_dev_init(struct app_dev *dev, struct app_gpu *gpu) {
     VkDeviceCreateInfo info = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = NULL,
+        .flags = 0,
         .queueCreateInfoCount = 0,
         .pQueueCreateInfos = NULL,
         .enabledLayerCount = 0,
@@ -504,6 +505,7 @@ static void app_dev_init(struct app_dev *dev, struct app_gpu *gpu) {
 }
 
 static void app_dev_destroy(struct app_dev *dev) {
+    vkDeviceWaitIdle(dev->obj);
     vkDestroyDevice(dev->obj, NULL);
 }
 
@@ -736,6 +738,7 @@ static void app_gpu_init(struct app_gpu *gpu, uint32_t id,
                gpu->queue_props[i].queueCount * sizeof(float));
         gpu->queue_reqs[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         gpu->queue_reqs[i].pNext = NULL;
+        gpu->queue_reqs[i].flags = 0;
         gpu->queue_reqs[i].queueFamilyIndex = i;
         gpu->queue_reqs[i].queueCount = gpu->queue_props[i].queueCount;
         gpu->queue_reqs[i].pQueuePriorities = queue_priorities;
@@ -905,9 +908,15 @@ static void app_destroy_xcb_window(struct app_instance *inst) {
 //----------------------------XLib---------------------------
 #ifdef VK_USE_PLATFORM_XLIB_KHR
 static void app_create_xlib_window(struct app_instance *inst) {
-    inst->xlib_display = XOpenDisplay(NULL);
     long visualMask = VisualScreenMask;
     int numberOfVisuals;
+
+    inst->xlib_display = XOpenDisplay(NULL);
+    if (inst->xlib_display == NULL) {
+        printf("XLib failed to connect to the X server.\nExiting ...\n");
+        fflush(stdout);
+        exit(1);
+    }
 
     XVisualInfo vInfoTemplate={};
     vInfoTemplate.screen = DefaultScreen(inst->xlib_display);
@@ -1083,7 +1092,7 @@ static void app_gpu_dump_features(const struct app_gpu *gpu)
     printf("\tsparseResidency16Samples                = %u\n", features->sparseResidency16Samples               );
     printf("\tsparseResidencyAliased                  = %u\n", features->sparseResidencyAliased                 );
     printf("\tvariableMultisampleRate                 = %u\n", features->variableMultisampleRate                );
-    printf("\tiheritedQueries                         = %u\n", features->inheritedQueries                       );
+    printf("\tinheritedQueries                        = %u\n", features->inheritedQueries                       );
 }
 
 static void app_dump_sparse_props(const VkPhysicalDeviceSparseProperties *sparseProps)
@@ -1503,6 +1512,13 @@ int main(int argc, char **argv) {
             app_destroy_surface(&inst);
         }
         app_destroy_win32_window(&inst);
+    }
+#endif
+#if defined(VK_USE_PLATFORM_XCB_KHR) || defined(VK_USE_PLATFORM_XLIB_KHR)
+    if (getenv("DISPLAY") == NULL) {
+        printf("'DISPLAY' environment variable not set... Exiting!\n");
+        fflush(stdout);
+        exit(1);
     }
 #endif
 //--XCB--

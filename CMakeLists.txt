@@ -1,13 +1,16 @@
 # The name of our project is "VULKAN". CMakeLists files in this project can
-# refer to the root source directory of the project as ${VULKANTOOLS_SOURCE_DIR} and
-# to the root binary directory of the project as ${VULKANTOOLS_BINARY_DIR}.
+# refer to the root source directory of the project as ${VULKAN_SOURCE_DIR} and
+# to the root binary directory of the project as ${VULKAN_BINARY_DIR}.
 cmake_minimum_required(VERSION 2.8.11)
 project (VULKAN_TOOLS)
 # set (CMAKE_VERBOSE_MAKEFILE 1)
 
+# The API_NAME allows renaming builds to avoid conflicts with installed SDKs
 # The MAJOR number of the version we're building, used in naming
-# vulkan-<major>.dll (and other files).
+# <api-name>-<major>.dll (and other files).
+set(API_NAME "Vulkan" CACHE STRING "API name to use when building")
 set(MAJOR "1")
+string(TOLOWER ${API_NAME} API_LOWERCASE)
 
 find_package(PythonInterp 3 REQUIRED)
 
@@ -18,8 +21,8 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
     add_definitions(-DVK_USE_PLATFORM_ANDROID_KHR)
     set(DisplayServer Android)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    #   Note: Supported configurations are XCB, XCB + Xlib, Wayland.  
-    #         MIR is stubbed and untested 
+    #   Note: Supported configurations are XCB, XCB + Xlib, Wayland.
+    #         MIR is stubbed and untested
     option(BUILD_WSI_XCB_SUPPORT "Build XCB WSI support" ON)
     option(BUILD_WSI_XLIB_SUPPORT "Build Xlib WSI support" ON)
     option(BUILD_WSI_WAYLAND_SUPPORT "Build Wayland WSI support" OFF)
@@ -44,15 +47,17 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_definitions(-DVK_USE_PLATFORM_MIR_KHR)
         set(DisplayServer Mir)
     endif()
-    
+
     if (NOT BUILD_WSI_XCB_SUPPORT AND NOT BUILD_WSI_XLIB_SUPPORT AND NOT BUILD_WSI_WAYLAND_SUPPORT AND NOT BUILD_WSI_MIR_SUPPORT)
         set(DisplayServer Display)
-    endif()    
+    endif()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    # Only vktrace is supported on macOS
 else()
     message(FATAL_ERROR "Unsupported Platform!")
 endif()
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # Header file for CMake settings
 include_directories("${PROJECT_SOURCE_DIR}/include")
@@ -105,20 +110,43 @@ else()
     endif()
 endif()
 
-option(BUILD_LOADER "Build loader" ON)
-if(WIN32)
-    option(BUILD_ICD "Build LunarG intel icd" OFF)
-else()
-    option(BUILD_ICD "Build LunarG intel icd" ON)
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows" OR
+    CMAKE_SYSTEM_NAME STREQUAL "Linux")
+
+    # These are unchanged from upstream file
+    option(BUILD_LOADER "Build loader" ON)
+    if(WIN32)
+        option(BUILD_ICD "Build LunarG intel icd" OFF)
+    else()
+        option(BUILD_ICD "Build LunarG intel icd" ON)
+    endif()
+    option(BUILD_TESTS "Build tests" ON)
+    option(BUILD_LAYERS "Build layers" ON)
+    option(BUILD_LAYERSVT "Build layersvt" ON)
+    option(BUILD_DEMOS "Build demos" ON)
+    option(BUILD_VKTRACE "Build VkTrace" ON)
+    option(BUILD_VKJSON "Build vkjson" ON)
+    option(BUILD_VIA "Build via" ON)
+    option(CUSTOM_GLSLANG_BIN_ROOT "Use the user defined GLSLANG_BINARY_ROOT" OFF)
+    option(CUSTOM_SPIRV_TOOLS_BIN_ROOT "Use the user defined SPIRV_TOOLS_BINARY_ROOT" OFF)
+
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+
+    # Only vktrace enable for macOS
+    option(BUILD_VKTRACE ON)
+    option(BUILD_LOADER OFF)
+    option(BUILD_ICD OFF)
+    option(BUILD_TESTS OFF)
+    option(BUILD_LAYERS OFF)
+    option(BUILD_LAYERSVT OFF)
+    option(BUILD_VKTRACEVIEWER OFF)
+    option(BUILD_DEMOS OFF)
+    option(BUILD_VKJSON OFF)
+    option(BUILD_VIA OFF)
+    option(BUILD_VKTRACE_LAYER OFF)
+    option(BUILD_VKTRACE_REPLAY OFF)
+
 endif()
-option(BUILD_TESTS "Build tests" ON)
-option(BUILD_LAYERS "Build layers" ON)
-option(BUILD_LAYERSVT "Build layersvt" ON)
-option(BUILD_DEMOS "Build demos" ON)
-option(BUILD_VKTRACE "Build VkTrace" ON)
-option(BUILD_VKJSON "Build vkjson" ON)
-option(CUSTOM_GLSLANG_BIN_ROOT "Use the user defined GLSLANG_BINARY_ROOT" OFF)
-option(CUSTOM_SPIRV_TOOLS_BIN_ROOT "Use the user defined SPIRV_TOOLS_BINARY_ROOT" OFF)
 
 #Choose natural default paths for glslang and SPIRV-Tools binaries to support custom definition by the user on the CMake command line or in the GUI
 set(GLSLANG_BINARY_ROOT "${CMAKE_BINARY_DIR}/../glslang" CACHE STRING "User defined path to the glslang binaries for this project")
@@ -200,6 +228,20 @@ find_path(SPIRV_TOOLS_INCLUDE_DIR spirv-tools/libspirv.h HINTS "${EXTERNAL_SOURC
                                                    "${EXTERNAL_SOURCE_ROOT}/source/spirv-tools/external/include"
                                              DOC "Path to spirv-tools/libspirv.h")
 
+find_path(JSONCPP_INCLUDE_DIR json/json.h HINTS "${EXTERNAL_SOURCE_ROOT}/jsoncpp/dist"
+                                                   "${EXTERNAL_SOURCE_ROOT}/JsonCpp/dist"
+                                                   "${EXTERNAL_SOURCE_ROOT}/JsonCPP/dist"
+                                                   "${EXTERNAL_SOURCE_ROOT}/JSONCPP/dist"
+                                                   "${CMAKE_SOURCE_DIR}/../jsoncpp/dist"
+                                             DOC "Path to jsoncpp/dist/json/json.h")
+
+find_path(JSONCPP_SOURCE_DIR jsoncpp.cpp HINTS "${EXTERNAL_SOURCE_ROOT}/jsoncpp/dist"
+                                                   "${EXTERNAL_SOURCE_ROOT}/JsonCpp/dist"
+                                                   "${EXTERNAL_SOURCE_ROOT}/JsonCPP/dist"
+                                                   "${EXTERNAL_SOURCE_ROOT}/JSONCPP/dist"
+                                                   "${CMAKE_SOURCE_DIR}/../jsoncpp/dist"
+                                             DOC "Path to jsoncpp/dist/json.cpp")
+
     find_library(GLSLANG_LIB NAMES glslang
         HINTS ${GLSLANG_SEARCH_PATH} )
 
@@ -221,6 +263,9 @@ find_path(SPIRV_TOOLS_INCLUDE_DIR spirv-tools/libspirv.h HINTS "${EXTERNAL_SOURC
     find_library(SPIRV_TOOLS_LIB NAMES SPIRV-Tools
              HINTS ${SPIRV_TOOLS_SEARCH_PATH} )
 
+    find_library(JSONCPP_LIB NAMES jsoncpp
+             HINTS ${JSONCPP_SEARCH_PATH} )
+
 if (WIN32)
     add_library(glslang     STATIC IMPORTED)
     add_library(OGLCompiler STATIC IMPORTED)
@@ -230,6 +275,7 @@ if (WIN32)
     add_library(SPVRemapper       STATIC IMPORTED)
     add_library(Loader      STATIC IMPORTED)
     add_library(SPIRV-Tools STATIC IMPORTED)
+    add_library(jsoncpp     STATIC IMPORTED)
 
     find_library(GLSLANG_DLIB NAMES glslangd
                  HINTS ${GLSLANG_DEBUG_SEARCH_PATH} )
@@ -245,6 +291,8 @@ if (WIN32)
                  HINTS ${GLSLANG_DEBUG_SEARCH_PATH} )
     find_library(SPIRV_TOOLS_DLIB NAMES SPIRV-Tools
                  HINTS ${SPIRV_TOOLS_DEBUG_SEARCH_PATH} )
+    find_library(JSONCPP_DLIB NAMES jsoncpp
+                 HINTS ${JSONCPP_DEBUG_SEARCH_PATH} )
 
     set_target_properties(glslang PROPERTIES
                           IMPORTED_LOCATION       "${GLSLANG_LIB}"
@@ -267,6 +315,9 @@ if (WIN32)
     set_target_properties(SPIRV-Tools PROPERTIES
                           IMPORTED_LOCATION       "${SPIRV_TOOLS_LIB}"
                           IMPORTED_LOCATION_DEBUG "${SPIRV_TOOLS_DLIB}")
+    set_target_properties(jsoncpp PROPERTIES
+                         IMPORTED_LOCATION       "${JSONCPP_LIB}"
+                         IMPORTED_LOCATION_DEBUG "${JSONCPP_DLIB}")
 
     set (GLSLANG_LIBRARIES glslang OGLCompiler OSDependent HLSL SPIRV SPVRemapper)
     set (SPIRV_TOOLS_LIBRARIES SPIRV-Tools)
@@ -288,13 +339,23 @@ set (PYTHON_CMD ${PYTHON_EXECUTABLE})
 
 if(NOT WIN32)
     include(GNUInstallDirs)
-    add_definitions(-DSYSCONFDIR="${CMAKE_INSTALL_SYSCONFDIR}")
-    add_definitions(-DDATADIR="${CMAKE_INSTALL_DATADIR}")
-    if (CMAKE_INSTALL_PREFIX STREQUAL "/usr/local")
-    elseif (CMAKE_INSTALL_PREFIX STREQUAL "")
-    else()
-        add_definitions(-DLOCALPREFIX="${CMAKE_INSTALL_PREFIX}")
+
+    add_definitions(-DSYSCONFDIR="${CMAKE_INSTALL_FULL_SYSCONFDIR}")
+    add_definitions(-DDATADIR="${CMAKE_INSTALL_FULL_DATADIR}")
+
+    # Make sure /etc is searched by the loader
+    if (NOT (CMAKE_INSTALL_FULL_SYSCONFDIR STREQUAL "/etc"))
+        add_definitions(-DEXTRASYSCONFDIR="/etc")
     endif()
+
+    # Make sure /usr/share is searched by the loader
+    if (NOT (CMAKE_INSTALL_FULL_DATADIR STREQUAL "/usr/share"))
+        add_definitions(-DEXTRADATADIR="/usr/share")
+    endif()
+endif()
+
+if(UNIX)
+    install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/vulkan" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
 
 # loader: Generic VULKAN ICD loader
@@ -332,3 +393,6 @@ if(BUILD_VKJSON)
     add_subdirectory(libs/vkjson)
 endif()
 
+if(BUILD_VIA)
+    add_subdirectory(via)
+endif()

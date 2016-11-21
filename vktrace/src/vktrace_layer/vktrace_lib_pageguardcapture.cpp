@@ -19,6 +19,7 @@
 //     Here we use page guard to record which page of big memory block has been changed and only save those changed pages, it make the capture time reduce to round 15 minutes, the trace file size is round 40G, 
 //     The Playback time for these trace file is round 7 minutes(on Win10/AMDFury/32GRam/I5 system).
 
+#include "vktrace_pageguard_memorycopy.h"
 #include "vktrace_lib_pagestatusarray.h"
 #include "vktrace_lib_pageguardmappedmemory.h"
 #include "vktrace_lib_pageguardcapture.h"
@@ -58,6 +59,7 @@ void PageGuardCapture::vkMapMemoryPageGuardHandle(
         }
     }
     MapMemoryPtr[memory] = (PBYTE)(*ppData);
+    MapMemoryOffset[memory] = offset;
 }
 
 void PageGuardCapture::vkUnmapMemoryPageGuardHandle(VkDevice device, VkDeviceMemory memory, void** MappedData, vkFlushMappedMemoryRangesFunc pFunc)
@@ -69,11 +71,17 @@ void PageGuardCapture::vkUnmapMemoryPageGuardHandle(VkDevice device, VkDeviceMem
         MapMemory.erase(memory);
     }
     MapMemoryPtr.erase(memory);
+    MapMemoryOffset.erase(memory);
 }
 
 void* PageGuardCapture::getMappedMemoryPointer(VkDevice device, VkDeviceMemory memory)
 {
     return MapMemoryPtr[memory];
+}
+
+VkDeviceSize PageGuardCapture::getMappedMemoryOffset(VkDevice device, VkDeviceMemory memory)
+{
+    return MapMemoryOffset[memory];
 }
 
 //return: if it's target mapped memory and no change at all;
@@ -93,8 +101,13 @@ bool PageGuardCapture::vkFlushMappedMemoryRangesPageGuardHandle(
 
         ppPackageDataforOutOfMap[i] = nullptr;
         LPPageGuardMappedMemory lpOPTMemoryTemp = findMappedMemoryObject(device, pRange->memory);
+
         if (lpOPTMemoryTemp)
         {
+            if (pRange->size == VK_WHOLE_SIZE)
+            {
+                pRange->size = lpOPTMemoryTemp->getMappedSize() - pRange->offset;
+            }
             if (lpOPTMemoryTemp->vkFlushMappedMemoryRangePageGuardHandle(device, pRange->memory, pRange->offset, pRange->size, nullptr, nullptr, nullptr))
             {
                 bChanged = true;
@@ -114,13 +127,13 @@ bool PageGuardCapture::vkFlushMappedMemoryRangesPageGuardHandle(
             pInfoTemp[0].length = (DWORD)RealRangeSize;
             pInfoTemp[0].reserve0 = 0;
             pInfoTemp[0].reserve1 = 0;
-            pInfoTemp[1].offset = 0;
+            pInfoTemp[1].offset = pRange->offset - getMappedMemoryOffset(device, pRange->memory);
             pInfoTemp[1].length = (DWORD)RealRangeSize;
             pInfoTemp[1].reserve0 = 0;
             pInfoTemp[1].reserve1 = 0;
             PBYTE pDataInPackage = (PBYTE)(pInfoTemp + 2);
             void* pDataMapped = getMappedMemoryPointer(device, pRange->memory);
-            memcpy(pDataInPackage, pDataMapped, RealRangeSize);
+            vktrace_pageguard_memcpy(pDataInPackage, reinterpret_cast<PBYTE>(pDataMapped) + pInfoTemp[1].offset, RealRangeSize);
         }
     }
     if (!bChanged)

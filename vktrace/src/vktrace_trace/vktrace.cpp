@@ -40,17 +40,17 @@ vktrace_settings g_default_settings;
 vktrace_SettingInfo g_settings_info[] =
 {
     // common command options
-    { "p", "Program", VKTRACE_SETTING_STRING, &g_settings.program, &g_default_settings.program, TRUE, "The program to trace."},
-    { "a", "Arguments", VKTRACE_SETTING_STRING, &g_settings.arguments, &g_default_settings.arguments, TRUE, "Cmd-line arguments to pass to trace program."},
-    { "w", "WorkingDir", VKTRACE_SETTING_STRING, &g_settings.working_dir, &g_default_settings.working_dir, TRUE, "The program's working directory."},
-    { "o", "OutputTrace", VKTRACE_SETTING_STRING, &g_settings.output_trace, &g_default_settings.output_trace, TRUE, "Path to the generated output trace file."},
-    { "s", "ScreenShot", VKTRACE_SETTING_STRING, &g_settings.screenshotList, &g_default_settings.screenshotList, TRUE, "Comma separated list of frames to take a snapshot of."},
-    { "png", "PngScreenShot", VKTRACE_SETTING_STRING, &g_settings.pngScreenshotList, &g_default_settings.pngScreenshotList, TRUE, "Saves a PNG screenshot of frames identified by: <startFrame>-<endFrame>,<stepFrames>." },
-    { "ptm", "PrintTraceMessages", VKTRACE_SETTING_BOOL, &g_settings.print_trace_messages, &g_default_settings.print_trace_messages, TRUE, "Print trace messages to vktrace console."},
+    { "p", "Program", VKTRACE_SETTING_STRING, { &g_settings.program }, { &g_default_settings.program }, TRUE, "The program to trace."},
+    { "a", "Arguments", VKTRACE_SETTING_STRING, { &g_settings.arguments }, { &g_default_settings.arguments }, TRUE, "Cmd-line arguments to pass to trace program."},
+    { "w", "WorkingDir", VKTRACE_SETTING_STRING, { &g_settings.working_dir }, { &g_default_settings.working_dir }, TRUE, "The program's working directory."},
+    { "o", "OutputTrace", VKTRACE_SETTING_STRING, { &g_settings.output_trace }, { &g_default_settings.output_trace }, TRUE, "Path to the generated output trace file."},
+    { "s", "ScreenShot", VKTRACE_SETTING_STRING, { &g_settings.screenshotList }, { &g_default_settings.screenshotList }, TRUE, "Comma separated list of frames to take a snapshot of."},
+    { "png", "PngScreenShot", VKTRACE_SETTING_STRING, { &g_settings.pngScreenshotList }, { &g_default_settings.pngScreenshotList }, TRUE, "Saves a PNG screenshot of frames identified by: <startFrame>-<endFrame>,<stepFrames>." },
+    { "ptm", "PrintTraceMessages", VKTRACE_SETTING_BOOL, { &g_settings.print_trace_messages }, { &g_default_settings.print_trace_messages }, TRUE, "Print trace messages to vktrace console." },
 #if _DEBUG
-    { "v", "Verbosity", VKTRACE_SETTING_STRING, &g_settings.verbosity, &g_default_settings.verbosity, TRUE, "Verbosity mode. Modes are \"quiet\", \"errors\", \"warnings\", \"full\", \"debug\"."},
+    { "v", "Verbosity", VKTRACE_SETTING_STRING, { &g_settings.verbosity }, { &g_default_settings.verbosity }, TRUE, "Verbosity mode. Modes are \"quiet\", \"errors\", \"warnings\", \"full\", \"debug\"."},
 #else
-    { "v", "Verbosity", VKTRACE_SETTING_STRING, &g_settings.verbosity, &g_default_settings.verbosity, TRUE, "Verbosity mode. Modes are \"quiet\", \"errors\", \"warnings\", \"full\"."},
+    { "v", "Verbosity", VKTRACE_SETTING_STRING, { &g_settings.verbosity }, { &g_default_settings.verbosity }, TRUE, "Verbosity mode. Modes are \"quiet\", \"errors\", \"warnings\", \"full\"."},
 #endif
 
     //{ "z", "pauze", VKTRACE_SETTING_BOOL, &g_settings.pause, &g_default_settings.pause, TRUE, "Wait for a key at startup (so a debugger can be attached)" },
@@ -256,14 +256,14 @@ int main(int argc, char* argv[])
         }
     }
 
-    if (g_settings.screenshotList != NULL)
+    if (g_settings.screenshotList)
     {
         // Export list to screenshot layer
         vktrace_set_global_var("_VK_SCREENSHOT", g_settings.screenshotList);
     }
     else
     {
-        vktrace_set_global_var("_VK_SCREENSHOT", "");
+        vktrace_set_global_var("_VK_SCREENSHOT","");
     }
 
     if (g_settings.pngScreenshotList != NULL)
@@ -350,7 +350,6 @@ int main(int argc, char* argv[])
             // call CreateProcess to launch the application
             procStarted = vktrace_process_spawn(&procInfo);
         }
-
         if (procStarted == FALSE)
         {
             vktrace_LogError("Failed to setup remote process.");
@@ -363,28 +362,23 @@ int main(int argc, char* argv[])
                 return -1;
             }
 
-            if (isServerMode == FALSE)
-            {
-                // create watchdog thread to monitor existence of remote process
-                if (g_settings.program != NULL)
-                {
-                    procInfo.watchdogThread = vktrace_platform_create_thread(Process_RunWatchdogThread, &procInfo);
-                }
+            // create watchdog thread to monitor existence of remote process
+            if (g_settings.program != NULL)
+                procInfo.watchdogThread = vktrace_platform_create_thread(Process_RunWatchdogThread, &procInfo);
 
-#if defined(PLATFORM_LINUX)
-                // Sync wait for local threads and remote process to complete.
+#if defined(PLATFORM_LINUX) || defined(PLATFORM_OSX)
+            // Sync wait for local threads and remote process to complete.
 
-                vktrace_platform_sync_wait_for_thread(&(procInfo.pCaptureThreads[0].recordingThread));
+            vktrace_platform_sync_wait_for_thread(&(procInfo.pCaptureThreads[0].recordingThread));
 
-                if (g_settings.program != NULL)
-                    vktrace_platform_sync_wait_for_thread(&procInfo.watchdogThread);
+            if (g_settings.program != NULL)
+                vktrace_platform_sync_wait_for_thread(&procInfo.watchdogThread);
 #else
-                vktrace_platform_resume_thread(&procInfo.hThread);
+            vktrace_platform_resume_thread(&procInfo.hThread);
 
-				// Now into the main message loop, listen for hotkeys to send over.
-                MessageLoop();
+            // Now into the main message loop, listen for hotkeys to send over.
+            MessageLoop();
 #endif
-            }
         }
 
         vktrace_process_info_delete(&procInfo);

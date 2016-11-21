@@ -43,7 +43,6 @@ static const VkLayerProperties swapchain_layer = {
 };
 
 static void checkDeviceRegisterExtensions(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo, VkDevice device) {
-    uint32_t i;
     layer_data *my_device_data = get_my_data_ptr(get_dispatch_key(device), layer_data_map);
     layer_data *my_instance_data = get_my_data_ptr(get_dispatch_key(physicalDevice), layer_data_map);
 
@@ -63,20 +62,6 @@ static void checkDeviceRegisterExtensions(VkPhysicalDevice physicalDevice, const
                 "vkCreateDevice() called with a non-valid VkPhysicalDevice.");
     }
     my_device_data->deviceMap[device].device = device;
-    my_device_data->deviceMap[device].swapchainExtensionEnabled = false;
-    my_device_data->deviceMap[device].displaySwapchainExtensionEnabled = false;
-
-    // Record whether the WSI device extension was enabled for this VkDevice.
-    // No need to check if the extension was advertised by
-    // vkEnumerateDeviceExtensionProperties(), since the loader handles that.
-    for (i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
-        if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) {
-            my_device_data->deviceMap[device].swapchainExtensionEnabled = true;
-        }
-        if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_DISPLAY_SWAPCHAIN_EXTENSION_NAME) == 0) {
-            my_device_data->deviceMap[device].displaySwapchainExtensionEnabled = true;
-        }
-    }
 }
 
 static void checkInstanceRegisterExtensions(const VkInstanceCreateInfo *pCreateInfo, VkInstance instance) {
@@ -86,26 +71,7 @@ static void checkInstanceRegisterExtensions(const VkInstanceCreateInfo *pCreateI
     // Remember this instance, and whether the VK_KHR_surface extension
     // was enabled for it:
     my_data->instanceMap[instance].instance = instance;
-    my_data->instanceMap[instance].surfaceExtensionEnabled = false;
     my_data->instanceMap[instance].displayExtensionEnabled = false;
-#ifdef VK_USE_PLATFORM_ANDROID_KHR
-    my_data->instanceMap[instance].androidSurfaceExtensionEnabled = false;
-#endif // VK_USE_PLATFORM_ANDROID_KHR
-#ifdef VK_USE_PLATFORM_MIR_KHR
-    my_data->instanceMap[instance].mirSurfaceExtensionEnabled = false;
-#endif // VK_USE_PLATFORM_MIR_KHR
-#ifdef VK_USE_PLATFORM_WAYLAND_KHR
-    my_data->instanceMap[instance].waylandSurfaceExtensionEnabled = false;
-#endif // VK_USE_PLATFORM_WAYLAND_KHR
-#ifdef VK_USE_PLATFORM_WIN32_KHR
-    my_data->instanceMap[instance].win32SurfaceExtensionEnabled = false;
-#endif // VK_USE_PLATFORM_WIN32_KHR
-#ifdef VK_USE_PLATFORM_XCB_KHR
-    my_data->instanceMap[instance].xcbSurfaceExtensionEnabled = false;
-#endif // VK_USE_PLATFORM_XCB_KHR
-#ifdef VK_USE_PLATFORM_XLIB_KHR
-    my_data->instanceMap[instance].xlibSurfaceExtensionEnabled = false;
-#endif // VK_USE_PLATFORM_XLIB_KHR
 
     // Look for one or more debug report create info structures, and copy the
     // callback(s) for each one found (for use by vkDestroyInstance)
@@ -116,50 +82,10 @@ static void checkInstanceRegisterExtensions(const VkInstanceCreateInfo *pCreateI
     // VkInstance.  No need to check if the extension was advertised by
     // vkEnumerateInstanceExtensionProperties(), since the loader handles that.
     for (i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
-        if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_SURFACE_EXTENSION_NAME) == 0) {
-
-            my_data->instanceMap[instance].surfaceExtensionEnabled = true;
-        }
         if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_DISPLAY_EXTENSION_NAME) == 0) {
 
             my_data->instanceMap[instance].displayExtensionEnabled = true;
         }
-#ifdef VK_USE_PLATFORM_ANDROID_KHR
-        if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_ANDROID_SURFACE_EXTENSION_NAME) == 0) {
-
-            my_data->instanceMap[instance].androidSurfaceExtensionEnabled = true;
-        }
-#endif // VK_USE_PLATFORM_ANDROID_KHR
-#ifdef VK_USE_PLATFORM_MIR_KHR
-        if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_MIR_SURFACE_EXTENSION_NAME) == 0) {
-
-            my_data->instanceMap[instance].mirSurfaceExtensionEnabled = true;
-        }
-#endif // VK_USE_PLATFORM_MIR_KHR
-#ifdef VK_USE_PLATFORM_WAYLAND_KHR
-        if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME) == 0) {
-
-            my_data->instanceMap[instance].waylandSurfaceExtensionEnabled = true;
-        }
-#endif // VK_USE_PLATFORM_WAYLAND_KHR
-#ifdef VK_USE_PLATFORM_WIN32_KHR
-        if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_WIN32_SURFACE_EXTENSION_NAME) == 0) {
-
-            my_data->instanceMap[instance].win32SurfaceExtensionEnabled = true;
-        }
-#endif // VK_USE_PLATFORM_WIN32_KHR
-#ifdef VK_USE_PLATFORM_XCB_KHR
-        if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_XCB_SURFACE_EXTENSION_NAME) == 0) {
-
-            my_data->instanceMap[instance].xcbSurfaceExtensionEnabled = true;
-        }
-#endif // VK_USE_PLATFORM_XCB_KHR
-#ifdef VK_USE_PLATFORM_XLIB_KHR
-        if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_XLIB_SURFACE_EXTENSION_NAME) == 0) {
-
-            my_data->instanceMap[instance].xlibSurfaceExtensionEnabled = true;
-        }
-#endif // VK_USE_PLATFORM_XLIB_KHR
     }
 }
 
@@ -358,14 +284,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateAndroidSurfaceKHR(VkInstance instance, cons
         pInstance = (it == my_data->instanceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the platform extension was enabled:
-    if (pInstance && !pInstance->androidSurfaceExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                    "vkCreateAndroidSurfaceKHR() called even though the %s extension was not enabled for this VkInstance.",
-                    VK_KHR_ANDROID_SURFACE_EXTENSION_NAME);
-    }
     lock.unlock();
 
     if (!skip_call) {
@@ -382,7 +300,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateAndroidSurfaceKHR(VkInstance instance, cons
             // Record the VkSurfaceKHR returned by the ICD:
             my_data->surfaceMap[*pSurface].surface = *pSurface;
             my_data->surfaceMap[*pSurface].pInstance = pInstance;
-            my_data->surfaceMap[*pSurface].usedAllocatorToCreate = (pAllocator != NULL);
             my_data->surfaceMap[*pSurface].numQueueFamilyIndexSupport = 0;
             my_data->surfaceMap[*pSurface].pQueueFamilyIndexSupport = NULL;
             // Point to the associated SwpInstance:
@@ -409,14 +326,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateMirSurfaceKHR(VkInstance instance, const Vk
         pInstance = (it == my_data->instanceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the platform extension was enabled:
-    if (pInstance && !pInstance->mirSurfaceExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                    "vkCreateMirSurfaceKHR() called even though the %s extension was not enabled for this VkInstance.",
-                    VK_KHR_MIR_SURFACE_EXTENSION_NAME);
-    }
     lock.unlock();
 
     if (!skip_call) {
@@ -433,7 +342,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateMirSurfaceKHR(VkInstance instance, const Vk
             // Record the VkSurfaceKHR returned by the ICD:
             my_data->surfaceMap[*pSurface].surface = *pSurface;
             my_data->surfaceMap[*pSurface].pInstance = pInstance;
-            my_data->surfaceMap[*pSurface].usedAllocatorToCreate = (pAllocator != NULL);
             my_data->surfaceMap[*pSurface].numQueueFamilyIndexSupport = 0;
             my_data->surfaceMap[*pSurface].pQueueFamilyIndexSupport = NULL;
             // Point to the associated SwpInstance:
@@ -458,15 +366,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceMirPresentationSupportKHR(VkPhys
         pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the platform extension was enabled:
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->mirSurfaceExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-                    swapchain_layer_name, "vkGetPhysicalDeviceMirPresentationSupportKHR() called even though the %s "
-                                          "extension was not enabled for this VkInstance.",
-                    VK_KHR_MIR_SURFACE_EXTENSION_NAME);
-    }
     if (pPhysicalDevice->gotQueueFamilyPropertyCount) {
         skip_call |= ValidateQueueFamilyIndex(my_data, queueFamilyIndex, pPhysicalDevice->numOfQueueFamilies,
                                               pPhysicalDevice->physicalDevice, "vkGetPhysicalDeviceMirPresentationSupportKHR");
@@ -495,14 +394,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateWaylandSurfaceKHR(VkInstance instance, cons
         pInstance = (it == my_data->instanceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the platform extension was enabled:
-    if (pInstance && !pInstance->waylandSurfaceExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                    "vkCreateWaylandSurfaceKHR() called even though the %s extension was not enabled for this VkInstance.",
-                    VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
-    }
     lock.unlock();
 
     if (!skip_call) {
@@ -519,7 +410,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateWaylandSurfaceKHR(VkInstance instance, cons
             // Record the VkSurfaceKHR returned by the ICD:
             my_data->surfaceMap[*pSurface].surface = *pSurface;
             my_data->surfaceMap[*pSurface].pInstance = pInstance;
-            my_data->surfaceMap[*pSurface].usedAllocatorToCreate = (pAllocator != NULL);
             my_data->surfaceMap[*pSurface].numQueueFamilyIndexSupport = 0;
             my_data->surfaceMap[*pSurface].pQueueFamilyIndexSupport = NULL;
             // Point to the associated SwpInstance:
@@ -545,15 +435,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceWaylandPresentationSupportKHR(Vk
         pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the platform extension was enabled:
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->waylandSurfaceExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-                    swapchain_layer_name, "vkGetPhysicalDeviceWaylandPresentationSupportKHR() called even though the %s "
-                                          "extension was not enabled for this VkInstance.",
-                    VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
-    }
     if (pPhysicalDevice->gotQueueFamilyPropertyCount) {
         skip_call |= ValidateQueueFamilyIndex(my_data, queueFamilyIndex, pPhysicalDevice->numOfQueueFamilies,
                                               pPhysicalDevice->physicalDevice, "vkGetPhysicalDeviceWaylandPresentationSupportKHR");
@@ -582,14 +463,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateWin32SurfaceKHR(VkInstance instance, const 
         pInstance = (it == my_data->instanceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the platform extension was enabled:
-    if (pInstance && !pInstance->win32SurfaceExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                    "vkCreateWin32SurfaceKHR() called even though the %s extension was not enabled for this VkInstance.",
-                    VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
-    }
     lock.unlock();
 
     if (!skip_call) {
@@ -606,7 +479,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateWin32SurfaceKHR(VkInstance instance, const 
             // Record the VkSurfaceKHR returned by the ICD:
             my_data->surfaceMap[*pSurface].surface = *pSurface;
             my_data->surfaceMap[*pSurface].pInstance = pInstance;
-            my_data->surfaceMap[*pSurface].usedAllocatorToCreate = (pAllocator != NULL);
             my_data->surfaceMap[*pSurface].numQueueFamilyIndexSupport = 0;
             my_data->surfaceMap[*pSurface].pQueueFamilyIndexSupport = NULL;
             // Point to the associated SwpInstance:
@@ -631,15 +503,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceWin32PresentationSupportKHR(VkPh
         pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the platform extension was enabled:
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->win32SurfaceExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-                    swapchain_layer_name, "vkGetPhysicalDeviceWin32PresentationSupportKHR() called even though the %s extension "
-                                          "was not enabled for this VkInstance.",
-                    VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
-    }
     if (pPhysicalDevice->gotQueueFamilyPropertyCount) {
         skip_call |= ValidateQueueFamilyIndex(my_data, queueFamilyIndex, pPhysicalDevice->numOfQueueFamilies,
                                               pPhysicalDevice->physicalDevice, "vkGetPhysicalDeviceWin32PresentationSupportKHR");
@@ -667,14 +530,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateXcbSurfaceKHR(VkInstance instance, const Vk
         pInstance = (it == my_data->instanceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the platform extension was enabled:
-    if (pInstance && !pInstance->xcbSurfaceExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                    "vkCreateXcbSurfaceKHR() called even though the %s extension was not enabled for this VkInstance.",
-                    VK_KHR_XCB_SURFACE_EXTENSION_NAME);
-    }
     lock.unlock();
 
     if (!skip_call) {
@@ -691,7 +546,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateXcbSurfaceKHR(VkInstance instance, const Vk
             // Record the VkSurfaceKHR returned by the ICD:
             my_data->surfaceMap[*pSurface].surface = *pSurface;
             my_data->surfaceMap[*pSurface].pInstance = pInstance;
-            my_data->surfaceMap[*pSurface].usedAllocatorToCreate = (pAllocator != NULL);
             my_data->surfaceMap[*pSurface].numQueueFamilyIndexSupport = 0;
             my_data->surfaceMap[*pSurface].pQueueFamilyIndexSupport = NULL;
             // Point to the associated SwpInstance:
@@ -717,15 +571,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceXcbPresentationSupportKHR(VkPhys
         pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the platform extension was enabled:
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->xcbSurfaceExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-                    swapchain_layer_name, "vkGetPhysicalDeviceXcbPresentationSupportKHR() called even though the %s "
-                                          "extension was not enabled for this VkInstance.",
-                    VK_KHR_XCB_SURFACE_EXTENSION_NAME);
-    }
     if (pPhysicalDevice->gotQueueFamilyPropertyCount) {
         skip_call |= ValidateQueueFamilyIndex(my_data, queueFamilyIndex, pPhysicalDevice->numOfQueueFamilies,
                                               pPhysicalDevice->physicalDevice, "vkGetPhysicalDeviceXcbPresentationSupportKHR");
@@ -754,14 +599,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateXlibSurfaceKHR(VkInstance instance, const V
         pInstance = (it == my_data->instanceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the platform extension was enabled:
-    if (pInstance && !pInstance->xlibSurfaceExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                    "vkCreateXlibSurfaceKHR() called even though the %s extension was not enabled for this VkInstance.",
-                    VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
-    }
     lock.unlock();
 
     if (!skip_call) {
@@ -778,7 +615,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateXlibSurfaceKHR(VkInstance instance, const V
             // Record the VkSurfaceKHR returned by the ICD:
             my_data->surfaceMap[*pSurface].surface = *pSurface;
             my_data->surfaceMap[*pSurface].pInstance = pInstance;
-            my_data->surfaceMap[*pSurface].usedAllocatorToCreate = (pAllocator != NULL);
             my_data->surfaceMap[*pSurface].numQueueFamilyIndexSupport = 0;
             my_data->surfaceMap[*pSurface].pQueueFamilyIndexSupport = NULL;
             // Point to the associated SwpInstance:
@@ -804,15 +640,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceXlibPresentationSupportKHR(VkPhy
         pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the platform extension was enabled:
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->xlibSurfaceExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-                    swapchain_layer_name, "vkGetPhysicalDeviceXlibPresentationSupportKHR() called even though the %s "
-                                          "extension was not enabled for this VkInstance.",
-                    VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
-    }
     if (pPhysicalDevice->gotQueueFamilyPropertyCount) {
         skip_call |= ValidateQueueFamilyIndex(my_data, queueFamilyIndex, pPhysicalDevice->numOfQueueFamilies,
                                               pPhysicalDevice->physicalDevice, "vkGetPhysicalDeviceXlibPresentationSupportKHR");
@@ -828,36 +655,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL GetPhysicalDeviceXlibPresentationSupportKHR(VkPhy
 }
 #endif // VK_USE_PLATFORM_XLIB_KHR
 
-VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceDisplayPropertiesKHR(VkPhysicalDevice physicalDevice, uint32_t *pPropertyCount,
-                                                                     VkDisplayPropertiesKHR *pProperties) {
-    VkResult result = VK_SUCCESS;
-    bool skip_call = false;
-    layer_data *my_data = get_my_data_ptr(get_dispatch_key(physicalDevice), layer_data_map);
-    std::unique_lock<std::mutex> lock(global_lock);
-    SwpPhysicalDevice *pPhysicalDevice = NULL;
-    {
-        auto it = my_data->physicalDeviceMap.find(physicalDevice);
-        pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
-    }
-
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->displayExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-                    swapchain_layer_name, "vkGetPhysicalDeviceDisplayPropertiesKHR() called even though the %s "
-                                          "extension was not enabled for this VkInstance.",
-                    VK_KHR_DISPLAY_EXTENSION_NAME);
-    }
-    lock.unlock();
-
-    if (!skip_call) {
-        result =
-            my_data->instance_dispatch_table->GetPhysicalDeviceDisplayPropertiesKHR(physicalDevice, pPropertyCount, pProperties);
-        return result;
-    }
-    return VK_ERROR_VALIDATION_FAILED_EXT;
-}
-
 VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceDisplayPlanePropertiesKHR(VkPhysicalDevice physicalDevice, uint32_t *pPropertyCount,
                                                                           VkDisplayPlanePropertiesKHR *pProperties) {
     VkResult result = VK_SUCCESS;
@@ -868,15 +665,6 @@ VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceDisplayPlanePropertiesKHR(VkPhys
     {
         auto it = my_data->physicalDeviceMap.find(physicalDevice);
         pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
-    }
-
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->displayExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-                    swapchain_layer_name, "vkGetPhysicalDeviceDisplayPlanePropertiesKHR() called even though the %s "
-                                          "extension was not enabled for this VkInstance.",
-                    VK_KHR_DISPLAY_EXTENSION_NAME);
     }
     lock.unlock();
 
@@ -909,15 +697,6 @@ VKAPI_ATTR VkResult VKAPI_CALL GetDisplayPlaneSupportedDisplaysKHR(VkPhysicalDev
         pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
     }
 
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->displayExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-                    swapchain_layer_name, "vkGetDisplayPlaneSupportedDisplaysKHR() called even though the %s "
-                                          "extension was not enabled for this VkInstance.",
-                    VK_KHR_DISPLAY_EXTENSION_NAME);
-    }
-
     if (!pPhysicalDevice->gotDisplayPlanePropertyCount) {
         skip_call |= log_msg(my_data->report_data, VK_DEBUG_REPORT_WARNING_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
                              reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__,
@@ -947,70 +726,6 @@ VKAPI_ATTR VkResult VKAPI_CALL GetDisplayPlaneSupportedDisplaysKHR(VkPhysicalDev
     return VK_ERROR_VALIDATION_FAILED_EXT;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL GetDisplayModePropertiesKHR(VkPhysicalDevice physicalDevice, VkDisplayKHR display,
-                                                           uint32_t *pPropertyCount, VkDisplayModePropertiesKHR *pProperties) {
-    VkResult result = VK_SUCCESS;
-    bool skip_call = false;
-    layer_data *my_data = get_my_data_ptr(get_dispatch_key(physicalDevice), layer_data_map);
-    std::unique_lock<std::mutex> lock(global_lock);
-    SwpPhysicalDevice *pPhysicalDevice = NULL;
-    {
-        auto it = my_data->physicalDeviceMap.find(physicalDevice);
-        pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
-    }
-
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->displayExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-                    swapchain_layer_name,
-                    "vkGetDisplayModePropertiesKHR() called even though the %s extension was not enabled for this VkInstance.",
-                    VK_KHR_DISPLAY_EXTENSION_NAME);
-    }
-
-    lock.unlock();
-
-    if (!skip_call) {
-        result =
-            my_data->instance_dispatch_table->GetDisplayModePropertiesKHR(physicalDevice, display, pPropertyCount, pProperties);
-        return result;
-    }
-    // TODO store the displayMode for later checking
-    return VK_ERROR_VALIDATION_FAILED_EXT;
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL CreateDisplayModeKHR(VkPhysicalDevice physicalDevice, VkDisplayKHR display,
-                                                    const VkDisplayModeCreateInfoKHR *pCreateInfo,
-                                                    const VkAllocationCallbacks *pAllocator, VkDisplayModeKHR *pMode) {
-    VkResult result = VK_SUCCESS;
-    bool skip_call = false;
-    layer_data *my_data = get_my_data_ptr(get_dispatch_key(physicalDevice), layer_data_map);
-    std::unique_lock<std::mutex> lock(global_lock);
-    SwpPhysicalDevice *pPhysicalDevice = NULL;
-    {
-        auto it = my_data->physicalDeviceMap.find(physicalDevice);
-        pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
-    }
-
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->displayExtensionEnabled) {
-        skip_call |= log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                             reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__,
-                             SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                             "vkCreateDisplayModeKHR() called even though the %s extension was not enabled for this VkInstance.",
-                             VK_KHR_DISPLAY_EXTENSION_NAME);
-    }
-
-    lock.unlock();
-
-    // TODO more validation checks needed
-    if (!skip_call) {
-        result = my_data->instance_dispatch_table->CreateDisplayModeKHR(physicalDevice, display, pCreateInfo, pAllocator, pMode);
-        return result;
-    }
-
-    return VK_ERROR_VALIDATION_FAILED_EXT;
-}
-
 VKAPI_ATTR VkResult VKAPI_CALL GetDisplayPlaneCapabilitiesKHR(VkPhysicalDevice physicalDevice, VkDisplayModeKHR mode,
                                                               uint32_t planeIndex, VkDisplayPlaneCapabilitiesKHR *pCapabilities) {
     VkResult result = VK_SUCCESS;
@@ -1021,15 +736,6 @@ VKAPI_ATTR VkResult VKAPI_CALL GetDisplayPlaneCapabilitiesKHR(VkPhysicalDevice p
     {
         auto it = my_data->physicalDeviceMap.find(physicalDevice);
         pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
-    }
-
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->displayExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-                    swapchain_layer_name,
-                    "vkGetDisplayPlaneCapabilitiesKHR) called even though the %s extension was not enabled for this VkInstance.",
-                    VK_KHR_DISPLAY_EXTENSION_NAME);
     }
 
     if (!pPhysicalDevice->gotDisplayPlanePropertyCount) {
@@ -1067,15 +773,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDisplayPlaneSurfaceKHR(VkInstance instance,
     std::unique_lock<std::mutex> lock(global_lock);
     SwpInstance *pInstance = &(my_data->instanceMap[instance]);
 
-    // Validate that the platform extension was enabled:
-    if (pInstance && !pInstance->displayExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                    "vkCreateDisplayPlaneSurfaceKHR() called even though the %s extension was not enabled for this VkInstance.",
-                    VK_KHR_DISPLAY_EXTENSION_NAME);
-    }
-
     // TODO more validation checks
     if (!skip_call) {
         // Call down the call chain:
@@ -1089,7 +786,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDisplayPlaneSurfaceKHR(VkInstance instance,
             // Record the VkSurfaceKHR returned by the ICD:
             my_data->surfaceMap[*pSurface].surface = *pSurface;
             my_data->surfaceMap[*pSurface].pInstance = pInstance;
-            my_data->surfaceMap[*pSurface].usedAllocatorToCreate = (pAllocator != NULL);
             my_data->surfaceMap[*pSurface].numQueueFamilyIndexSupport = 0;
             my_data->surfaceMap[*pSurface].pQueueFamilyIndexSupport = NULL;
             // Point to the associated SwpInstance:
@@ -1109,20 +805,6 @@ VKAPI_ATTR void VKAPI_CALL DestroySurfaceKHR(VkInstance instance, VkSurfaceKHR s
     {
         auto it = my_data->surfaceMap.find(surface);
         pSurface = (it == my_data->surfaceMap.end()) ? NULL : &it->second;
-    }
-    SwpInstance *pInstance = NULL;
-    {
-        auto it = my_data->instanceMap.find(instance);
-        pInstance = (it == my_data->instanceMap.end()) ? NULL : &it->second;
-    }
-
-    // Validate that the platform extension was enabled:
-    if (pInstance && !pInstance->surfaceExtensionEnabled) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                    reinterpret_cast<uint64_t>(instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                    "vkDestroySurfaceKHR() called even though the %s extension was not enabled for this VkInstance.",
-                    VK_KHR_DISPLAY_EXTENSION_NAME);
     }
 
     // Regardless of skip_call value, do some internal cleanup:
@@ -1150,12 +832,6 @@ VKAPI_ATTR void VKAPI_CALL DestroySurfaceKHR(VkInstance instance, VkSurfaceKHR s
                 }
             }
             pSurface->swapchains.clear();
-        }
-        if ((pAllocator != NULL) != pSurface->usedAllocatorToCreate) {
-            skip_call |=
-                log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-                        reinterpret_cast<uint64_t>(instance), __LINE__, SWAPCHAIN_INCOMPATIBLE_ALLOCATOR, swapchain_layer_name,
-                        "vkDestroySurfaceKHR() called with incompatible pAllocator from when the object was created.");
         }
         my_data->surfaceMap.erase(surface);
     }
@@ -1292,15 +968,6 @@ VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceSurfaceSupportKHR(VkPhysicalDevi
         pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the surface extension was enabled:
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->surfaceExtensionEnabled) {
-        skip_call |= log_msg(
-            my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-            reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-            swapchain_layer_name,
-            "vkGetPhysicalDeviceSurfaceSupportKHR() called even though the %s extension was not enabled for this VkInstance.",
-            VK_KHR_SURFACE_EXTENSION_NAME);
-    }
     if (!pPhysicalDevice->gotQueueFamilyPropertyCount) {
         skip_call |= log_msg(
             my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT,
@@ -1364,15 +1031,6 @@ VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysica
         pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the surface extension was enabled:
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->surfaceExtensionEnabled) {
-        skip_call |= log_msg(
-            my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-            reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-            swapchain_layer_name,
-            "vkGetPhysicalDeviceSurfaceCapabilitiesKHR() called even though the %s extension was not enabled for this VkInstance.",
-            VK_KHR_DISPLAY_EXTENSION_NAME);
-    }
     lock.unlock();
 
     if (!skip_call) {
@@ -1411,15 +1069,6 @@ VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevi
         pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the surface extension was enabled:
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->surfaceExtensionEnabled) {
-        skip_call |= log_msg(
-            my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-            reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-            swapchain_layer_name,
-            "vkGetPhysicalDeviceSurfaceFormatsKHR() called even though the %s extension was not enabled for this VkInstance.",
-            VK_KHR_DISPLAY_EXTENSION_NAME);
-    }
     if (pPhysicalDevice && pSurfaceFormats) {
         // Compare the preliminary value of *pSurfaceFormatCount with the value this time:
         if (pPhysicalDevice->surfaceFormatCount == 0) {
@@ -1494,15 +1143,6 @@ VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceSurfacePresentModesKHR(VkPhysica
         pPhysicalDevice = (it == my_data->physicalDeviceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the surface extension was enabled:
-    if (pPhysicalDevice && pPhysicalDevice->pInstance && !pPhysicalDevice->pInstance->surfaceExtensionEnabled) {
-        skip_call |= log_msg(
-            my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_INSTANCE_EXT,
-            reinterpret_cast<uint64_t>(pPhysicalDevice->pInstance->instance), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED,
-            swapchain_layer_name,
-            "vkGetPhysicalDeviceSurfacePresentModesKHR() called even though the %s extension was not enabled for this VkInstance.",
-            VK_KHR_DISPLAY_EXTENSION_NAME);
-    }
     if (pPhysicalDevice && pPresentModes) {
         // Compare the preliminary value of *pPresentModeCount with the value this time:
         if (pPhysicalDevice->presentModeCount == 0) {
@@ -1577,14 +1217,6 @@ static bool validateCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateI
     {
         auto it = my_data->deviceMap.find(device);
         pDevice = (it == my_data->deviceMap.end()) ? NULL : &it->second;
-    }
-
-    // Validate that the swapchain extension was enabled:
-    if (pDevice && !pDevice->swapchainExtensionEnabled) {
-        return log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT,
-                       reinterpret_cast<uint64_t>(device), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                       "vkCreateSwapchainKHR() called even though the %s extension was not enabled for this VkDevice.",
-                       VK_KHR_SWAPCHAIN_EXTENSION_NAME);
     }
 
     // Keep around a useful pointer to pPhysicalDevice:
@@ -1850,29 +1482,6 @@ static bool validateCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateI
                              pCreateInfo->clipped);
     }
 
-    // Validate pCreateInfo->oldSwapchain:
-    if (pCreateInfo && pCreateInfo->oldSwapchain) {
-        SwpSwapchain *pOldSwapchain = NULL;
-        {
-            auto it = my_data->swapchainMap.find(pCreateInfo->oldSwapchain);
-            pOldSwapchain = (it == my_data->swapchainMap.end()) ? NULL : &it->second;
-        }
-        if (pOldSwapchain) {
-            if (device != pOldSwapchain->pDevice->device) {
-                skip_call |=
-                    log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT,
-                            reinterpret_cast<uint64_t>(device), __LINE__, SWAPCHAIN_DESTROY_SWAP_DIFF_DEVICE, swapchain_layer_name,
-                            "vkCreateSwapchainKHR() called with a different VkDevice than the VkSwapchainKHR was created with.");
-            }
-            if (pCreateInfo->surface != pOldSwapchain->pSurface->surface) {
-                skip_call |=
-                    log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT,
-                            reinterpret_cast<uint64_t>(device), __LINE__, SWAPCHAIN_CREATE_SWAP_DIFF_SURFACE, swapchain_layer_name,
-                            "vkCreateSwapchainKHR() called with pCreateInfo->oldSwapchain pCreateInfo->surface.");
-            }
-        }
-    }
-
     return skip_call;
 }
 
@@ -1903,7 +1512,6 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateSwapchainKHR(VkDevice device, const VkSwapc
             }
             my_data->swapchainMap[*pSwapchain].pDevice = pDevice;
             my_data->swapchainMap[*pSwapchain].imageCount = 0;
-            my_data->swapchainMap[*pSwapchain].usedAllocatorToCreate = (pAllocator != NULL);
             // Store a pointer to the surface
             SwpPhysicalDevice *pPhysicalDevice = pDevice->pPhysicalDevice;
             SwpInstance *pInstance = (pPhysicalDevice) ? pPhysicalDevice->pInstance : NULL;
@@ -1931,19 +1539,6 @@ VKAPI_ATTR void VKAPI_CALL DestroySwapchainKHR(VkDevice device, VkSwapchainKHR s
     bool skip_call = false;
     layer_data *my_data = get_my_data_ptr(get_dispatch_key(device), layer_data_map);
     std::unique_lock<std::mutex> lock(global_lock);
-    SwpDevice *pDevice = NULL;
-    {
-        auto it = my_data->deviceMap.find(device);
-        pDevice = (it == my_data->deviceMap.end()) ? NULL : &it->second;
-    }
-
-    // Validate that the swapchain extension was enabled:
-    if (pDevice && !pDevice->swapchainExtensionEnabled) {
-        skip_call |= log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT,
-                             reinterpret_cast<uint64_t>(device), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                             "vkDestroySwapchainKHR() called even though the %s extension was not enabled for this VkDevice.",
-                             VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-    }
 
     // Regardless of skip_call value, do some internal cleanup:
     SwpSwapchain *pSwapchain = NULL;
@@ -1955,24 +1550,12 @@ VKAPI_ATTR void VKAPI_CALL DestroySwapchainKHR(VkDevice device, VkSwapchainKHR s
         // Delete the SwpSwapchain associated with this swapchain:
         if (pSwapchain->pDevice) {
             pSwapchain->pDevice->swapchains.erase(swapchain);
-            if (device != pSwapchain->pDevice->device) {
-                skip_call |=
-                    log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT,
-                            reinterpret_cast<uint64_t>(device), __LINE__, SWAPCHAIN_DESTROY_SWAP_DIFF_DEVICE, swapchain_layer_name,
-                            "vkDestroySwapchainKHR() called with a different VkDevice than the VkSwapchainKHR was created with.");
-            }
         }
         if (pSwapchain->pSurface) {
             pSwapchain->pSurface->swapchains.erase(swapchain);
         }
         if (pSwapchain->imageCount) {
             pSwapchain->images.clear();
-        }
-        if ((pAllocator != NULL) != pSwapchain->usedAllocatorToCreate) {
-            skip_call |=
-                log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT,
-                        reinterpret_cast<uint64_t>(device), __LINE__, SWAPCHAIN_INCOMPATIBLE_ALLOCATOR, swapchain_layer_name,
-                        "vkDestroySwapchainKHR() called with incompatible pAllocator from when the object was created.");
         }
         my_data->swapchainMap.erase(swapchain);
     }
@@ -1990,19 +1573,7 @@ VKAPI_ATTR VkResult VKAPI_CALL GetSwapchainImagesKHR(VkDevice device, VkSwapchai
     bool skip_call = false;
     layer_data *my_data = get_my_data_ptr(get_dispatch_key(device), layer_data_map);
     std::unique_lock<std::mutex> lock(global_lock);
-    SwpDevice *pDevice = NULL;
-    {
-        auto it = my_data->deviceMap.find(device);
-        pDevice = (it == my_data->deviceMap.end()) ? NULL : &it->second;
-    }
 
-    // Validate that the swapchain extension was enabled:
-    if (pDevice && !pDevice->swapchainExtensionEnabled) {
-        skip_call |= log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT,
-                             reinterpret_cast<uint64_t>(device), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                             "vkGetSwapchainImagesKHR() called even though the %s extension was not enabled for this VkDevice.",
-                             VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-    }
     SwpSwapchain *pSwapchain = NULL;
     {
         auto it = my_data->swapchainMap.find(swapchain);
@@ -2082,20 +1653,6 @@ VKAPI_ATTR VkResult VKAPI_CALL AcquireNextImageKHR(VkDevice device, VkSwapchainK
         pDevice = (it == my_data->deviceMap.end()) ? NULL : &it->second;
     }
 
-    // Validate that the swapchain extension was enabled:
-    if (pDevice && !pDevice->swapchainExtensionEnabled) {
-        skip_call |= log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT,
-                             reinterpret_cast<uint64_t>(device), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                             "vkAcquireNextImageKHR() called even though the %s extension was not enabled for this VkDevice.",
-                             VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-    }
-    if ((semaphore == VK_NULL_HANDLE) && (fence == VK_NULL_HANDLE)) {
-        skip_call |=
-            log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT,
-                    reinterpret_cast<uint64_t>(device), __LINE__, SWAPCHAIN_NO_SYNC_FOR_ACQUIRE, swapchain_layer_name,
-                    "vkAcquireNextImageKHR() called with both the semaphore and fence parameters set to VK_NULL_HANDLE (at "
-                    "least one should be used).");
-    }
     SwpSwapchain *pSwapchain = NULL;
     {
         auto it = my_data->swapchainMap.find(swapchain);
@@ -2165,38 +1722,12 @@ VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInf
 
     std::unique_lock<std::mutex> lock(global_lock);
     for (uint32_t i = 0; pPresentInfo && (i < pPresentInfo->swapchainCount); i++) {
-        uint32_t index = pPresentInfo->pImageIndices[i];
         SwpSwapchain *pSwapchain = NULL;
         {
             auto it = my_data->swapchainMap.find(pPresentInfo->pSwapchains[i]);
             pSwapchain = (it == my_data->swapchainMap.end()) ? NULL : &it->second;
         }
         if (pSwapchain) {
-            if (!pSwapchain->pDevice->swapchainExtensionEnabled) {
-                skip_call |= log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT,
-                                     reinterpret_cast<uint64_t>(pSwapchain->pDevice->device), __LINE__,
-                                     SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                                     "vkQueuePresentKHR() called even though the %s extension was not enabled for this VkDevice.",
-                                     VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-            }
-            if (index >= pSwapchain->imageCount) {
-                skip_call |=
-                    log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_SWAPCHAIN_KHR_EXT,
-                            reinterpret_cast<const uint64_t &>(pPresentInfo->pSwapchains[i]), __LINE__, SWAPCHAIN_INDEX_TOO_LARGE,
-                            swapchain_layer_name,
-                            "vkQueuePresentKHR() called for an index that is too large (i.e. %d).  There are only %d images in "
-                            "this VkSwapchainKHR.",
-                            index, pSwapchain->imageCount);
-            } else {
-                if (!pSwapchain->images[index].acquiredByApp) {
-                    skip_call |= log_msg(
-                        my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_SWAPCHAIN_KHR_EXT,
-                        reinterpret_cast<const uint64_t &>(pPresentInfo->pSwapchains[i]), __LINE__, SWAPCHAIN_INDEX_NOT_IN_USE,
-                        swapchain_layer_name,
-                        "vkQueuePresentKHR() returned an index (i.e. %d) for an image that is not acquired by the application.",
-                        index);
-                }
-            }
             SwpQueue *pQueue = NULL;
             {
                 auto it = my_data->queueMap.find(queue);
@@ -2256,19 +1787,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateSharedSwapchainsKHR(VkDevice device, uint32
     bool skip_call = false;
     layer_data *my_data = get_my_data_ptr(get_dispatch_key(device), layer_data_map);
     std::unique_lock<std::mutex> lock(global_lock);
-    SwpDevice *pDevice = nullptr;
-    {
-        auto it = my_data->deviceMap.find(device);
-        pDevice = (it == my_data->deviceMap.end()) ? nullptr : &it->second;
-    }
 
-    // Validate that the swapchain extension was enabled:
-    if (pDevice && !pDevice->displaySwapchainExtensionEnabled) {
-        skip_call |= log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT,
-                             reinterpret_cast<uint64_t>(device), __LINE__, SWAPCHAIN_EXT_NOT_ENABLED_BUT_USED, swapchain_layer_name,
-                             "vkCreateSharedSwapchainsKHR() called even though the %s extension was not enabled for this VkDevice.",
-                             VK_KHR_DISPLAY_SWAPCHAIN_EXTENSION_NAME);
-    }
     if (!pCreateInfos || !pSwapchains) {
         skip_call |= log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DEVICE_EXT,
                              reinterpret_cast<uint64_t>(device), __LINE__, SWAPCHAIN_NULL_POINTER, swapchain_layer_name,
@@ -2511,12 +2030,9 @@ static PFN_vkVoidFunction intercept_khr_surface_command(const char *name, VkInst
         {"vkGetPhysicalDeviceSurfaceFormatsKHR", reinterpret_cast<PFN_vkVoidFunction>(GetPhysicalDeviceSurfaceFormatsKHR)},
         {"vkGetPhysicalDeviceSurfacePresentModesKHR",
          reinterpret_cast<PFN_vkVoidFunction>(GetPhysicalDeviceSurfacePresentModesKHR)},
-        {"vkGetPhysicalDeviceDisplayPropertiesKHR", reinterpret_cast<PFN_vkVoidFunction>(GetPhysicalDeviceDisplayPropertiesKHR)},
         {"vkGetPhysicalDeviceDisplayPlanePropertiesKHR",
          reinterpret_cast<PFN_vkVoidFunction>(GetPhysicalDeviceDisplayPlanePropertiesKHR)},
         {"vkGetDisplayPlaneSupportedDisplaysKHR", reinterpret_cast<PFN_vkVoidFunction>(GetDisplayPlaneSupportedDisplaysKHR)},
-        {"vkGetDisplayModePropertiesKHR", reinterpret_cast<PFN_vkVoidFunction>(GetDisplayModePropertiesKHR)},
-        {"vkCreateDisplayModeKHR", reinterpret_cast<PFN_vkVoidFunction>(CreateDisplayModeKHR)},
         {"vkGetDisplayPlaneCapabilitiesKHR", reinterpret_cast<PFN_vkVoidFunction>(GetDisplayPlaneCapabilitiesKHR)},
         {"vkCreateDisplayPlaneSurfaceKHR", reinterpret_cast<PFN_vkVoidFunction>(CreateDisplayPlaneSurfaceKHR)},
     };

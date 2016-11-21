@@ -115,7 +115,7 @@ void LogGuts(VktraceLogLevel level, const char* fmt, va_list args)
 {
 #if defined(WIN32)
         int requiredLength = _vscprintf(fmt, args) + 1;
-#elif defined(PLATFORM_LINUX)
+#elif defined(PLATFORM_LINUX) || defined(PLATFORM_OSX)
         int requiredLength;
         va_list argcopy;
         va_copy(argcopy, args);
@@ -134,7 +134,7 @@ void LogGuts(VktraceLogLevel level, const char* fmt, va_list args)
     char* message = (char*)vktrace_malloc(requiredLength);
 #if defined(WIN32)
     _vsnprintf_s(message, requiredLength, requiredLength - 1, fmt, args);
-#elif defined(PLATFORM_LINUX)
+#elif defined(PLATFORM_LINUX) || defined(PLATFORM_OSX)
     vsnprintf(message, requiredLength, fmt, args);
 #endif
 
@@ -144,7 +144,12 @@ void LogGuts(VktraceLogLevel level, const char* fmt, va_list args)
     }
     else
     {
+#ifdef ANDROID
+        #include <android/log.h>
+        __android_log_print(ANDROID_LOG_INFO, "vktrace", "%s: %s\n", vktrace_LogLevelToString(level), message);
+#else
         printf("%s: %s\n", vktrace_LogLevelToString(level), message);
+#endif
     }
 
     vktrace_free(message);

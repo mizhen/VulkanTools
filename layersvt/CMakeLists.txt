@@ -32,10 +32,10 @@ macro(run_vk_vtlayer_generate subcmd output)
     )
 endmacro()
 
-macro(run_vk_api_helper_generate subcmd)
-    add_custom_command(OUTPUT ${ARGN}
-        COMMAND ${PYTHON_CMD} ${PROJECT_SOURCE_DIR}/vk_helper_api_dump.py --${subcmd} ${PROJECT_SOURCE_DIR}/include/vulkan/vulkan.h --abs_out_dir ${CMAKE_CURRENT_BINARY_DIR}
-        DEPENDS ${PROJECT_SOURCE_DIR}/vk_helper_api_dump.py ${PROJECT_SOURCE_DIR}/vk-vtlayer-generate.py ${PROJECT_SOURCE_DIR}/include/vulkan/vulkan.h
+macro(run_vk_layer_xml_generate subcmd output)
+    add_custom_command(OUTPUT ${output}
+        COMMAND ${PYTHON_CMD} ${PROJECT_SOURCE_DIR}/vt_genvk.py -registry ${PROJECT_SOURCE_DIR}/vk.xml ${output}
+        DEPENDS ${PROJECT_SOURCE_DIR}/vk.xml ${PROJECT_SOURCE_DIR}/generator.py ${PROJECT_SOURCE_DIR}/vt_genvk.py ${PROJECT_SOURCE_DIR}/reg.py
     )
 endmacro()
 
@@ -61,6 +61,7 @@ if (WIN32)
                     COMMAND copy ${src_json} ${dst_json}
                     VERBATIM
                     )
+                add_dependencies(${config_file}-json ${config_file})
             endforeach(config_file)
         else()
             foreach (config_file ${LAYER_JSON_FILES})
@@ -70,6 +71,7 @@ if (WIN32)
                     COMMAND copy ${src_json} ${dst_json}
                     VERBATIM
                     )
+                add_dependencies(${config_file}-json ${config_file})
             endforeach(config_file)
         endif()
     endif()
@@ -81,6 +83,7 @@ else()
                 COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/linux/${config_file}.json
                 VERBATIM
                 )
+             add_dependencies(${config_file}-json ${config_file})
         endforeach(config_file)
     endif()
 endif()
@@ -94,7 +97,6 @@ if (WIN32)
     add_library(VkLayer_${target} SHARED ${ARGN} VkLayer_${target}.def)
     target_link_Libraries(VkLayer_${target} VkLayer_utilsvt)
     add_dependencies(VkLayer_${target} generate_vt_helpers)
-    set_target_properties(VkLayer_${target} PROPERTIES LINK_FLAGS "/DEF:${CMAKE_CURRENT_BINARY_DIR}/VkLayer_${target}.def")
     endmacro()
 else()
     macro(add_vk_layer target)
@@ -155,8 +157,30 @@ run_vk_helper(gen_struct_wrappers
     vk_struct_wrappers.h
     vk_struct_wrappers.cpp
     vk_safe_struct.h
-    vk_safe_struct.cpp
+# Don't list vk_safe_struct.cpp as OUTPUT to avoid duplicate builds.
+# If listed here use of it for add_library will cause it to be created
+# independently of custom target generate_vk_layer_helpers .
+# That breaks parallel builds.
+#   vk_safe_struct.cpp
 )
+
+# Let gen_struct_wrappers really create vk_safe_struct.cpp
+add_custom_command(OUTPUT vk_safe_struct.cpp
+    COMMAND echo defer making vk_safe_struct.cpp
+)
+
+set_source_files_properties(
+    vk_struct_string_helper.h
+    vk_struct_string_helper_cpp.h
+    vk_struct_string_helper_no_addr.h
+    vk_struct_string_helper_no_addr_cpp.h
+    vk_struct_size_helper.h
+    vk_struct_size_helper.c
+    vk_struct_wrappers.h
+    vk_struct_wrappers.cpp
+    vk_safe_struct.h
+    vk_safe_struct.cpp
+    PROPERTIES GENERATED TRUE)
 
 add_custom_target(generate_vt_helpers DEPENDS
     vk_dispatch_table_helper.h
@@ -171,13 +195,11 @@ add_custom_target(generate_vt_helpers DEPENDS
     vk_struct_wrappers.cpp
     vk_safe_struct.h
     vk_safe_struct.cpp
-    vk_api_dump_helper_cpp.h
 )
 
 #VulkanTools layers
 run_vk_vtlayer_generate(generic generic_layer.cpp)
-run_vk_vtlayer_generate(api_dump api_dump.cpp)
-run_vk_api_helper_generate(gen_struct_wrappers vk_api_dump_helper_cpp.h)
+run_vk_layer_xml_generate(ApiDump api_dump.cpp)
 
 # Layer Utils Library
 # For Windows, we use a static lib because the Windows loader has a fairly restrictive loader search

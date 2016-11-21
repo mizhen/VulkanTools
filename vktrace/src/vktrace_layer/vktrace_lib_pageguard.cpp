@@ -23,12 +23,13 @@
 #include "vktrace_lib_pageguardcapture.h"
 #include "vktrace_lib_pageguard.h"
 
-static const bool PAGEGUARD_PAGEGUARD_ENABLE_DEFAULT = false;
-static const VkDeviceSize PAGEGUARD_TARGET_RANGE_SIZE_DEFAULT = 32*1024*1024; // 32M, other tested value: 4M, 64M, this is the size which cause DOOM4 capture slow.
-static const VkDeviceSize  PAGEGUARD_PAGEGUARD_TARGET_RANGE_SIZE_MIN = 1;// already tested: 2M
+static const bool PAGEGUARD_PAGEGUARD_ENABLE_DEFAULT = false;  //set the default value to false, if capture target app with enable pageguard, need run "set VKTRACE_PAGEGUARD=1" commandline.
 
+static const VkDeviceSize PAGEGUARD_TARGET_RANGE_SIZE_DEFAULT = 2; //cover all reasonal mapped memory size, the mapped memory size may be less than 1 page, so processing for mapped memory size<1 page is already added,
+                                                                   //other value: 32 * 1024 * 1024 (32M),  64M, this is the size which cause DOOM4 capture very slow.
+static const VkDeviceSize  PAGEGUARD_PAGEGUARD_TARGET_RANGE_SIZE_MIN = 1; // already tested: 2,2M,4M,32M,64M, because commonly page size is 4k, so only range size=2 can cover small size mapped memory.
 
-static vktrace_sem_id ref_amount_sem_id;// TODO if vktrace inplement cross platform lib or dll load or unload function, this sem can be putted in those functions, but now we leave it to process quit. 
+static vktrace_sem_id ref_amount_sem_id;// TODO if vktrace implement cross platform lib or dll load or unload function, this sem can be putted in those functions, but now we leave it to process quit.
 static bool ref_amount_sem_id_create_success = vktrace_sem_create(&ref_amount_sem_id, 1);
 
 static vktrace_sem_id map_lock_sem_id;
@@ -44,20 +45,18 @@ void pageguardExit()
 }
 #if defined(WIN32) //page guard solution for windows
 
-#define PAGEGUARD_TARGET_RANGE_SIZE_CONTROL
-
-//PAGEGUARD_ADD_PAGEGUARD_ON_REAL_MAPPED_MEMORY is a compile flag for add page guard on real mapped memory.
-//If comment this flag, pageguard will be added on a copy of mapped memory, with the flag, page guard will be added to
-//real mapped memory.
-//for some hareware, add to mapped memory not the copy of it may not be allowed, so turn on this flag just for you are already sure page guard can work on that hardware.
-//If add page guard to the copy of mapped memory, it's always allowed but need to do synchonization between the mapped memory and its copy.
-
-//#define PAGEGUARD_ADD_PAGEGUARD_ON_REAL_MAPPED_MEMORY
 
 VkDeviceSize& ref_target_range_size()
 {
     static VkDeviceSize OPTTargetRangeSize = PAGEGUARD_TARGET_RANGE_SIZE_DEFAULT;
     return OPTTargetRangeSize;
+}
+
+void set_pageguard_target_range_size(VkDeviceSize newrangesize)
+{
+    VkDeviceSize& refTargetRangeSize = ref_target_range_size();
+
+    refTargetRangeSize = newrangesize;
 }
 
 LONG WINAPI PageGuardExceptionHandler(PEXCEPTION_POINTERS ExceptionInfo);
@@ -90,7 +89,7 @@ bool getPageGuardEnableFlag()
                         {
                             if (rangesize > PAGEGUARD_PAGEGUARD_TARGET_RANGE_SIZE_MIN)
                             {
-                                ref_target_range_size() = rangesize;
+                                set_pageguard_target_range_size(rangesize);
                             }
                         }
                     }
@@ -250,12 +249,13 @@ void resetAllReadFlagAndPageGuard()
 LONG WINAPI PageGuardExceptionHandler(PEXCEPTION_POINTERS ExceptionInfo)
 {
     LONG resultCode = EXCEPTION_CONTINUE_SEARCH;
+    pageguardEnter();
     if (ExceptionInfo->ExceptionRecord->ExceptionCode == STATUS_GUARD_PAGE_VIOLATION)
     {
         VkDeviceSize OffsetOfAddr;
         PBYTE pBlock;
         VkDeviceSize BlockSize;
-        PBYTE addr = (PBYTE)ExceptionInfo->ExceptionRecord->ExceptionInformation[1];
+        PBYTE addr = reinterpret_cast<PBYTE>(ExceptionInfo->ExceptionRecord->ExceptionInformation[1]);
         bool bWrite = ExceptionInfo->ExceptionRecord->ExceptionInformation[0];
         LPPageGuardMappedMemory pMappedMem = getPageGuardControlInstance().findMappedMemoryObject(addr, &OffsetOfAddr, &pBlock, &BlockSize);
         if (pMappedMem)
@@ -270,7 +270,7 @@ LONG WINAPI PageGuardExceptionHandler(PEXCEPTION_POINTERS ExceptionInfo)
             {
 
 #ifndef PAGEGUARD_ADD_PAGEGUARD_ON_REAL_MAPPED_MEMORY
-                memcpy(pBlock, pMappedMem->getRealMappedDataPointer() + OffsetOfAddr - OffsetOfAddr % BlockSize, pMappedMem->getMappedBlockSize(index));
+                vktrace_pageguard_memcpy(pBlock, pMappedMem->getRealMappedDataPointer() + OffsetOfAddr - OffsetOfAddr % BlockSize, pMappedMem->getMappedBlockSize(index));
                 pMappedMem->setMappedBlockChanged(index, true, BLOCK_FLAG_ARRAY_READ);
 
                 resultCode = EXCEPTION_CONTINUE_EXECUTION;
@@ -281,6 +281,7 @@ LONG WINAPI PageGuardExceptionHandler(PEXCEPTION_POINTERS ExceptionInfo)
             }
         }
     }
+    pageguardExit();
     return resultCode;
 }
 

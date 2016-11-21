@@ -579,6 +579,7 @@ class StructWrapperGen:
         self.size_helper_gen.setCopyright(self._generateCopyright())
         self.size_helper_gen.setHeader(self._generateSizeHelperHeader())
         self.size_helper_gen.setBody(self._generateSizeHelperFunctions())
+        self.size_helper_gen.setFooter(self._generateSizeHelperFooter())
         self.size_helper_gen.generate()
 
     def generateSizeHelperC(self):
@@ -992,7 +993,7 @@ class StructWrapperGen:
                                 sh_funcs.append('%sss[%u] << "0x" << %spStruct->%s[i];' % (indent, index, addr_char, stp_list[index]['name']))
                             else:
                                 sh_funcs.append('%sss[%u] << %spStruct->%s[i];' % (indent, index, addr_char, stp_list[index]['name']))
-                            if stp_list[index]['type'] in vulkan.core.objects:
+                            if stp_list[index]['type'] in vulkan.VK_VERSION_1_0.objects:
                                 sh_funcs.append('%sstp_strs[%u] += " " + prefix + "%s[" + index_ss.str() + "].handle = " + ss[%u].str() + "\\n";' % (indent, index, stp_list[index]['name'], index))
                             else:
                                 sh_funcs.append('%sstp_strs[%u] += " " + prefix + "%s[" + index_ss.str() + "] = " + ss[%u].str() + "\\n";' % (indent, index, stp_list[index]['name'], index))
@@ -1482,6 +1483,10 @@ class StructWrapperGen:
 
     def _generateSizeHelperHeader(self):
         header = []
+        header.append('\n#ifdef __cplusplus\n')
+        header.append('extern "C" {\n')
+        header.append('#endif\n')
+        header.append("\n")
         header.append("//#includes, #defines, globals and such...\n")
         for f in self.include_headers:
             header.append("#include <%s>\n" % f)
@@ -1498,6 +1503,12 @@ class StructWrapperGen:
         header.append('\n// Function definitions\n')
         return "\n".join(header)
 
+    def _generateSizeHelperFooter(self):
+        footer = []
+        footer.append('\n\n#ifdef __cplusplus')
+        footer.append('}')
+        footer.append('#endif')
+        return "\n".join(footer)
 
     def _generateHeader(self):
         header = []

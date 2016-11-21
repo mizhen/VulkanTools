@@ -1,9 +1,13 @@
 PROJECT(vktrace_project)
 
-# We need CMake version 3.0+ in order to "find_package(Qt5)":
-cmake_minimum_required(VERSION 3.0)
-
 option(BUILD_VKTRACEVIEWER "Build VkTraceViewer" ON)
+
+if (BUILD_VKTRACEVIEWER)
+    # We need CMake version 3.0+ in order to "find_package(Qt5)":
+    cmake_minimum_required(VERSION 3.0)
+else ()
+    cmake_minimum_required(VERSION 2.8.11)
+endif()
 
 set(SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
@@ -54,8 +58,15 @@ set(VKTRACE_VULKAN_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_subdirectory(src/vktrace_common)
 add_subdirectory(src/vktrace_trace)
-add_subdirectory(src/vktrace_layer)
-add_subdirectory(src/vktrace_replay)
+
+option(BUILD_VKTRACE_LAYER "Build vktrace_layer" ON)
+if(BUILD_VKTRACE_LAYER)
+    add_subdirectory(src/vktrace_layer)
+endif()
+option(BUILD_VKTRACE_REPLAY "Build vktrace_replay" ON)
+if(BUILD_VKTRACE_REPLAY)
+    add_subdirectory(src/vktrace_replay)
+endif()
 
 # Only build vktraceviewer if Qt5 is available
 if (Qt5_FOUND AND BUILD_VKTRACEVIEWER)
