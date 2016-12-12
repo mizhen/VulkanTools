@@ -63,7 +63,7 @@ else()
             COMMAND ${GLSLANG_VALIDATOR} -s -V -o cube-frag.spv ${PROJECT_SOURCE_DIR}/demos/cube.frag
             DEPENDS cube.frag ${GLSLANG_VALIDATOR}
             )
-    endif()         
+    endif()
 endif()
 
 if(NOT WIN32)
@@ -80,14 +80,9 @@ if(NOT WIN32)
         link_libraries(${WAYLAND_CLIENT_LIBRARIES})
     endif()
 
-    include_directories ("${PROJECT_SOURCE_DIR}/icd/common")
     link_libraries(${API_LOWERCASE} m)
 endif()
 if(WIN32)
-    include_directories (
-       "${PROJECT_SOURCE_DIR}/icd/common"
-       )
-
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_CRT_SECURE_NO_WARNINGS -D_USE_MATH_DEFINES")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_CRT_SECURE_NO_WARNINGS -D_USE_MATH_DEFINES")
 endif()
@@ -127,8 +122,10 @@ else()
     target_link_libraries(cubepp ${LIBRARIES})
 endif()
 
-if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL ${CMAKE_HOST_SYSTEM_PROCESSOR})
-    add_subdirectory(smoke)
+if ((${CMAKE_SYSTEM_PROCESSOR} STREQUAL ${CMAKE_HOST_SYSTEM_PROCESSOR}))
+    if  (BUILD_WSI_XCB_SUPPORT OR BUILD_WSI_WAYLAND_SUPPORT OR WIN32 OR (CMAKE_SYSTEM_NAME STREQUAL "Android"))
+        add_subdirectory(smoke)
+    endif()
 endif()
 
 if(UNIX)

@@ -4,9 +4,9 @@ This document contains the instructions for building this repository on Linux an
 This repository contains additional layers and the VkTrace trace/replay tools, supplementing the
 loader and validation layer core components found at https://github.com/KhronosGroup.
 
-For Linux, this repository also contains a sample Intel Vulkan driver that is being deprecated.
-Instead of using this driver, it is suggested that you contact your graphics device manufacturer
-to obtain a Vulkan driver for your GPU hardware.
+This repository previously contained a sample Intel Vulkan driver that has since been deprecated.
+The final stable version of that source code is available from this repo by checking out the git
+tag "Vulkan-ICD-Snapshot". This source code is no longer supported.
 
 ## Git the Bits
 
@@ -24,14 +24,8 @@ These additional packages are needed for building the components in this repo.
 # Dependencies from the LoaderAndValidationLayers repo:
 sudo apt-get install git cmake build-essential bison libx11-dev libxcb1-dev
 # Additional dependencies for this repo:
-sudo apt-get install libudev-dev libpciaccess-dev libxcb-dri3-dev libxcb-present-dev libgl1-mesa-dev wget autotools-dev
+sudo apt-get install wget autotools-dev
 ```
-
-If you are using the sample Intel Vulkan driver in this repo, you will have to ensure that
-the DRI3 extension is active in your X Server.
-Follow the
-[DRI3 Instructions](dri3.md)
-to prepare your X Server.
 
 ## Clone the Repository
 
@@ -43,14 +37,13 @@ cd YOUR_DEV_DIRECTORY
 git clone git@github.com:LunarG/VulkanTools.git
 cd VulkanTools
 # This will fetch and build glslang and spriv-tools
-# On Linux, it will also fetch and build LunarGLASS
 ./update_external_sources.sh         # linux
 ./update_external_sources.bat --all  # windows
 ```
 
 ## Linux Build
 
-This build process builds the icd, vktrace and the LVL tests.
+This build process builds vktrace and the LVL tests.
 
 Example debug build:
 ```
@@ -196,6 +189,12 @@ This documentation is preliminary and needs to be beefed up.
 
 See the [vktracereplay.sh](https://github.com/LunarG/VulkanTools/blob/master/build-android/vktracereplay.sh) file for a working example of how to use vktrace/vkreplay and screenshot layers.
 
+Two additional scripts have been added to facilitate tracing and replaying any APK.  Note that these two scripts do not install anything for you, so make sure your target APK, vktrace, vktrace_layer, and vkreplay all use the same ABI.
+```
+./create_trace.sh --serial 0123456789 --abi armeabi-v7a --package com.example.CubeWithLayers  --activity android.app.NativeActivity
+adb install --abi armeabi-v7a
+./replay_trace.sh --serial 0123456789 --tracefile com.example.CubeWithLayers0.vktrace
+```
 An example of using the scripts on Linux and macOS:
 ```
 ./build_vktracereplay.sh
@@ -260,7 +259,7 @@ Result screenshot will be in:
 ### vktrace
 To record a trace on Android, enable port forwarding from the device to the host:
 ```
-adb reverse tcp:34201 tcp:34201
+adb reverse localabstract:vktrace tcp:34201
 ```
 Start up vktrace on the host in server mode:
 ```

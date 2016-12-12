@@ -59,6 +59,8 @@ endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
+set(SCRIPTS_DIR "${CMAKE_SOURCE_DIR}/scripts")
+
 # Header file for CMake settings
 include_directories("${PROJECT_SOURCE_DIR}/include")
 
@@ -115,11 +117,6 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows" OR
 
     # These are unchanged from upstream file
     option(BUILD_LOADER "Build loader" ON)
-    if(WIN32)
-        option(BUILD_ICD "Build LunarG intel icd" OFF)
-    else()
-        option(BUILD_ICD "Build LunarG intel icd" ON)
-    endif()
     option(BUILD_TESTS "Build tests" ON)
     option(BUILD_LAYERS "Build layers" ON)
     option(BUILD_LAYERSVT "Build layersvt" ON)
@@ -135,7 +132,6 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     # Only vktrace enable for macOS
     option(BUILD_VKTRACE ON)
     option(BUILD_LOADER OFF)
-    option(BUILD_ICD OFF)
     option(BUILD_TESTS OFF)
     option(BUILD_LAYERS OFF)
     option(BUILD_LAYERSVT OFF)
@@ -326,15 +322,6 @@ else ()
     set (SPIRV_TOOLS_LIBRARIES ${SPIRV_TOOLS_LIB})
 endif()
 
-if (BUILD_ICD)
-    # Hard code our LunarGLASS path for now
-    get_filename_component(LUNARGLASS_PREFIX external/LunarGLASS ABSOLUTE)
-
-    if(NOT EXISTS ${LUNARGLASS_PREFIX})
-        message(FATAL_ERROR "Necessary LunarGLASS components do not exist: " ${LUNARGLASS_PREFIX})
-    endif()
-endif()
-
 set (PYTHON_CMD ${PYTHON_EXECUTABLE})
 
 if(NOT WIN32)
@@ -359,14 +346,9 @@ if(UNIX)
 endif()
 
 # loader: Generic VULKAN ICD loader
-# icd: Device dependent (DD) VULKAN components
 # tests: VULKAN tests
 if(BUILD_LOADER)
     add_subdirectory(loader)
-endif()
-
-if(BUILD_ICD)
-    add_subdirectory(icd)
 endif()
 
 if(BUILD_TESTS)
