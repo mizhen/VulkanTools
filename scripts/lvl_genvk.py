@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 #
 # Copyright (c) 2013-2016 The Khronos Group Inc.
 #
@@ -24,6 +24,7 @@ from threading_generator import  ThreadGeneratorOptions, ThreadOutputGenerator
 from parameter_validation_generator import ParamCheckerGeneratorOptions, ParamCheckerOutputGenerator
 from unique_objects_generator import UniqueObjectsGeneratorOptions, UniqueObjectsOutputGenerator
 from dispatch_table_generator import DispatchTableOutputGenerator, DispatchTableOutputGeneratorOptions
+from helper_file_generator import HelperFileOutputGenerator, HelperFileOutputGeneratorOptions
 
 # Simple timer functions
 startTime = None
@@ -50,7 +51,7 @@ def makeREstring(list):
 # extensions - list of extension names to include.
 # protect - True if re-inclusion protection should be added to headers
 # directory - path to directory in which to generate the target(s)
-def makeGenOpts(extensions = [], protect = True, directory = '.'):
+def makeGenOpts(extensions = [], removeExtensions = [], protect = True, directory = '.'):
     global genOpts
     genOpts = {}
 
@@ -60,7 +61,7 @@ def makeGenOpts(extensions = [], protect = True, directory = '.'):
     noVersions      = noExtensions = None
 
     addExtensions     = makeREstring(extensions)
-    removeExtensions  = makeREstring([])
+    removeExtensions  = makeREstring(removeExtensions)
 
     # Copyright text prefixing all headers (list of strings).
     prefixStrings = [
@@ -183,6 +184,28 @@ def makeGenOpts(extensions = [], protect = True, directory = '.'):
             alignFuncParam    = 48)
         ]
 
+    # Options for helper file generator
+    genOpts['vk_enum_string_helper.h'] = [
+          HelperFileOutputGenerator,
+          HelperFileOutputGeneratorOptions(
+            filename          = 'vk_enum_string_helper.h',
+            directory         = directory,
+            apiname           = 'vulkan',
+            profile           = None,
+            versions          = allVersions,
+            emitversions      = allVersions,
+            defaultExtensions = 'vulkan',
+            addExtensions     = addExtensions,
+            removeExtensions  = removeExtensions,
+            prefixText        = prefixStrings + vkPrefixStrings,
+            protectFeature    = False,
+            apicall           = 'VKAPI_ATTR ',
+            apientry          = 'VKAPI_CALL ',
+            apientryp         = 'VKAPI_PTR *',
+            alignFuncParam    = 48)
+        ]
+
+
 
 
 # Generate a target based on the options in the matching genOpts{} object.
@@ -199,6 +222,7 @@ def genTarget(args):
 
     # Create generator options with specified parameters
     makeGenOpts(extensions = args.extension,
+                removeExtensions = args.removeExtension,
                 protect = args.protect,
                 directory = args.directory)
 
@@ -206,7 +230,8 @@ def genTarget(args):
         createGenerator = genOpts[args.target][0]
         options = genOpts[args.target][1]
 
-        write('* Building', options.filename, file=sys.stderr)
+        if not args.quiet:
+            write('* Building', options.filename, file=sys.stderr)
 
         startTimer(args.time)
         gen = createGenerator(errFile=errWarn,
@@ -214,7 +239,9 @@ def genTarget(args):
                               diagFile=diag)
         reg.setGenerator(gen)
         reg.apiGen(options)
-        write('* Generated', options.filename, file=sys.stderr)
+
+        if not args.quiet:
+            write('* Generated', options.filename, file=sys.stderr)
         endTimer(args.time, '* Time to generate ' + options.filename + ' =')
     else:
         write('No generator options for unknown target:',
@@ -228,6 +255,9 @@ if __name__ == '__main__':
     parser.add_argument('-extension', action='append',
                         default=[],
                         help='Specify an extension or extensions to add to targets')
+    parser.add_argument('-removeExtension', action='append',
+                        default=[],
+                        help='Specify an extension or extensions to remove from targets')
     parser.add_argument('-debug', action='store_true',
                         help='Enable debugging')
     parser.add_argument('-dump', action='store_true',
@@ -254,6 +284,8 @@ if __name__ == '__main__':
                         help='Create target and related files in specified directory')
     parser.add_argument('target', metavar='target', nargs='?',
                         help='Specify target')
+    parser.add_argument('-quiet', action='store_true', default=False,
+                        help='Suppress script output during normal execution.')
 
     args = parser.parse_args()
 
@@ -276,16 +308,16 @@ if __name__ == '__main__':
 
     if (args.dump):
         write('* Dumping registry to regdump.txt', file=sys.stderr)
-        reg.dumpReg(filehandle = open('regdump.txt','w'))
+        reg.dumpReg(filehandle = open('regdump.txt','w', encoding='utf-8'))
 
     # create error/warning & diagnostic files
     if (args.errfile):
-        errWarn = open(args.errfile, 'w')
+        errWarn = open(args.errfile, 'w', encoding='utf-8')
     else:
         errWarn = sys.stderr
 
     if (args.diagfile):
-        diag = open(args.diagfile, 'w')
+        diag = open(args.diagfile, 'w', encoding='utf-8')
     else:
         diag = None
 

@@ -220,7 +220,8 @@ void VkRenderFramework::InitState(VkPhysicalDeviceFeatures *features) {
     VkCommandPoolCreateInfo cmd_pool_info;
     cmd_pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, cmd_pool_info.pNext = NULL,
     cmd_pool_info.queueFamilyIndex = m_device->graphics_queue_node_index_;
-    cmd_pool_info.flags = 0, err = vkCreateCommandPool(device(), &cmd_pool_info, NULL, &m_commandPool);
+    cmd_pool_info.flags = 0;
+    err = vkCreateCommandPool(device(), &cmd_pool_info, NULL, &m_commandPool);
     assert(!err);
 
     m_commandBuffer = new VkCommandBufferObj(m_device, m_commandPool);
@@ -1408,6 +1409,16 @@ void VkCommandBufferObj::CopyImage(VkImage srcImage, VkImageLayout srcImageLayou
 void VkCommandBufferObj::ResolveImage(VkImage srcImage, VkImageLayout srcImageLayout, VkImage dstImage,
                                       VkImageLayout dstImageLayout, uint32_t regionCount, const VkImageResolve *pRegions) {
     vkCmdResolveImage(handle(), srcImage, srcImageLayout, dstImage, dstImageLayout, regionCount, pRegions);
+}
+
+void VkCommandBufferObj::ClearColorImage(VkImage image, VkImageLayout imageLayout, const VkClearColorValue *pColor,
+                                         uint32_t rangeCount, const VkImageSubresourceRange *pRanges) {
+    vkCmdClearColorImage(handle(), image, imageLayout, pColor, rangeCount, pRanges);
+}
+
+void VkCommandBufferObj::ClearDepthStencilImage(VkImage image, VkImageLayout imageLayout, const VkClearDepthStencilValue *pColor,
+                                                uint32_t rangeCount, const VkImageSubresourceRange *pRanges) {
+    vkCmdClearDepthStencilImage(handle(), image, imageLayout, pColor, rangeCount, pRanges);
 }
 
 void VkCommandBufferObj::PrepareAttachments() {

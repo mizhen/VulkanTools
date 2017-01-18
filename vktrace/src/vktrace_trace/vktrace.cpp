@@ -47,7 +47,7 @@ vktrace_SettingInfo g_settings_info[] =
     { "s", "ScreenShot", VKTRACE_SETTING_STRING, { &g_settings.screenshotList }, { &g_default_settings.screenshotList }, TRUE, "Comma separated list of frames to take a snapshot of."},
     { "png", "PngScreenShot", VKTRACE_SETTING_STRING, { &g_settings.pngScreenshotList }, { &g_default_settings.pngScreenshotList }, TRUE, "Saves a PNG screenshot of frames identified by: <startFrame>-<endFrame>,<stepFrames>." },
     { "ptm", "PrintTraceMessages", VKTRACE_SETTING_BOOL, { &g_settings.print_trace_messages }, { &g_default_settings.print_trace_messages }, TRUE, "Print trace messages to vktrace console."},
-    { "P", "PMB", VKTRACE_SETTING_BOOL, { &g_settings.enable_pmb }, { &g_default_settings.enable_pmb }, TRUE, "Optimize tracing of persistently mapped buffers, default is TRUE."},
+    { "P", "PMB", VKTRACE_SETTING_BOOL, { &g_settings.enable_pmb }, { &g_default_settings.enable_pmb }, TRUE, "Optimize tracing of persistently mapped buffers, default is FALSE."},
 #if _DEBUG
     { "v", "Verbosity", VKTRACE_SETTING_STRING, { &g_settings.verbosity }, { &g_default_settings.verbosity }, TRUE, "Verbosity mode. Modes are \"quiet\", \"errors\", \"warnings\", \"full\", \"debug\"."},
 #else
