@@ -51,13 +51,6 @@ else()
     message (WARNING "VulkanTools repository may not include a version of libpng16.lib or zlib.lib for your compiler.")
 endif()
 
-macro(run_vk_helper subcmd)
-    add_custom_command(OUTPUT ${ARGN}
-        COMMAND ${PYTHON_CMD} ${SCRIPTS_DIR}/vk_helper.py --${subcmd} ${PROJECT_SOURCE_DIR}/include/vulkan/vulkan.h --abs_out_dir ${CMAKE_CURRENT_BINARY_DIR}
-        DEPENDS ${SCRIPTS_DIR}/vk_helper.py ${PROJECT_SOURCE_DIR}/include/vulkan/vulkan.h
-    )
-endmacro()
-
 macro(run_vk_xml_generate subcmd output)
     add_custom_command(OUTPUT ${output}
         COMMAND ${PYTHON_CMD} ${SCRIPTS_DIR}/vt_genvk.py -registry ${SCRIPTS_DIR}/vk.xml ${output}
@@ -167,29 +160,6 @@ else()
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wpointer-arith")
 endif()
 
-run_vk_helper(gen_struct_wrappers
-    vk_struct_size_helper.h
-    vk_struct_size_helper.c
-    vk_safe_struct.h
-# Don't list vk_safe_struct.cpp as OUTPUT to avoid duplicate builds.
-# If listed here use of it for add_library will cause it to be created
-# independently of custom target generate_vk_layer_helpers .
-# That breaks parallel builds.
-#   vk_safe_struct.cpp
-)
-
-# Let gen_struct_wrappers really create vk_safe_struct.cpp
-add_custom_command(OUTPUT vk_safe_struct.cpp
-    COMMAND echo defer making vk_safe_struct.cpp
-)
-
-set_source_files_properties(
-    vk_struct_size_helper.h
-    vk_struct_size_helper.c
-    vk_safe_struct.h
-    vk_safe_struct.cpp
-    PROPERTIES GENERATED TRUE)
-
 add_custom_target(generate_vt_helpers DEPENDS
     vk_dispatch_table_helper.h
     vk_enum_string_helper.h
@@ -200,6 +170,10 @@ add_custom_target(generate_vt_helpers DEPENDS
 )
 
 #VulkanTools layers
+run_vk_xml_generate(helper_file_generator.py vk_safe_struct.h)
+run_vk_xml_generate(helper_file_generator.py vk_safe_struct.cpp)
+run_vk_xml_generate(helper_file_generator.py vk_struct_size_helper.h)
+run_vk_xml_generate(helper_file_generator.py vk_struct_size_helper.c)
 run_vk_xml_generate(helper_file_generator.py vk_enum_string_helper.h)
 run_vk_xml_generate(dispatch_table_generator.py vk_dispatch_table_helper.h)
 run_vk_xml_generate(ApiDump api_dump.cpp)

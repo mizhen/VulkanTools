@@ -47,7 +47,7 @@ vktrace_SettingInfo g_settings_info[] =
     { "s", "ScreenShot", VKTRACE_SETTING_STRING, { &g_settings.screenshotList }, { &g_default_settings.screenshotList }, TRUE, "Comma separated list of frames to take a snapshot of."},
     { "png", "PngScreenShot", VKTRACE_SETTING_STRING, { &g_settings.pngScreenshotList }, { &g_default_settings.pngScreenshotList }, TRUE, "Saves a PNG screenshot of frames identified by: <startFrame>-<endFrame>,<stepFrames>." },
     { "ptm", "PrintTraceMessages", VKTRACE_SETTING_BOOL, { &g_settings.print_trace_messages }, { &g_default_settings.print_trace_messages }, TRUE, "Print trace messages to vktrace console."},
-    { "P", "PMB", VKTRACE_SETTING_BOOL, { &g_settings.enable_pmb }, { &g_default_settings.enable_pmb }, TRUE, "Optimize tracing of persistently mapped buffers, default is FALSE."},
+    { "P", "PMB", VKTRACE_SETTING_BOOL, { &g_settings.enable_pmb }, { &g_default_settings.enable_pmb }, TRUE, "Optimize tracing of persistently mapped buffers, default is TRUE."},
 #if _DEBUG
     { "v", "Verbosity", VKTRACE_SETTING_STRING, { &g_settings.verbosity }, { &g_default_settings.verbosity }, TRUE, "Verbosity mode. Modes are \"quiet\", \"errors\", \"warnings\", \"full\", \"debug\"."},
 #else
@@ -66,7 +66,7 @@ vktrace_SettingGroup g_settingGroup =
 
 // ------------------------------------------------------------------------------------------------
 #if defined(WIN32)
-void MessageLoop()
+uint64_t MessageLoop()
 {
     MSG msg = { 0 };
     bool quit = false;
@@ -81,6 +81,7 @@ void MessageLoop()
             quit = (msg.message == VKTRACE_WM_COMPLETE);
         }
     }
+    return msg.wParam;
 }
 #endif
 
@@ -173,9 +174,64 @@ void add_device_layer(const char* fullLayerName)
 }
 
 // ------------------------------------------------------------------------------------------------
+char* append_index_to_filename(const char* base, uint32_t index, const char* extension)
+{
+    char num[17];
+#ifdef PLATFORM_LINUX
+    snprintf(num, 17, "-%u", index);
+#elif defined(WIN32)
+    _snprintf_s(num, 17, _TRUNCATE, "-%u", index);
+#endif
+    return vktrace_copy_and_append(base, num, extension);
+}
+
+// ------------------------------------------------------------------------------------------------
+static uint32_t s_fileIndex = 0;
+char* find_available_filename(const char* originalFilename, bool bForceOverwrite)
+{
+    char* pOutputFilename = NULL;
+
+    if (bForceOverwrite)
+    {
+        if (s_fileIndex == 0)
+        {
+            pOutputFilename = vktrace_allocate_and_copy(g_settings.output_trace);
+        }
+        else
+        {
+            const char *pExtension = strrchr(g_settings.output_trace, '.');
+            char *basename = vktrace_allocate_and_copy_n(g_settings.output_trace, (int)((pExtension == NULL) ? strlen(g_settings.output_trace) : pExtension - g_settings.output_trace));
+            pOutputFilename = append_index_to_filename(basename, s_fileIndex, pExtension);
+            vktrace_free(basename);
+        }
+    }
+    else // don't overwrite
+    {
+        const char *pExtension = strrchr(g_settings.output_trace, '.');
+        char *basename = vktrace_allocate_and_copy_n(g_settings.output_trace, (int)((pExtension == NULL) ? strlen(g_settings.output_trace) : pExtension - g_settings.output_trace));
+        pOutputFilename = vktrace_allocate_and_copy(g_settings.output_trace);
+        FILE* pFile = NULL;
+        while ((pFile = fopen(pOutputFilename, "rb")) != NULL)
+        {
+            fclose(pFile);
+            ++s_fileIndex;
+
+            vktrace_free(pOutputFilename);
+            pOutputFilename = append_index_to_filename(basename, s_fileIndex, pExtension);
+        }
+        vktrace_free(basename);
+    }
+
+    // increment to the next available fileIndex to prep for the next trace file
+    ++s_fileIndex;
+    return pOutputFilename;
+}
+
+// ------------------------------------------------------------------------------------------------
 int main(int argc, char* argv[])
 {
     BOOL isServerMode = FALSE;
+    uint64_t exitval=0;
     memset(&g_settings, 0, sizeof(vktrace_settings));
 
     vktrace_LogSetCallback(loggingCallback);
@@ -315,16 +371,8 @@ int main(int argc, char* argv[])
         }
         else
         {
-            const char *pExtension = strrchr(g_settings.output_trace, '.');
-            char *basename = vktrace_allocate_and_copy_n(g_settings.output_trace, (int) ((pExtension == NULL) ? strlen(g_settings.output_trace) : pExtension - g_settings.output_trace));
-            char num[16];
-#ifdef PLATFORM_LINUX
-            snprintf(num, 16, "%u", serverIndex);
-#elif defined(WIN32)
-            _snprintf_s(num, 16, _TRUNCATE, "%u", serverIndex);
-#endif
-            procInfo.traceFilename = vktrace_copy_and_append(basename, num, pExtension);
-         }
+            procInfo.traceFilename = find_available_filename(g_settings.output_trace, true);
+        }
 
         procInfo.parentThreadId = vktrace_platform_get_thread_id();
 
@@ -355,14 +403,15 @@ int main(int argc, char* argv[])
         }
         if (procStarted == FALSE)
         {
-            vktrace_LogError("Failed to setup remote process.");
+            vktrace_LogError("Failed to set up remote process.");
+            exit(1);
         }
         else
         {
             if (InjectTracersIntoProcess(&procInfo) == FALSE)
             {
-                vktrace_LogError("Failed to setup tracer communication threads.");
-                return -1;
+                vktrace_LogError("Failed to set up tracer communication threads.");
+                exit(1);
             }
 
             // create watchdog thread to monitor existence of remote process
@@ -370,17 +419,22 @@ int main(int argc, char* argv[])
                 procInfo.watchdogThread = vktrace_platform_create_thread(Process_RunWatchdogThread, &procInfo);
 
 #if defined(PLATFORM_LINUX) || defined(PLATFORM_OSX)
+
             // Sync wait for local threads and remote process to complete.
-
-            vktrace_platform_sync_wait_for_thread(&(procInfo.pCaptureThreads[0].recordingThread));
-
             if (g_settings.program != NULL)
-                vktrace_platform_sync_wait_for_thread(&procInfo.watchdogThread);
+            {
+                exitval=vktrace_linux_sync_wait_for_thread(&procInfo.watchdogThread);
+                if (exitval != 0)
+                    exit(exitval);
+            }
+
+            vktrace_linux_sync_wait_for_thread(&(procInfo.pCaptureThreads[0].recordingThread));
+
 #else
             vktrace_platform_resume_thread(&procInfo.hThread);
 
             // Now into the main message loop, listen for hotkeys to send over.
-            MessageLoop();
+            exitval = MessageLoop();
 #endif
         }
 
@@ -391,6 +445,6 @@ int main(int argc, char* argv[])
     vktrace_SettingGroup_delete(&g_settingGroup);
     vktrace_free(g_default_settings.output_trace);
 
-    return 0;
+    exit (exitval);
 }
 

@@ -43,7 +43,7 @@ vkreplayer_settings replaySettings = { NULL, 1, -1, -1, NULL, NULL };
 vktrace_SettingInfo g_settings_info[] =
 {
     { "o", "Open", VKTRACE_SETTING_STRING, { &replaySettings.pTraceFilePath }, { &replaySettings.pTraceFilePath }, TRUE, "The trace file to open and replay." },
-    { "t", "TraceFile", VKTRACE_SETTING_STRING, { &replaySettings.pTraceFilePath }, { &replaySettings.pTraceFilePath }, TRUE, "(Deprecated, use -o or --Open instead) The trace file to replay."},
+    { "t", "TraceFile", VKTRACE_SETTING_STRING, { &replaySettings.pTraceFilePath }, { &replaySettings.pTraceFilePath }, TRUE, "The trace file to open and replay. (Deprecated)"},
     { "l", "NumLoops", VKTRACE_SETTING_UINT, { &replaySettings.numLoops }, { &replaySettings.numLoops }, TRUE, "The number of times to replay the trace file or loop range." },
     { "lsf", "LoopStartFrame", VKTRACE_SETTING_INT, { &replaySettings.loopStartFrame }, { &replaySettings.loopStartFrame }, TRUE, "The start frame number of the loop range." },
     { "lef", "LoopEndFrame", VKTRACE_SETTING_INT, { &replaySettings.loopEndFrame }, { &replaySettings.loopEndFrame }, TRUE, "The end frame number of the loop range." },
@@ -84,8 +84,9 @@ int main_loop(vktrace_replay::ReplayDisplay display, Sequencer &seq,
     {
         while (trace_running) {
             display.process_event();
-            if (display.get_quit_status())
-                return -1;
+            if (display.get_quit_status()) {
+                goto out;
+            }
             if (display.get_pause_status()) {
                 continue;
             } else {
@@ -121,59 +122,64 @@ int main_loop(vktrace_replay::ReplayDisplay display, Sequencer &seq,
                         vktrace_LogWarning("Tracer_id %d has no valid replayer.", packet->tracer_id);
                         continue;
                     }
-                    if (packet->packet_id >= VKTRACE_TPI_BEGIN_API_HERE)
-                    {
+                    if (packet->packet_id >= VKTRACE_TPI_BEGIN_API_HERE) {
                         // replay the API packet
                         res = replayer->Replay(replayer->Interpret(packet));
-                        if (res != VKTRACE_REPLAY_SUCCESS)
-                        {
+                        if (res != VKTRACE_REPLAY_SUCCESS) {
                            vktrace_LogError("Failed to replay packet_id %d, with global_packet_index %d.", packet->packet_id, packet->global_packet_index);
                            static BOOL QuitOnAnyError=FALSE;
-                           if(QuitOnAnyError)
-                           {
-                              return -1;
+                           if(QuitOnAnyError) {
+                              err = -1;
+                              goto out;
                            }
                         }
 
                         // frame control logic
                         int frameNumber = replayer->GetFrameNumber();
-                        if (prevFrameNumber != frameNumber)
-                        {
+                        if (prevFrameNumber != frameNumber) {
                             prevFrameNumber = frameNumber;
 
-                            if (frameNumber == settings.loopStartFrame)
-                            {
+                            if (frameNumber == settings.loopStartFrame) {
                                 // record the location of looping start packet
                                 seq.record_bookmark();
                                 seq.get_bookmark(startingPacket);
                             }
 
-                            if (frameNumber == settings.loopEndFrame)
-                            {
+                            if (frameNumber == settings.loopEndFrame) {
                                 trace_running = false;
                             }
                         }
 
                     } else {
                         vktrace_LogError("Bad packet type id=%d, index=%d.", packet->packet_id, packet->global_packet_index);
-                        return -1;
+                        err = -1;
+                        goto out;
                     }
                 }
             }
         }
         settings.numLoops--;
+        if (settings.numLoops)
+           vktrace_LogAlways("Loop number %d completed. Remaining loops:%d", settings.numLoops+1, settings.numLoops);
+
         //if screenshot is enabled run it for one cycle only
         //as all consecutive cycles must generate same screen
-        if (replaySettings.screenshotList != NULL)
-        {
+        if (replaySettings.screenshotList != NULL) {
             vktrace_free((char*)replaySettings.screenshotList);
+            replaySettings.screenshotList = NULL;
         }
         seq.set_bookmark(startingPacket);
         trace_running = true;
-        if (replayer != NULL)
-        {
+        if (replayer != NULL) {
             replayer->ResetFrameNumber();
         }
+    }
+
+out:
+    seq.clean_up();
+    if (replaySettings.screenshotList != NULL) {
+        vktrace_free((char*)replaySettings.screenshotList);
+        replaySettings.screenshotList = NULL;
     }
     return err;
 }
@@ -234,7 +240,7 @@ int vkreplay_main(int argc, char **argv, vktrace_window_handle window = 0)
         {
             vktrace_SettingGroup_Delete_Loaded(&pAllSettings, &numAllSettings);
         }
-        return 1;
+        return -1;
     }
 
     // merge settings so that new settings will get written into the settings file
@@ -256,7 +262,12 @@ int vkreplay_main(int argc, char **argv, vktrace_window_handle window = 0)
     else
     {
         vktrace_SettingGroup_print(&g_replaySettingGroup);
-        return 1;
+        // invalid options specified
+        if (pAllSettings != NULL)
+        {
+            vktrace_SettingGroup_Delete_Loaded(&pAllSettings, &numAllSettings);
+        }
+        return -1;
     }
 
     // Set up environment for screenshot
@@ -307,7 +318,7 @@ int vkreplay_main(int argc, char **argv, vktrace_window_handle window = 0)
     }
 
     // open trace file and read in header
-    const char* pTraceFile = replaySettings.pTraceFilePath;
+    char* pTraceFile = replaySettings.pTraceFilePath;
     vktrace_trace_file_header fileHeader;
     FILE *tracefp;
 
@@ -317,7 +328,13 @@ int vkreplay_main(int argc, char **argv, vktrace_window_handle window = 0)
         if (tracefp == NULL)
         {
             vktrace_LogError("Cannot open trace file: '%s'.", pTraceFile);
-            return 1;
+            // invalid options specified
+            if (pAllSettings != NULL)
+            {
+                vktrace_SettingGroup_Delete_Loaded(&pAllSettings, &numAllSettings);
+            }
+            vktrace_free(pTraceFile);
+            return -1;
         }
     }
     else
@@ -328,7 +345,7 @@ int vkreplay_main(int argc, char **argv, vktrace_window_handle window = 0)
         {
             vktrace_SettingGroup_Delete_Loaded(&pAllSettings, &numAllSettings);
         }
-        return 1;
+        return -1;
     }
 
     FileLike* traceFile = vktrace_FileLike_create_file(tracefp);
@@ -339,8 +356,10 @@ int vkreplay_main(int argc, char **argv, vktrace_window_handle window = 0)
         {
             vktrace_SettingGroup_Delete_Loaded(&pAllSettings, &numAllSettings);
         }
-        VKTRACE_DELETE(traceFile);
-        return 1;
+        fclose(tracefp);
+        vktrace_free(pTraceFile);
+        vktrace_free(traceFile);
+        return -1;
     }
 
     //set global version num
@@ -400,7 +419,10 @@ int vkreplay_main(int argc, char **argv, vktrace_window_handle window = 0)
                 {
                     vktrace_SettingGroup_Delete_Loaded(&pAllSettings, &numAllSettings);
                 }
-                return 1;
+                fclose(tracefp);
+                vktrace_free(pTraceFile);
+                vktrace_free(traceFile);
+                return -1;
             }
 
             // merge the replayer's settings into the list of all settings so that we can output a comprehensive settings file later on.
@@ -417,6 +439,9 @@ int vkreplay_main(int argc, char **argv, vktrace_window_handle window = 0)
                 {
                     vktrace_SettingGroup_Delete_Loaded(&pAllSettings, &numAllSettings);
                 }
+                fclose(tracefp);
+                vktrace_free(pTraceFile);
+                vktrace_free(traceFile);
                 return err;
             }
         }
@@ -428,6 +453,9 @@ int vkreplay_main(int argc, char **argv, vktrace_window_handle window = 0)
         {
             vktrace_SettingGroup_Delete_Loaded(&pAllSettings, &numAllSettings);
         }
+        fclose(tracefp);
+        vktrace_free(pTraceFile);
+        vktrace_free(traceFile);
         return -1;
     }
 
@@ -444,10 +472,14 @@ int vkreplay_main(int argc, char **argv, vktrace_window_handle window = 0)
         }
     }
 
-    if (pAllSettings != NULL)
-    {
+    if (pAllSettings != NULL) {
         vktrace_SettingGroup_Delete_Loaded(&pAllSettings, &numAllSettings);
     }
+
+    fclose(tracefp);
+    vktrace_free(pTraceFile);
+    vktrace_free(traceFile);
+
     return err;
 }
 
