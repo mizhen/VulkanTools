@@ -27,19 +27,19 @@ py -3 ../../../scripts/lvl_genvk.py -registry ../../../scripts/vk.xml vk_dispatc
 py -3 ../../../scripts/lvl_genvk.py -registry ../../../scripts/vk.xml thread_check.h
 py -3 ../../../scripts/lvl_genvk.py -registry ../../../scripts/vk.xml parameter_validation.h
 py -3 ../../../scripts/lvl_genvk.py -registry ../../../scripts/vk.xml unique_objects_wrappers.h
-py -3 ../../../scripts/vt_genvk.py -registry ../../../scripts/vk.xml api_dump.cpp
-py -3 ../../../scripts/vt_genvk.py -registry ../../../scripts/vk.xml api_dump_text.h
+py -3 ../../../scripts/lvl_genvk.py -registry ../../../scripts/vk.xml api_dump.cpp
+py -3 ../../../scripts/lvl_genvk.py -registry ../../../scripts/vk.xml api_dump_text.h
 
 REM vktrace
-py -3 ../../../vktrace/vktrace_generate.py AllPlatforms vktrace-trace-h vk_version_1_0 > vktrace_vk_vk.h
-py -3 ../../../vktrace/vktrace_generate.py AllPlatforms vktrace-trace-c vk_version_1_0 > vktrace_vk_vk.cpp
-py -3 ../../../vktrace/vktrace_generate.py AllPlatforms vktrace-core-trace-packets vk_version_1_0 > vktrace_vk_vk_packets.h
-py -3 ../../../vktrace/vktrace_generate.py AllPlatforms vktrace-packet-id vk_version_1_0 > vktrace_vk_packet_id.h
+py -3 ../../../scripts/vktrace_generate.py AllPlatforms vktrace-trace-h vk_version_1_0 > vktrace_vk_vk.h
+py -3 ../../../scripts/vktrace_generate.py AllPlatforms vktrace-trace-c vk_version_1_0 > vktrace_vk_vk.cpp
+py -3 ../../../scripts/vktrace_generate.py AllPlatforms vktrace-core-trace-packets vk_version_1_0 > vktrace_vk_vk_packets.h
+py -3 ../../../scripts/vktrace_generate.py AllPlatforms vktrace-packet-id vk_version_1_0 > vktrace_vk_packet_id.h
 
 REM vkreplay
-py -3 ../../../vktrace/vktrace_generate.py AllPlatforms vktrace-replay-vk-funcs vk_version_1_0 > vkreplay_vk_func_ptrs.h
-py -3 ../../../vktrace/vktrace_generate.py AllPlatforms vktrace-replay-c vk_version_1_0 > vkreplay_vk_replay_gen.cpp
-py -3 ../../../vktrace/vktrace_generate.py AllPlatforms vktrace-replay-obj-mapper-h vk_version_1_0 > vkreplay_vk_objmapper.h
+py -3 ../../../scripts/vktrace_generate.py AllPlatforms vktrace-replay-vk-funcs vk_version_1_0 > vkreplay_vk_func_ptrs.h
+py -3 ../../../scripts/vktrace_generate.py AllPlatforms vktrace-replay-c vk_version_1_0 > vkreplay_vk_replay_gen.cpp
+py -3 ../../../scripts/vktrace_generate.py AllPlatforms vktrace-replay-obj-mapper-h vk_version_1_0 > vkreplay_vk_objmapper.h
 
 cd ../..
 
