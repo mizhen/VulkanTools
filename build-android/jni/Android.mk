@@ -49,21 +49,6 @@ LOCAL_LDFLAGS   += -Wl,--exclude-libs,ALL
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
-LOCAL_MODULE := VkLayer_image
-LOCAL_SRC_FILES += $(LAYER_DIR)/layer-src/image/image.cpp
-LOCAL_SRC_FILES += $(LAYER_DIR)/common/vk_layer_table.cpp
-LOCAL_C_INCLUDES += $(SRC_DIR)/include \
-                    $(SRC_DIR)/layers \
-                    $(LAYER_DIR)/include \
-                    $(SRC_DIR)/loader
-LOCAL_STATIC_LIBRARIES += layer_utils
-LOCAL_CPPFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR -fvisibility=hidden
-LOCAL_LDLIBS    := -llog
-LOCAL_LDFLAGS   += -Wl,-Bsymbolic
-LOCAL_LDFLAGS   += -Wl,--exclude-libs,ALL
-include $(BUILD_SHARED_LIBRARY)
-
-include $(CLEAR_VARS)
 LOCAL_MODULE := VkLayer_parameter_validation
 LOCAL_SRC_FILES += $(LAYER_DIR)/layer-src/parameter_validation/parameter_validation.cpp
 LOCAL_SRC_FILES += $(LAYER_DIR)/common/vk_layer_table.cpp
@@ -272,9 +257,13 @@ LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_layer/vktrace_lib_pagestatusarray.
 LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_layer/vktrace_lib_pageguardmappedmemory.cpp
 LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_layer/vktrace_lib_pageguardcapture.cpp
 LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_layer/vktrace_lib_pageguard.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_layer/vktrace_lib_trim.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_layer/vktrace_lib_trim_generate.cpp
+LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_layer/vktrace_lib_trim_statetracker.cpp
 
 LOCAL_C_INCLUDES += $(SRC_DIR)/vktrace/include \
 		    $(SRC_DIR)/include \
+		    $(SRC_DIR)/include/vulkan \
                     $(SRC_DIR)/layers \
                     $(LAYER_DIR)/include \
                     $(SRC_DIR)/vktrace/vktrace_common \
@@ -303,6 +292,7 @@ LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_common/vktrace_platform.c
 LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_common/vktrace_process.c
 LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_common/vktrace_settings.c
 LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_common/vktrace_tracelog.c
+LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_common/vktrace_pageguard_memorycopy.cpp
 LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_replay/vkreplay_factory.cpp
 LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_replay/vkreplay_main.cpp
 LOCAL_SRC_FILES += $(SRC_DIR)/vktrace/vktrace_replay/vkreplay_seq.cpp
@@ -323,9 +313,9 @@ LOCAL_C_INCLUDES += $(SRC_DIR)/vktrace/include \
                     $(SRC_DIR)/vktrace/vktrace_extensions/vktracevulkan/vkreplay \
                     $(SRC_DIR)/loader
 LOCAL_STATIC_LIBRARIES += layer_utils android_native_app_glue
-LOCAL_SHARED_LIBRARIES += VkLayer_vktrace_layer
 LOCAL_CPPFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR -DAPI_LOWERCASE=\"vulkan\" --include=$(SRC_DIR)/common/vulkan_wrapper.h -fexceptions
 LOCAL_CPPFLAGS += -DPLATFORM_LINUX=1
+LOCAL_CPPFLAGS += -DPAGEGUARD_MEMCPY_USE_PPL_LIB
 LOCAL_CFLAGS += -DPLATFORM_LINUX=1
 LOCAL_CFLAGS += -DPLATFORM_POSIX=1
 LOCAL_LDLIBS    := -llog -landroid

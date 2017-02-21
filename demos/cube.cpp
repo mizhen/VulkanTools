@@ -64,7 +64,7 @@
 #else
 #define ERR_EXIT(err_msg, err_class) \
     do {                             \
-        printf(err_msg);             \
+        printf("%s\n", err_msg);     \
         fflush(stdout);              \
         exit(1);                     \
     } while (0)
@@ -733,8 +733,7 @@ struct Demo {
 
         char const *const instance_validation_layers_alt2[] = {
             "VK_LAYER_GOOGLE_threading",     "VK_LAYER_LUNARG_parameter_validation", "VK_LAYER_LUNARG_object_tracker",
-            "VK_LAYER_LUNARG_image",         "VK_LAYER_LUNARG_core_validation",      "VK_LAYER_LUNARG_swapchain",
-            "VK_LAYER_GOOGLE_unique_objects"};
+            "VK_LAYER_LUNARG_core_validation",      "VK_LAYER_LUNARG_swapchain", "VK_LAYER_GOOGLE_unique_objects"};
 
         // Look for validation layers
         vk::Bool32 validation_found = VK_FALSE;
@@ -1555,6 +1554,9 @@ struct Demo {
     vk::ShaderModule prepare_fs() {
         size_t size = 0;
         void *fragShaderCode = read_spv("cube-frag.spv", &size);
+        if (!fragShaderCode) {
+            ERR_EXIT("Failed to load cube-frag.spv", "Load Shader Failure");
+        }
 
         frag_shader_module = prepare_shader_module(fragShaderCode, size);
 
@@ -1861,6 +1863,9 @@ struct Demo {
     vk::ShaderModule prepare_vs() {
         size_t size = 0;
         void *vertShaderCode = read_spv("cube-vert.spv", &size);
+        if (!vertShaderCode) {
+            ERR_EXIT("Failed to load cube-vert.spv", "Load Shader Failure");
+        }
 
         vert_shader_module = prepare_shader_module(vertShaderCode, size);
 
@@ -2157,6 +2162,7 @@ struct Demo {
 #elif defined(VK_USE_PLATFORM_XLIB_KHR)
 
     void create_xlib_window() {
+        XInitThreads();
         display = XOpenDisplay(nullptr);
         long visualMask = VisualScreenMask;
         int numberOfVisuals;

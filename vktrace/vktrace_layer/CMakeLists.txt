@@ -35,6 +35,8 @@ set(SRC_LIST
     vktrace_lib_pageguard.cpp
     vktrace_lib_trace.cpp
     vktrace_lib_trim.cpp
+    vktrace_lib_trim_generate.cpp
+    vktrace_lib_trim_statetracker.cpp
     vktrace_vk_exts.cpp
     ${GENERATED_FILES_DIR}/vktrace_vk_vk.cpp
 )
@@ -43,6 +45,9 @@ set_source_files_properties( ${SRC_LIST} PROPERTIES LANGUAGE CXX)
 
 set(HDR_LIST
     vktrace_lib_helpers.h
+    vktrace_lib_trim.h
+    vktrace_lib_trim_generate.h
+    vktrace_lib_trim_statetracker.h
     vktrace_lib_pagestatusarray.h
     vktrace_lib_pageguardmappedmemory.h
     vktrace_lib_pageguardcapture.h
@@ -112,11 +117,21 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
     set(OS_TRACER_LIBS)
 endif()
 
+if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 target_link_libraries(${PROJECT_NAME}
     vktrace_common
     ${VKTRACE_VULKAN_LIB}
     ${OS_TRACER_LIBS}
 )
+else()
+target_link_libraries(${PROJECT_NAME}
+    vktrace_common
+    xcb
+    xcb-keysyms
+    ${VKTRACE_VULKAN_LIB}
+    ${OS_TRACER_LIBS}
+)
+endif()
 
 build_options_finalize()
 

@@ -91,21 +91,11 @@
 // TODO : Is there a way to track when Cmd Buffer finishes & remove mem references at that point?
 // TODO : Could potentially store a list of freed mem allocs to flag when they're incorrectly used
 
-struct MT_FB_ATTACHMENT_INFO {
-    IMAGE_VIEW_STATE *view_state;
-    VkImage image;
-    VkDeviceMemory mem;
-};
+
 
 struct GENERIC_HEADER {
     VkStructureType sType;
     const void *pNext;
-};
-
-class PHYS_DEV_PROPERTIES_NODE {
-   public:
-    VkPhysicalDeviceProperties properties;
-    std::vector<VkQueueFamilyProperties> queue_family_properties;
 };
 
 enum FENCE_STATE { FENCE_UNSIGNALED, FENCE_INFLIGHT, FENCE_RETIRED };
@@ -148,25 +138,6 @@ class QUEUE_STATE {
 class QUERY_POOL_NODE : public BASE_NODE {
    public:
     VkQueryPoolCreateInfo createInfo;
-};
-
-class FRAMEBUFFER_STATE : public BASE_NODE {
-   public:
-    VkFramebuffer framebuffer;
-    safe_VkFramebufferCreateInfo createInfo;
-    safe_VkRenderPassCreateInfo renderPassCreateInfo;
-    std::unordered_set<VkCommandBuffer> referencingCmdBuffers;
-    std::vector<MT_FB_ATTACHMENT_INFO> attachments;
-    FRAMEBUFFER_STATE(VkFramebuffer fb, const VkFramebufferCreateInfo *pCreateInfo, const VkRenderPassCreateInfo *pRPCI)
-        : framebuffer(fb), createInfo(pCreateInfo), renderPassCreateInfo(pRPCI){};
-};
-
-// Track command pools and their command buffers
-struct COMMAND_POOL_NODE : public BASE_NODE {
-    VkCommandPoolCreateFlags createFlags;
-    uint32_t queueFamilyIndex;
-    // TODO: why is this std::list?
-    std::list<VkCommandBuffer> commandBuffers;  // container of cmd buffers allocated from this pool
 };
 
 // Stuff from Device Limits Layer
