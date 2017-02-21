@@ -76,7 +76,6 @@ vktrace_SettingInfo g_settings_info[] = {
      {&g_settings.pngScreenshotList},
      {&g_default_settings.pngScreenshotList},
      TRUE,
-     "Saves a PNG screenshot of frames identified by: <startFrame>-<endFrame>,<stepFrames>."},
      "Generate screenshots. <string> is one of:\n\
                                          comma separated list of frames\n\
                                          <start>-<count>-<interval>\n\
