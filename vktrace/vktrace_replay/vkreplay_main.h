@@ -29,6 +29,7 @@ typedef struct vkreplayer_settings {
     int loopEndFrame;
     const char* screenshotList;
     const char* pngScreenshotList;
+    const char* screenshotColorFormat;
     const char* verbosity;
 } vkreplayer_settings;
 

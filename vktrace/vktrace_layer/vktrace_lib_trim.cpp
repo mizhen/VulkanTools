@@ -51,12 +51,6 @@ VKTRACE_CRITICAL_SECTION trimRecordedPacketLock;
 VKTRACE_CRITICAL_SECTION trimStateTrackerLock;
 VKTRACE_CRITICAL_SECTION trimCommandBufferPacketLock;
 
-#if defined(NDEBUG) && defined(__GNUC__)
-#define U_ASSERT_ONLY __attribute__((unused))
-#else
-#define U_ASSERT_ONLY
-#endif
-
 //=========================================================================
 // Information necessary to create the staged buffer and memory for DEVICE_LOCAL
 // buffers.
@@ -347,7 +341,6 @@ bool is_hotkey_trim_triggered() {
 
 //=========================================================================
 char *getTraceTriggerOptionString(enum enum_trim_trigger triggerType) {
-    static const char TRIM_TRIGGER_ENV_NAME[] = "VKTRACE_TRIM_TRIGGER";
     static const char TRIM_TRIGGER_HOTKEY_TYPE_STRING[] = "hotkey";
     static const char TRIM_TRIGGER_FRAMES_TYPE_STRING[] = "frames";
     static const char TRIM_TRIGGER_FRAMES_DEFAULT_HOTKEY_STRING[] = "F12";
@@ -360,7 +353,7 @@ char *getTraceTriggerOptionString(enum enum_trim_trigger triggerType) {
 
     if (firstTimeRunning) {
         firstTimeRunning = false;
-        const char *trim_trigger_string = vktrace_get_global_var(TRIM_TRIGGER_ENV_NAME);
+        const char *trim_trigger_string = vktrace_get_global_var(VKTRACE_TRIM_TRIGGER_ENV);
         if (trim_trigger_string) {
             assert(strlen(trim_trigger_string) < TRACE_TRIGGER_STRING_LENGTH);
 
@@ -1062,7 +1055,7 @@ void snapshot_state_tracker() {
 
         VkDeviceMemory memory = imageIter->second.ObjectInfo.Image.memory;
         VkDeviceSize offset = imageIter->second.ObjectInfo.Image.memoryOffset;
-        VkDeviceSize size = imageIter->second.ObjectInfo.Image.memorySize;
+        VkDeviceSize size = ROUNDUP_TO_4(imageIter->second.ObjectInfo.Image.memorySize);
 
         if (imageIter->second.ObjectInfo.Image.needsStagingBuffer) {
             // Note that the staged memory object won't be in the state tracker,
@@ -1118,7 +1111,7 @@ void snapshot_state_tracker() {
 
         VkDeviceMemory memory = bufferIter->second.ObjectInfo.Buffer.memory;
         VkDeviceSize offset = bufferIter->second.ObjectInfo.Buffer.memoryOffset;
-        VkDeviceSize size = bufferIter->second.ObjectInfo.Buffer.size;
+        VkDeviceSize size = ROUNDUP_TO_4(bufferIter->second.ObjectInfo.Buffer.size);
 
         void *mappedAddress = NULL;
         VkDeviceSize mappedOffset = 0;
@@ -1286,13 +1279,15 @@ void snapshot_state_tracker() {
             VkDevice device = iter->second.belongsToDevice;
             VkDeviceMemory deviceMemory = iter->first;
             VkDeviceSize offset = 0;
-            VkDeviceSize size = iter->second.ObjectInfo.DeviceMemory.size;
+            VkDeviceSize size = ROUNDUP_TO_4(iter->second.ObjectInfo.DeviceMemory.size);
             VkMemoryMapFlags flags = 0;
             void *pData = iter->second.ObjectInfo.DeviceMemory.mappedAddress;
 
-            vktrace_trace_packet_header *pPersistentlyMapMemory =
-                generate::vkMapMemory(false, device, deviceMemory, offset, size, flags, &pData);
-            iter->second.ObjectInfo.DeviceMemory.pPersistentlyMapMemoryPacket = pPersistentlyMapMemory;
+            if (size != 0) {
+                vktrace_trace_packet_header *pPersistentlyMapMemory =
+                                                   generate::vkMapMemory(false, device, deviceMemory, offset, size, flags, &pData);
+                iter->second.ObjectInfo.DeviceMemory.pPersistentlyMapMemoryPacket = pPersistentlyMapMemory;
+            }
         }
     }
 

@@ -4,21 +4,13 @@
 # build version format
 version: "{build}"
 
-os: Visual Studio 2013
+os:
+  - Visual Studio 2013
+  - Visual Studio 2015
 
 environment:
   PYTHON_PATH: "C:/Python35"
   PYTHON_PACKAGE_PATH: "C:/Python35/Scripts"
-
-branches:
-  only:
-    - master
-
-# scripts that are called at very beginning, before repo cloning
-init:
-  - ps: (new-object net.webclient).DownloadFile('https://bootstrap.pypa.io/get-pip.py', 'C:/get-pip.py')
-  - "%PYTHON_PATH%/python.exe C:/get-pip.py"
-  - "%PYTHON_PACKAGE_PATH%/pip.exe install nose"
 
 # This replaces "automatic building" that would be defined under build:
 build_script:

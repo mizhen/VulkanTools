@@ -80,6 +80,13 @@ vktrace_SettingInfo g_settings_info[] = {
                                          comma separated list of frames\n\
                                          <start>-<count>-<interval>\n\
                                          \"all\""},
+    {"sf",
+     "ScreenshotFormat",
+     VKTRACE_SETTING_STRING,
+     {&g_settings.screenshotColorFormat},
+     {&g_default_settings.screenshotColorFormat},
+     TRUE,
+     "Color Space format of screenshot files. Formats are UNORM, SNORM, USCALED, SSCALED, UINT, SINT, SRGB"},
     {"ptm",
      "PrintTraceMessages",
      VKTRACE_SETTING_BOOL,
@@ -93,7 +100,7 @@ vktrace_SettingInfo g_settings_info[] = {
      {&g_settings.enable_pmb},
      {&g_default_settings.enable_pmb},
      TRUE,
-     "Optimize tracing of persistently mapped buffers, default is TRUE."},
+     "Enable tracking of persistently mapped buffers, default is TRUE."},
 #if _DEBUG
     {"v",
      "Verbosity",
@@ -120,7 +127,7 @@ vktrace_SettingInfo g_settings_info[] = {
      {&g_settings.traceTrigger},
      {&g_default_settings.traceTrigger},
      TRUE,
-     "(Beta) Start/stop trim by hotkey or frame range:\n\
+     "(Alpha) Start/stop trim by hotkey or frame range:\n\
                                          hotkey-<keyname>\n\
                                          frames-<startFrame>-<endFrame>"},
     //{ "z", "pauze", VKTRACE_SETTING_BOOL, &g_settings.pause,
@@ -302,8 +309,15 @@ int main(int argc, char* argv[]) {
     g_default_settings.output_trace = vktrace_allocate_and_copy("vktrace_out.vktrace");
     g_default_settings.verbosity = "errors";
     g_default_settings.screenshotList = NULL;
-    g_default_settings.enable_pmb = true;;
     g_default_settings.pngScreenshotList = NULL;
+    g_default_settings.screenshotColorFormat = NULL;
+    g_default_settings.enable_pmb = true;
+
+    // Check to see if the PAGEGUARD_PAGEGUARD_ENABLE_ENV env var is set.
+    // If it is set to anything but "1", set the default to false.
+    // Note that the command line option will override the env variable.
+    char* pmbEnableEnv = vktrace_get_global_var(VKTRACE_PMB_ENABLE_ENV);
+    if (pmbEnableEnv && strcmp(pmbEnableEnv, "1")) g_default_settings.enable_pmb = false;
 
     if (vktrace_SettingGroup_init(&g_settingGroup, NULL, argc, argv, &g_settings.arguments) != 0) {
         // invalid cmd-line parameters
@@ -334,7 +348,7 @@ int main(int argc, char* argv[]) {
             vktrace_LogSetLevel(VKTRACE_LOG_ERROR);
             validArgs = FALSE;
         }
-        vktrace_set_global_var("_VK_TRACE_VERBOSITY", g_settings.verbosity);
+        vktrace_set_global_var(_VKTRACE_VERBOSITY_ENV, g_settings.verbosity);
 
         if (g_settings.screenshotList) {
             if (!screenshot::checkParsingFrameRange(g_settings.screenshotList)) {
@@ -342,10 +356,20 @@ int main(int argc, char* argv[]) {
                 validArgs = FALSE;
             } else {
                 // Export list to screenshot layer
-                vktrace_set_global_var("_VK_SCREENSHOT", g_settings.screenshotList);
+                vktrace_set_global_var("VK_SCREENSHOT_FRAMES", g_settings.screenshotList);
             }
         } else {
-            vktrace_set_global_var("_VK_SCREENSHOT", "");
+            vktrace_set_global_var("VK_SCREENSHOT_FRAMES", "");
+        }
+
+        // Set up environment for screenshot color space format
+        if (g_settings.screenshotColorFormat != NULL && g_settings.screenshotList != NULL) {
+            vktrace_set_global_var("VK_SCREENSHOT_FORMAT", g_settings.screenshotColorFormat);
+        }else if (g_settings.screenshotColorFormat != NULL && g_settings.screenshotList == NULL) {
+            vktrace_LogWarning("Screenshot format should be used when screenshot enabled!");
+            vktrace_set_global_var("VK_SCREENSHOT_FORMAT", "");
+        } else {
+            vktrace_set_global_var("VK_SCREENSHOT_FORMAT", "");
         }
 
         if (validArgs == FALSE) {
@@ -374,12 +398,13 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    vktrace_set_global_var("_VKTRACE_OPTIMIZE_PMB", g_settings.enable_pmb ? "1" : "0");
+    vktrace_set_global_var(VKTRACE_PMB_ENABLE_ENV, g_settings.enable_pmb ? "1" : "0");
+
     if (g_settings.traceTrigger) {
         // Export list to screenshot layer
-        vktrace_set_global_var("VKTRACE_TRIM_TRIGGER", g_settings.traceTrigger);
+        vktrace_set_global_var(VKTRACE_TRIM_TRIGGER_ENV, g_settings.traceTrigger);
     } else {
-        vktrace_set_global_var("VKTRACE_TRIM_TRIGGER", "");
+        vktrace_set_global_var(VKTRACE_TRIM_TRIGGER_ENV, "");
     }
     
     if (g_settings.pngScreenshotList != NULL)

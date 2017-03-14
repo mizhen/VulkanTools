@@ -313,7 +313,6 @@ VkResult vkReplay::manually_replay_vkCreateDevice(packet_vkCreateDevice *pPacket
             return VK_ERROR_VALIDATION_FAILED_EXT;
         }
         const char strScreenShot[] = "VK_LAYER_LUNARG_screenshot";
-        // char *strScreenShotEnv = vktrace_get_global_var("_VK_SCREENSHOT");
 
         pCreateInfo = (VkDeviceCreateInfo *)pPacket->pCreateInfo;
         if (g_pReplaySettings->screenshotList != NULL) {
@@ -2672,7 +2671,7 @@ VkResult vkReplay::manually_replay_vkCreateSwapchainKHR(packet_vkCreateSwapchain
     // Get the list of VkFormats that are supported:
     VkPhysicalDevice remappedPhysicalDevice = replayPhysicalDevices[remappeddevice];
     uint32_t formatCount;
-    VkResult res;
+    VkResult U_ASSERT_ONLY res;
     // Note that pPacket->pCreateInfo->surface has been remapped above
     res = vkGetPhysicalDeviceSurfaceFormatsKHR(remappedPhysicalDevice, pPacket->pCreateInfo->surface, &formatCount, NULL);
     assert(!res);

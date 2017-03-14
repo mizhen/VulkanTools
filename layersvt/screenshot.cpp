@@ -52,7 +52,13 @@ using namespace std;
 static char android_env[64] = {};
 const char *env_var = "debug.vulkan.screenshot";
 const char *env_var_old = env_var;
+#else  //Linux or Windows
+const char *env_var_old = "_VK_SCREENSHOT";
+const char *env_var = "VK_SCREENSHOT_FRAMES";
+const char *env_var_format = "VK_SCREENSHOT_FORMAT";
+#endif
 
+#ifdef ANDROID
 char *android_exec(const char *cmd) {
     FILE *pipe = popen(cmd, "r");
     if (pipe != nullptr) {
@@ -80,18 +86,11 @@ static inline char *local_getenv(const char *name) { return android_getenv(name)
 static inline void local_free_getenv(const char *val) {}
 
 #elif defined(__linux__)
-
-const char *env_var_old = "_VK_SCREENSHOT";
-const char *env_var = "VK_SCREENSHOT_FRAMES";
-
 static inline char *local_getenv(const char *name) { return getenv(name); }
 
 static inline void local_free_getenv(const char *val) {}
 
 #elif defined(_WIN32)
-
-const char *env_var_old = "_VK_SCREENSHOT";
-const char *env_var = "VK_SCREENSHOT_FRAMES";
 
 static inline char *local_getenv(const char *name) {
     char *retVal;
@@ -118,6 +117,23 @@ namespace screenshot {
 
 static int globalLockInitialized = 0;
 static loader_platform_thread_mutex globalLock;
+
+const char *vk_screenshot_format = nullptr;
+
+bool printFormatWarning = true;
+
+typedef enum colorSpaceFormat {
+    UNDEFINED = 0,
+    UNORM = 1,
+    SNORM = 2,
+    USCALED = 3,
+    SSCALED = 4,
+    UINT = 5,
+    SINT = 6,
+    SRGB = 7
+} colorSpaceFormat;
+
+colorSpaceFormat userColorSpaceFormat = UNDEFINED;
 
 // unordered map: associates a swap chain with a device, image extent, format,
 // and list of images
@@ -203,6 +219,36 @@ static bool isInScreenShotFrameRange(int frameNumber, FrameRange *pFrameRange, b
         *pScreenShotFrame = screenShotFrame;
     }
     return inRange;
+}
+
+//Get users request is specific color space format required
+void readScreenShotFormatENV(void) {
+#ifndef ANDROID
+    vk_screenshot_format = local_getenv(env_var_format);
+#endif
+    if (vk_screenshot_format && *vk_screenshot_format) {
+        if (!strcmp(vk_screenshot_format, "UNORM")) {
+            userColorSpaceFormat = UNORM;
+        } else if (!strcmp(vk_screenshot_format, "SRGB")) {
+            userColorSpaceFormat = SRGB;
+        } else if (!strcmp(vk_screenshot_format, "SNORM")) {
+            userColorSpaceFormat = SNORM;
+        } else if (!strcmp(vk_screenshot_format, "USCALED")) {
+            userColorSpaceFormat = USCALED;
+        } else if (!strcmp(vk_screenshot_format, "SSCALED")) {
+            userColorSpaceFormat = SSCALED;
+        } else if (!strcmp(vk_screenshot_format, "UINT")) {
+            userColorSpaceFormat = UINT;
+        } else if (!strcmp(vk_screenshot_format, "SINT")) {
+            userColorSpaceFormat = SINT;
+        } else {
+#ifdef ANDROID
+#else
+            fprintf(stderr, "Selected format:%s\nIs NOT in the list:\nUNORM, SNORM, USCALED, SSCALED, UINT, SINT, SRGB\n"
+                            "Swapchain Colorspace will be used instead\n", vk_screenshot_format);
+#endif
+        }
+    }
 }
 
 // detect if frameNumber reach or beyond the right edge for screenshot in the range.
@@ -295,6 +341,7 @@ static void init_screenshot() {
         loader_platform_thread_create_mutex(&globalLock);
         globalLockInitialized = 1;
     }
+    readScreenShotFormatENV();
 }
 
 // Track allocated resources in writePPM()
@@ -364,18 +411,132 @@ static void writePPM(const char *filename, VkImage image1) {
     // Gather incoming image info and check image format for compatibility with
     // the target format.
     // This function supports both 24-bit and 32-bit swapchain images.
-    VkFormat const target32bitFormat = VK_FORMAT_R8G8B8A8_UNORM;
-    VkFormat const target24bitFormat = VK_FORMAT_R8G8B8_UNORM;
     uint32_t const width = imageMap[image1]->imageExtent.width;
     uint32_t const height = imageMap[image1]->imageExtent.height;
     VkFormat const format = imageMap[image1]->format;
     uint32_t const numChannels = vk_format_get_channel_count(format);
-    if ((vk_format_get_compatibility_class(target24bitFormat) != vk_format_get_compatibility_class(format)) &&
-        (vk_format_get_compatibility_class(target32bitFormat) != vk_format_get_compatibility_class(format))) {
+
+    if ((3 != numChannels) && (4 != numChannels)) {
         assert(0);
         return;
     }
-    if ((3 != numChannels) && (4 != numChannels)) {
+
+    // Initial dest format is undefined as we will look for one
+    VkFormat destformat = VK_FORMAT_UNDEFINED;
+
+    //This variable set by readScreenShotFormatENV func during init
+    if (userColorSpaceFormat != UNDEFINED) {
+        switch (userColorSpaceFormat) {
+            case UNORM:
+                if (numChannels == 4)
+                    destformat = VK_FORMAT_R8G8B8A8_UNORM;
+                else
+                    destformat = VK_FORMAT_R8G8B8_UNORM;
+                break;
+            case SRGB:
+                if (numChannels == 4)
+                    destformat = VK_FORMAT_R8G8B8A8_SRGB;
+                else
+                    destformat = VK_FORMAT_R8G8B8_SRGB;
+                break;
+            case SNORM:
+                if (numChannels == 4)
+                    destformat = VK_FORMAT_R8G8B8A8_SNORM;
+                else
+                    destformat = VK_FORMAT_R8G8B8_SNORM;
+                break;
+            case USCALED:
+                if (numChannels == 4)
+                    destformat = VK_FORMAT_R8G8B8A8_USCALED;
+                else
+                    destformat = VK_FORMAT_R8G8B8_USCALED;
+                break;
+            case SSCALED:
+                if (numChannels == 4)
+                    destformat = VK_FORMAT_R8G8B8A8_SSCALED;
+                else
+                    destformat = VK_FORMAT_R8G8B8_SSCALED;
+                break;
+            case UINT:
+                if (numChannels == 4)
+                    destformat = VK_FORMAT_R8G8B8A8_UINT;
+                else
+                    destformat = VK_FORMAT_R8G8B8_UINT;
+                break;
+            case SINT:
+                if (numChannels == 4)
+                    destformat = VK_FORMAT_R8G8B8A8_SINT;
+                else
+                    destformat = VK_FORMAT_R8G8B8_SINT;
+                break;
+            default:
+                destformat = VK_FORMAT_UNDEFINED;
+                break;
+        }
+    }
+
+    // User did not require sepecific format so we use same colorspace with
+    // swapchain format
+    if (destformat == VK_FORMAT_UNDEFINED) {
+        // Here we reserve swapchain color space only as RGBA swizzle will be later.
+        //
+        // One Potential optimization here would be: set destination to RGB all the
+        // time instead RGBA. PPM does not support Alpha channel, so we can write
+        // RGB one row by row but RGBA written one pixel at a time.
+        // This requires BLIT operation to get involved but current drivers (mostly)
+        // does not support BLIT operations on 3 Channel rendertargets.
+        // So format conversion gets costly.
+        if (numChannels == 4) {
+            if (vk_format_is_unorm(format))
+                destformat = VK_FORMAT_R8G8B8A8_UNORM;
+            else if (vk_format_is_srgb(format))
+                destformat = VK_FORMAT_R8G8B8A8_SRGB;
+            else if (vk_format_is_snorm(format))
+                destformat = VK_FORMAT_R8G8B8A8_SNORM;
+            else if (vk_format_is_uscaled(format))
+                destformat = VK_FORMAT_R8G8B8A8_USCALED;
+            else if (vk_format_is_sscaled(format))
+                destformat = VK_FORMAT_R8G8B8A8_SSCALED;
+            else if (vk_format_is_uint(format))
+                destformat = VK_FORMAT_R8G8B8A8_UINT;
+            else if (vk_format_is_sint(format))
+                destformat = VK_FORMAT_R8G8B8A8_SINT;
+        } else { //numChannels 3
+            if (vk_format_is_unorm(format))
+                destformat = VK_FORMAT_R8G8B8_UNORM;
+            else if (vk_format_is_srgb(format))
+                destformat = VK_FORMAT_R8G8B8_SRGB;
+            else if (vk_format_is_snorm(format))
+                destformat = VK_FORMAT_R8G8B8_SNORM;
+            else if (vk_format_is_uscaled(format))
+                destformat = VK_FORMAT_R8G8B8_USCALED;
+            else if (vk_format_is_sscaled(format))
+                destformat = VK_FORMAT_R8G8B8_SSCALED;
+            else if (vk_format_is_uint(format))
+                destformat = VK_FORMAT_R8G8B8_UINT;
+            else if (vk_format_is_sint(format))
+                destformat = VK_FORMAT_R8G8B8_SINT;
+        }
+    }
+
+    //Still could not find the right format then we use UNORM
+    if (destformat == VK_FORMAT_UNDEFINED)
+    {
+#ifdef ANDROID
+#else
+        if (printFormatWarning) {
+            fprintf(stderr, "Swapchain format is not in the list:\nUNORM, SNORM, USCALED, SSCALED, UINT, SINT, SRGB\n"
+                            "UNORM colorspace will be used instead\n");
+            printFormatWarning = false;
+        }
+#endif
+        if (numChannels == 4)
+            destformat = VK_FORMAT_R8G8B8A8_UNORM;
+        else
+            destformat = VK_FORMAT_R8G8B8_UNORM;
+    }
+
+    if ((vk_format_get_compatibility_class(destformat) != vk_format_get_compatibility_class(format))) {
         assert(0);
         return;
     }
@@ -414,11 +575,10 @@ static void writePPM(const char *filename, VkImage image1) {
     // the same.  In this case, just do a COPY.
 
     VkFormatProperties targetFormatProps;
-    pInstanceTable->GetPhysicalDeviceFormatProperties(physicalDevice, (3 == numChannels) ? target24bitFormat : target32bitFormat,
-                                                      &targetFormatProps);
+    pInstanceTable->GetPhysicalDeviceFormatProperties(physicalDevice, destformat, &targetFormatProps);
     bool need2steps = false;
     bool copyOnly = false;
-    if ((target24bitFormat == format) || (target32bitFormat == format)) {
+    if (destformat == format) {
         copyOnly = true;
     } else {
         bool const bltLinear = targetFormatProps.linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT ? true : false;
@@ -450,7 +610,7 @@ static void writePPM(const char *filename, VkImage image1) {
         NULL,
         0,
         VK_IMAGE_TYPE_2D,
-        VK_FORMAT_R8G8B8A8_UNORM,
+        destformat,
         {width, height, 1},
         1,
         1,
@@ -710,6 +870,8 @@ static void writePPM(const char *filename, VkImage image1) {
 #ifdef ANDROID
         __android_log_print(ANDROID_LOG_DEBUG, "screenshot",
                             "Failed to open output file: %s.  Be sure to grant read and write permissions.", filename);
+#else
+        fprintf(stderr, "Failed to open output file:%s,  Be sure to grant read and write permissions\n", filename);
 #endif
         return;
     }
@@ -850,6 +1012,7 @@ VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCall
     VkLayerDispatchTable *pDisp = devMap->device_dispatch_table;
     pDisp->DestroyDevice(device, pAllocator);
 
+    local_free_getenv(vk_screenshot_format);
     loader_platform_thread_lock_mutex(&globalLock);
     delete pDisp;
     delete devMap;
@@ -1029,6 +1192,7 @@ VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInf
             fileName = base + ".ppm";
 #else
             fileName = to_string(frameNumber) + ".ppm";
+            printf("Screen Capture file is: %s \n", fileName.c_str());
 #endif
 
             VkImage image;
