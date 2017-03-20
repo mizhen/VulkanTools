@@ -2691,13 +2691,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkGetPhysicalDeviceSurfa
         FINISH_TRACE_PACKET();
     } else {
         vktrace_finalize_trace_packet(pHeader);
-        if (result == VK_SUCCESS && g_trimIsPreTrim) {
-            trim::ObjectInfo* pInfo = trim::get_PhysicalDevice_objectInfo(physicalDevice);
-            if (pInfo != NULL) {
-                pInfo->ObjectInfo.PhysicalDevice.pGetPhysicalDeviceSurfaceCapabilitiesKHRPacket = trim::copy_packet(pHeader);
-            }
-        }
-
         if (g_trimIsInTrim) {
             trim::add_recorded_packet(pHeader);
         } else {
@@ -2739,7 +2732,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkGetPhysicalDeviceSurfa
         FINISH_TRACE_PACKET();
     } else {
         vktrace_finalize_trace_packet(pHeader);
-
         if (g_trimIsInTrim) {
             trim::add_recorded_packet(pHeader);
         } else {
