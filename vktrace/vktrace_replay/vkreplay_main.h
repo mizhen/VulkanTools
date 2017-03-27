@@ -33,4 +33,8 @@ typedef struct vkreplayer_settings {
     const char* verbosity;
 } vkreplayer_settings;
 
+#include <vector>
+extern std::vector<size_t> portabilityTable;
+extern FILE* tracefp;
+
 #endif  // VKREPLAY__MAIN_H

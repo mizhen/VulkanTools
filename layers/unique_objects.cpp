@@ -276,9 +276,6 @@ static inline PFN_vkVoidFunction layer_intercept_proc(const char *name) {
     if (0 == strcmp(name, "vk_layerGetPhysicalDeviceProcAddr")) {
         return (PFN_vkVoidFunction)GetPhysicalDeviceProcAddr;
     }
-    if (0 == strcmp(name, "vk_layerGetPhysicalDeviceProcAddr")) {
-        return (PFN_vkVoidFunction)GetPhysicalDeviceProcAddr;
-    }
     return NULL;
 }
 
@@ -697,19 +694,18 @@ void *BuildUnwrappedUpdateTemplateBuffer(layer_data *dev_data, uint64_t descript
                     allocation_size = std::max(allocation_size, offset + sizeof(VkDescriptorBufferInfo));
 
                     VkDescriptorBufferInfo *wrapped_entry = new VkDescriptorBufferInfo(*buffer_entry);
-                    wrapped_entry->buffer =
-                        reinterpret_cast<VkBuffer &>(dev_data->unique_id_mapping[reinterpret_cast<uint64_t &>(buffer_entry->buffer)]);
+                    wrapped_entry->buffer = reinterpret_cast<VkBuffer &>(
+                        dev_data->unique_id_mapping[reinterpret_cast<uint64_t &>(buffer_entry->buffer)]);
                     template_entries.emplace_back(offset, VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_EXT,
                                                   reinterpret_cast<void *>(wrapped_entry));
                 } break;
 
                 case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
                 case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: {
+                    auto buffer_view_handle = reinterpret_cast<uint64_t *>(update_entry);
                     allocation_size = std::max(allocation_size, offset + sizeof(VkBufferView));
 
-                    VkBufferView *wrapped_entry = new VkBufferView;
-                    *wrapped_entry =
-                        reinterpret_cast<VkBufferView &>(dev_data->unique_id_mapping[reinterpret_cast<uint64_t &>(update_entry)]);
+                    uint64_t wrapped_entry = dev_data->unique_id_mapping[reinterpret_cast<uint64_t &>(*buffer_view_handle)];
                     template_entries.emplace_back(offset, VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_VIEW_EXT,
                                                   reinterpret_cast<void *>(wrapped_entry));
                 } break;
@@ -736,8 +732,7 @@ void *BuildUnwrappedUpdateTemplateBuffer(layer_data *dev_data, uint64_t descript
                 delete reinterpret_cast<VkDescriptorBufferInfo *>(source);
                 break;
             case VK_DEBUG_REPORT_OBJECT_TYPE_BUFFER_VIEW_EXT:
-                *(reinterpret_cast<VkBufferView *>(destination)) = *(reinterpret_cast<VkBufferView *>(source));
-                delete reinterpret_cast<VkBufferView *>(source);
+                *(reinterpret_cast<VkBufferView *>(destination)) = reinterpret_cast<VkBufferView>(source);
                 break;
             default:
                 assert(0);
@@ -890,6 +885,36 @@ VKAPI_ATTR VkResult VKAPI_CALL GetDisplayPlaneCapabilitiesKHR(VkPhysicalDevice p
     return result;
 }
 #endif
+
+VKAPI_ATTR VkResult VKAPI_CALL DebugMarkerSetObjectTagEXT(VkDevice device, VkDebugMarkerObjectTagInfoEXT *pTagInfo) {
+    layer_data *device_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    auto local_tag_info = new safe_VkDebugMarkerObjectTagInfoEXT(pTagInfo);
+    {
+        std::lock_guard<std::mutex> lock(global_lock);
+        auto it = device_data->unique_id_mapping.find(reinterpret_cast<uint64_t &>(local_tag_info->object));
+        if (it != device_data->unique_id_mapping.end()) {
+            local_tag_info->object = it->second;
+        }
+    }
+    VkResult result = device_data->device_dispatch_table->DebugMarkerSetObjectTagEXT(
+        device, reinterpret_cast<VkDebugMarkerObjectTagInfoEXT *>(local_tag_info));
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL DebugMarkerSetObjectNameEXT(VkDevice device, VkDebugMarkerObjectNameInfoEXT *pNameInfo) {
+    layer_data *device_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    auto local_name_info = new safe_VkDebugMarkerObjectNameInfoEXT(pNameInfo);
+    {
+        std::lock_guard<std::mutex> lock(global_lock);
+        auto it = device_data->unique_id_mapping.find(reinterpret_cast<uint64_t &>(local_name_info->object));
+        if (it != device_data->unique_id_mapping.end()) {
+            local_name_info->object = it->second;
+        }
+    }
+    VkResult result = device_data->device_dispatch_table->DebugMarkerSetObjectNameEXT(
+        device, reinterpret_cast<VkDebugMarkerObjectNameInfoEXT *>(local_name_info));
+    return result;
+}
 
 }  // namespace unique_objects
 
