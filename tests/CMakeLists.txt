@@ -36,6 +36,7 @@ if (WIN32)
    else ()
       set (BUILDTGT_DIR build32)
    endif()
+   file(COPY vk_layer_validation_tests.vcxproj.user DESTINATION ${CMAKE_BINARY_DIR}/tests)
 endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
@@ -68,6 +69,8 @@ include_directories(
     ${XCB_INCLUDE_DIRS}
     ${GLSLANG_SPIRV_INCLUDE_DIR}
     ${LIBGLM_INCLUDE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_BINARY_DIR}
     )
 
 if (NOT WIN32)
@@ -100,10 +103,8 @@ endif()
 
 if(WIN32)
    set (LIBVK "${API_LOWERCASE}-${MAJOR}")
-   set (TEST_LIBRARIES ${GLSLANG_LIBRARIES})
 elseif(UNIX)
    set (LIBVK "${API_LOWERCASE}")
-   set (TEST_LIBRARIES ${GLSLANG_LIBRARIES} ${XCB_LIBRARIES} ${X11_LIBRARIES})
 else()
 endif()
 
@@ -111,13 +112,38 @@ add_executable(vk_layer_validation_tests layer_validation_tests.cpp ${COMMON_CPP
 set_target_properties(vk_layer_validation_tests
    PROPERTIES
    COMPILE_DEFINITIONS "GTEST_LINKED_AS_SHARED_LIBRARY=1")
-target_link_libraries(vk_layer_validation_tests ${LIBVK} gtest gtest_main VkLayer_utils ${TEST_LIBRARIES})
+if(NOT WIN32)
+    if (BUILD_WSI_XCB_SUPPORT OR BUILD_WSI_XLIB_SUPPORT)
+        target_link_libraries(vk_layer_validation_tests ${LIBVK} ${XCB_LIBRARIES} ${X11_LIBRARIES} gtest gtest_main VkLayer_utils ${GLSLANG_LIBRARIES})
+    else()
+        target_link_libraries(vk_layer_validation_tests ${LIBVK} gtest gtest_main VkLayer_utils ${GLSLANG_LIBRARIES})
+    endif()
+endif()
+if(WIN32)
+   target_link_libraries(vk_layer_validation_tests ${LIBVK} gtest gtest_main VkLayer_utils ${GLSLANG_LIBRARIES})
+endif()
+add_dependencies(vk_layer_validation_tests
+   VkLayer_core_validation
+   VkLayer_object_tracker
+   VkLayer_swapchain
+   VkLayer_threading
+   VkLayer_unique_objects
+   VkLayer_parameter_validation
+)
+
+if (WIN32)
+    # For Windows, copy necessary gtest DLLs to the right spot for the vk_layer_tests...
+    FILE(TO_NATIVE_PATH ${CMAKE_CURRENT_BINARY_DIR}/gtest-1.7.0/$<CONFIGURATION>/*.dll SRC_GTEST_DLLS)
+    FILE(TO_NATIVE_PATH ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIGURATION> DST_GTEST_DLLS)
+    add_custom_command(TARGET vk_layer_validation_tests POST_BUILD
+        COMMAND xcopy /Y /I ${SRC_GTEST_DLLS} ${DST_GTEST_DLLS})
+endif()
 
 add_executable(vk_loader_validation_tests loader_validation_tests.cpp ${COMMON_CPP})
 set_target_properties(vk_loader_validation_tests
    PROPERTIES
    COMPILE_DEFINITIONS "GTEST_LINKED_AS_SHARED_LIBRARY=1")
-target_link_libraries(vk_loader_validation_tests ${LIBVK} gtest gtest_main VkLayer_utils ${TEST_LIBRARIES})
+target_link_libraries(vk_loader_validation_tests ${LIBVK} gtest gtest_main VkLayer_utils  ${GLSLANG_LIBRARIES})
 
 add_subdirectory(gtest-1.7.0)
 add_subdirectory(layers)

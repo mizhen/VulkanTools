@@ -221,12 +221,27 @@ class BUFFER_STATE : public BINDABLE {
     VkBuffer buffer;
     VkBufferCreateInfo createInfo;
     BUFFER_STATE(VkBuffer buff, const VkBufferCreateInfo *pCreateInfo) : buffer(buff), createInfo(*pCreateInfo) {
+        if (createInfo.queueFamilyIndexCount > 0) {
+            uint32_t *pQueueFamilyIndices = new uint32_t[createInfo.queueFamilyIndexCount];
+            for (uint32_t i = 0; i < createInfo.queueFamilyIndexCount; i++) {
+                pQueueFamilyIndices[i] = pCreateInfo->pQueueFamilyIndices[i];
+            }
+            createInfo.pQueueFamilyIndices = pQueueFamilyIndices;
+        }
+
         if (createInfo.flags & VK_BUFFER_CREATE_SPARSE_BINDING_BIT) {
             sparse = true;
         }
     };
 
     BUFFER_STATE(BUFFER_STATE const &rh_obj) = delete;
+
+    ~BUFFER_STATE() {
+        if (createInfo.queueFamilyIndexCount > 0) {
+            delete createInfo.pQueueFamilyIndices;
+            createInfo.pQueueFamilyIndices = nullptr;
+        }
+    };
 };
 
 class BUFFER_VIEW_STATE : public BASE_NODE {
@@ -252,12 +267,27 @@ class IMAGE_STATE : public BINDABLE {
     bool acquired;  // If this is a swapchain image, has it been acquired by the app.
     IMAGE_STATE(VkImage img, const VkImageCreateInfo *pCreateInfo)
         : image(img), createInfo(*pCreateInfo), valid(false), acquired(false) {
+        if (createInfo.queueFamilyIndexCount > 0) {
+            uint32_t *pQueueFamilyIndices = new uint32_t[createInfo.queueFamilyIndexCount];
+            for (uint32_t i = 0; i < createInfo.queueFamilyIndexCount; i++) {
+                pQueueFamilyIndices[i] = pCreateInfo->pQueueFamilyIndices[i];
+            }
+            createInfo.pQueueFamilyIndices = pQueueFamilyIndices;
+        }
+
         if (createInfo.flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT) {
             sparse = true;
         }
     };
 
     IMAGE_STATE(IMAGE_STATE const &rh_obj) = delete;
+
+    ~IMAGE_STATE() {
+        if (createInfo.queueFamilyIndexCount > 0) {
+            delete createInfo.pQueueFamilyIndices;
+            createInfo.pQueueFamilyIndices = nullptr;
+        }
+    };
 };
 
 class IMAGE_VIEW_STATE : public BASE_NODE {
@@ -360,7 +390,6 @@ struct RENDER_PASS_STATE : public BASE_NODE {
     std::vector<bool> hasSelfDependency;
     std::vector<DAGNode> subpassToNode;
     std::unordered_map<uint32_t, bool> attachment_first_read;
-    std::unordered_map<uint32_t, VkImageLayout> attachment_first_layout;
 
     RENDER_PASS_STATE(VkRenderPassCreateInfo const *pCreateInfo) : createInfo(pCreateInfo) {}
 };
@@ -443,6 +472,15 @@ enum CBStatusFlagBits {
     CBSTATUS_ALL_STATE_SET          = 0x0000007F,   // All state set (intentionally exclude index buffer)
     // clang-format on
 };
+
+struct TEMPLATE_STATE {
+    VkDescriptorUpdateTemplateKHR desc_update_template;
+    safe_VkDescriptorUpdateTemplateCreateInfoKHR create_info;
+
+    TEMPLATE_STATE(VkDescriptorUpdateTemplateKHR update_template, safe_VkDescriptorUpdateTemplateCreateInfoKHR *pCreateInfo)
+        : desc_update_template(update_template), create_info(*pCreateInfo) {}
+};
+
 
 struct QueryObject {
     VkQueryPool pool;
@@ -721,6 +759,8 @@ struct CHECK_DISABLED {
     bool get_query_pool_results;
     bool destroy_buffer;
     bool shader_validation;         // Skip validation for shaders
+
+    void SetAll(bool value) { std::fill(&command_buffer_state, &shader_validation + 1, value); }
 };
 
 struct MT_FB_ATTACHMENT_INFO {
@@ -759,6 +799,7 @@ RENDER_PASS_STATE *GetRenderPassState(layer_data const *my_data, VkRenderPass re
 FRAMEBUFFER_STATE *GetFramebufferState(const layer_data *my_data, VkFramebuffer framebuffer);
 COMMAND_POOL_NODE *GetCommandPoolNode(layer_data *dev_data, VkCommandPool pool);
 const PHYS_DEV_PROPERTIES_NODE *GetPhysDevProperties(const layer_data *device_data);
+const VkPhysicalDeviceFeatures *GetEnabledFeatures(const layer_data *device_data);
 
 void invalidateCommandBuffers(const layer_data *, std::unordered_set<GLOBAL_CB_NODE *> const &, VK_OBJECT);
 bool ValidateMemoryIsBoundToBuffer(const layer_data *, const BUFFER_STATE *, const char *, UNIQUE_VALIDATION_ERROR_CODE);
@@ -771,7 +812,10 @@ void AddCommandBufferBindingBufferView(const layer_data *, GLOBAL_CB_NODE *, BUF
 bool ValidateObjectNotInUse(const layer_data *dev_data, BASE_NODE *obj_node, VK_OBJECT obj_struct, UNIQUE_VALIDATION_ERROR_CODE error_code);
 void invalidateCommandBuffers(const layer_data *dev_data, std::unordered_set<GLOBAL_CB_NODE *> const &cb_nodes, VK_OBJECT obj);
 void RemoveImageMemoryRange(uint64_t handle, DEVICE_MEM_INFO *mem_info);
+void RemoveBufferMemoryRange(uint64_t handle, DEVICE_MEM_INFO *mem_info);
 bool ClearMemoryObjectBindings(layer_data *dev_data, uint64_t handle, VkDebugReportObjectTypeEXT type);
+bool ValidateCmdQueueFlags(layer_data *dev_data, GLOBAL_CB_NODE *cb_node, const char *caller_name, VkQueueFlags flags,
+                           UNIQUE_VALIDATION_ERROR_CODE error_code);
 bool ValidateCmd(layer_data *my_data, GLOBAL_CB_NODE *pCB, const CMD_TYPE cmd, const char *caller_name);
 bool insideRenderPass(const layer_data *my_data, GLOBAL_CB_NODE *pCB, const char *apiName, UNIQUE_VALIDATION_ERROR_CODE msgCode);
 void SetImageMemoryValid(layer_data *dev_data, IMAGE_STATE *image_state, bool valid);
@@ -785,6 +829,7 @@ bool ValidateImageSampleCount(layer_data *dev_data, IMAGE_STATE *image_state, Vk
 bool rangesIntersect(layer_data const *dev_data, MEMORY_RANGE const *range1, VkDeviceSize offset, VkDeviceSize end);
 bool ValidateBufferMemoryIsValid(layer_data *dev_data, BUFFER_STATE *buffer_state, const char *functionName);
 void SetBufferMemoryValid(layer_data *dev_data, BUFFER_STATE *buffer_state, bool valid);
+bool ValidateCmdSubpassState(const layer_data *dev_data, const GLOBAL_CB_NODE *pCB, const CMD_TYPE cmd_type);
 
 
 
@@ -793,7 +838,7 @@ const VkFormatProperties *GetFormatProperties(core_validation::layer_data *devic
 const VkImageFormatProperties *GetImageFormatProperties(core_validation::layer_data *device_data, VkFormat format,
                                                         VkImageType image_type, VkImageTiling tiling, VkImageUsageFlags usage,
                                                         VkImageCreateFlags flags);
-const debug_report_data *GetReportData(layer_data *);
+const debug_report_data *GetReportData(const layer_data *);
 const VkPhysicalDeviceProperties *GetPhysicalDeviceProperties(layer_data *);
 const CHECK_DISABLED *GetDisables(layer_data *);
 std::unordered_map<VkImage, std::unique_ptr<IMAGE_STATE>> *GetImageMap(core_validation::layer_data *);

@@ -1,8 +1,8 @@
 /*
- * Copyright (c) 2015-2016 The Khronos Group Inc.
- * Copyright (c) 2015-2016 Valve Corporation
- * Copyright (c) 2015-2016 LunarG, Inc.
- * Copyright (c) 2015-2016 Google, Inc.
+ * Copyright (c) 2015-2017 The Khronos Group Inc.
+ * Copyright (c) 2015-2017 Valve Corporation
+ * Copyright (c) 2015-2017 LunarG, Inc.
+ * Copyright (c) 2015-2017 Google, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,6 +64,17 @@ bool vk_format_is_depth_only(VkFormat format) {
     }
 
     return is_depth;
+}
+
+VkFormat find_depth_stencil_format(VkDeviceObj *device) {
+    VkFormat ds_formats[] = {VK_FORMAT_D16_UNORM_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT_S8_UINT};
+    for (uint32_t i = 0; i < sizeof(ds_formats); i++) {
+        VkFormatProperties format_props = device->format_properties(ds_formats[i]);
+        if (format_props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            return ds_formats[i];
+        }
+    }
+    return (VkFormat)0;
 }
 
 VkRenderFramework::VkRenderFramework()
@@ -173,7 +184,7 @@ void VkRenderFramework::InitFramework(std::vector<const char *> instance_layer_n
 
 void VkRenderFramework::ShutdownFramework() {
     delete m_commandBuffer;
-    if (m_commandPool) vkDestroyCommandPool(device(), m_commandPool, NULL);
+    delete m_commandPool;
     if (m_framebuffer) vkDestroyFramebuffer(device(), m_framebuffer, NULL);
     if (m_renderPass) vkDestroyRenderPass(device(), m_renderPass, NULL);
 
@@ -205,8 +216,6 @@ void VkRenderFramework::GetPhysicalDeviceFeatures(VkPhysicalDeviceFeatures *feat
 }
 
 void VkRenderFramework::InitState(VkPhysicalDeviceFeatures *features, const VkCommandPoolCreateFlags flags) {
-    VkResult U_ASSERT_ONLY err;
-
     m_device = new VkDeviceObj(0, objs[0], device_extension_names, features);
     m_device->get_device_queue();
 
@@ -232,12 +241,7 @@ void VkRenderFramework::InitState(VkPhysicalDeviceFeatures *features, const VkCo
     m_writeMask = 0xff;
     m_reference = 0;
 
-    VkCommandPoolCreateInfo cmd_pool_info;
-    cmd_pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, cmd_pool_info.pNext = NULL,
-    cmd_pool_info.queueFamilyIndex = m_device->graphics_queue_node_index_;
-    cmd_pool_info.flags = flags;
-    err = vkCreateCommandPool(device(), &cmd_pool_info, NULL, &m_commandPool);
-    assert(!err);
+    m_commandPool = new VkCommandPoolObj(m_device, m_device->graphics_queue_node_index_, flags);
 
     m_commandBuffer = new VkCommandBufferObj(m_device, m_commandPool);
 }
@@ -410,10 +414,23 @@ VkDeviceObj::VkDeviceObj(uint32_t id, VkPhysicalDevice obj, std::vector<const ch
     queue_props = phy().queue_properties();
 }
 
+uint32_t VkDeviceObj::QueueFamilyWithoutCapabilities(VkQueueFlags capabilities)
+{
+    // Find a queue family without desired capabilities
+    for (uint32_t i = 0; i < queue_props.size(); i++) {
+        if ((queue_props[i].queueFlags & capabilities) == 0) {
+            return i;
+        }
+    }
+    return UINT32_MAX;
+}
+
+
 void VkDeviceObj::get_device_queue() {
     ASSERT_NE(true, graphics_queues().empty());
     m_queue = graphics_queues()[0]->handle();
 }
+
 
 VkDescriptorSetObj::VkDescriptorSetObj(VkDeviceObj *device) : m_device(device), m_nextSlot(0) {}
 
@@ -670,13 +687,8 @@ void VkImageObj::SetLayout(VkImageAspectFlags aspect, VkImageLayout image_layout
         return;
     }
 
-    VkCommandPoolCreateInfo cmd_pool_info = {};
-    cmd_pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    cmd_pool_info.pNext = NULL;
-    cmd_pool_info.queueFamilyIndex = m_device->graphics_queue_node_index_;
-    cmd_pool_info.flags = 0;
-    vk_testing::CommandPool pool(*m_device, cmd_pool_info);
-    VkCommandBufferObj cmd_buf(m_device, pool.handle());
+    VkCommandPoolObj pool(m_device, m_device->graphics_queue_node_index_);
+    VkCommandBufferObj cmd_buf(m_device, &pool);
 
     /* Build command buffer to set image layout in the driver */
     err = cmd_buf.BeginCommandBuffer();
@@ -759,17 +771,47 @@ void VkImageObj::init(uint32_t w, uint32_t h, VkFormat fmt, VkFlags usage, VkIma
     SetLayout(image_aspect, newLayout);
 }
 
+void VkImageObj::init(const VkImageCreateInfo *create_info) {
+    VkFormatProperties image_fmt;
+    vkGetPhysicalDeviceFormatProperties(m_device->phy().handle(), create_info->format, &image_fmt);
+
+    switch (create_info->tiling) {
+        case VK_IMAGE_TILING_OPTIMAL:
+            if (!IsCompatible(create_info->usage, image_fmt.optimalTilingFeatures)) {
+                ASSERT_TRUE(false) << "VkImageObj::init() error: unsupported tiling configuration";
+            }
+            break;
+        case VK_IMAGE_TILING_LINEAR:
+            if (!IsCompatible(create_info->usage, image_fmt.optimalTilingFeatures)) {
+                ASSERT_TRUE(false) << "VkImageObj::init() error: unsupported tiling configuration";
+            }
+            break;
+        default:
+            break;
+    }
+    layout(create_info->initialLayout);
+
+    vk_testing::Image::init(*m_device, *create_info, 0);
+
+    VkImageAspectFlags image_aspect = 0;
+    if (vk_format_is_depth_and_stencil(create_info->format)) {
+        image_aspect = VK_IMAGE_ASPECT_STENCIL_BIT | VK_IMAGE_ASPECT_DEPTH_BIT;
+    } else if (vk_format_is_depth_only(create_info->format)) {
+        image_aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+    } else if (vk_format_is_stencil_only(create_info->format)) {
+        image_aspect = VK_IMAGE_ASPECT_STENCIL_BIT;
+    } else {  // color
+        image_aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+    }
+    SetLayout(image_aspect, VK_IMAGE_LAYOUT_GENERAL);
+}
+
 VkResult VkImageObj::CopyImage(VkImageObj &src_image) {
     VkResult U_ASSERT_ONLY err;
     VkImageLayout src_image_layout, dest_image_layout;
 
-    VkCommandPoolCreateInfo cmd_pool_info = {};
-    cmd_pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    cmd_pool_info.pNext = NULL;
-    cmd_pool_info.queueFamilyIndex = m_device->graphics_queue_node_index_;
-    cmd_pool_info.flags = 0;
-    vk_testing::CommandPool pool(*m_device, cmd_pool_info);
-    VkCommandBufferObj cmd_buf(m_device, pool.handle());
+    VkCommandPoolObj pool(m_device, m_device->graphics_queue_node_index_);
+    VkCommandBufferObj cmd_buf(m_device, &pool);
 
     /* Build command buffer to copy staging texture to usable texture */
     err = cmd_buf.BeginCommandBuffer();
@@ -970,13 +1012,8 @@ void VkConstantBufferObj::BufferMemoryBarrier(VkFlags srcAccessMask /*=
 
     if (!m_commandBuffer) {
         m_fence.init(*m_device, vk_testing::Fence::create_info());
-        VkCommandPoolCreateInfo cmd_pool_info = {};
-        cmd_pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        cmd_pool_info.pNext = NULL;
-        cmd_pool_info.queueFamilyIndex = m_device->graphics_queue_node_index_;
-        cmd_pool_info.flags = 0;
-        m_commandPool = new vk_testing::CommandPool(*m_device, cmd_pool_info);
-        m_commandBuffer = new VkCommandBufferObj(m_device, m_commandPool->handle());
+        m_commandPool = new VkCommandPoolObj(m_device, m_device->graphics_queue_node_index_);
+        m_commandBuffer = new VkCommandBufferObj(m_device, m_commandPool);
     } else {
         m_device->wait(m_fence);
     }
@@ -1140,7 +1177,7 @@ VkPipelineObj::VkPipelineObj(VkDeviceObj *device) {
     m_rs_state.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     m_rs_state.pNext = VK_NULL_HANDLE;
     m_rs_state.flags = 0;
-    m_rs_state.depthClampEnable = VK_TRUE;
+    m_rs_state.depthClampEnable = VK_FALSE;
     m_rs_state.rasterizerDiscardEnable = VK_FALSE;
     m_rs_state.polygonMode = VK_POLYGON_MODE_FILL;
     m_rs_state.cullMode = VK_CULL_MODE_BACK_BIT;
@@ -1179,6 +1216,8 @@ VkPipelineObj::VkPipelineObj(VkDeviceObj *device) {
     m_vp_state.pScissors = NULL;
 
     m_ds_state = nullptr;
+
+    memset(&m_pd_state, 0, sizeof(m_pd_state));
 };
 
 void VkPipelineObj::AddShader(VkShaderObj *shader) { m_shaderObjs.push_back(shader); }
@@ -1236,27 +1275,23 @@ void VkPipelineObj::SetRasterization(const VkPipelineRasterizationStateCreateInf
 
 void VkPipelineObj::SetTessellation(const VkPipelineTessellationStateCreateInfo *te_state) { m_te_state = *te_state; }
 
-VkResult VkPipelineObj::CreateVKPipeline(VkPipelineLayout layout, VkRenderPass render_pass) {
-    VkGraphicsPipelineCreateInfo info = {};
-    VkPipelineDynamicStateCreateInfo dsci = {};
-
-    info.stageCount = m_shaderObjs.size();
-    info.pStages = new VkPipelineShaderStageCreateInfo[info.stageCount];
+void VkPipelineObj::InitGraphicsPipelineCreateInfo(VkGraphicsPipelineCreateInfo *gp_ci) {
+    gp_ci->stageCount = m_shaderObjs.size();
+    gp_ci->pStages = new VkPipelineShaderStageCreateInfo[gp_ci->stageCount];
 
     for (size_t i = 0; i < m_shaderObjs.size(); i++) {
-        ((VkPipelineShaderStageCreateInfo *)info.pStages)[i] = m_shaderObjs[i]->GetStageCreateInfo();
+        ((VkPipelineShaderStageCreateInfo *)gp_ci->pStages)[i] = m_shaderObjs[i]->GetStageCreateInfo();
     }
 
     m_vi_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    info.pVertexInputState = &m_vi_state;
+    gp_ci->pVertexInputState = &m_vi_state;
 
     m_ia_state.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    info.pInputAssemblyState = &m_ia_state;
+    gp_ci->pInputAssemblyState = &m_ia_state;
 
-    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    info.pNext = NULL;
-    info.flags = 0;
-    info.layout = layout;
+    gp_ci->sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    gp_ci->pNext = NULL;
+    gp_ci->flags = 0;
 
     m_cb_state.attachmentCount = m_colorAttachments.size();
     m_cb_state.pAttachments = m_colorAttachments.data();
@@ -1275,35 +1310,49 @@ VkResult VkPipelineObj::CreateVKPipeline(VkPipelineLayout layout, VkRenderPass r
         MakeDynamic(VK_DYNAMIC_STATE_SCISSOR);
     }
 
+    memset(&m_pd_state, 0, sizeof(m_pd_state));
     if (m_dynamic_state_enables.size() > 0) {
-        dsci.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-        dsci.dynamicStateCount = m_dynamic_state_enables.size();
-        dsci.pDynamicStates = m_dynamic_state_enables.data();
-        info.pDynamicState = &dsci;
+        m_pd_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        m_pd_state.dynamicStateCount = m_dynamic_state_enables.size();
+        m_pd_state.pDynamicStates = m_dynamic_state_enables.data();
+        gp_ci->pDynamicState = &m_pd_state;
     }
 
-    info.renderPass = render_pass;
-    info.subpass = 0;
-    info.pViewportState = &m_vp_state;
-    info.pRasterizationState = &m_rs_state;
-    info.pMultisampleState = &m_ms_state;
-    info.pDepthStencilState = m_ds_state;
-    info.pColorBlendState = &m_cb_state;
+    gp_ci->subpass = 0;
+    gp_ci->pViewportState = &m_vp_state;
+    gp_ci->pRasterizationState = &m_rs_state;
+    gp_ci->pMultisampleState = &m_ms_state;
+    gp_ci->pDepthStencilState = m_ds_state;
+    gp_ci->pColorBlendState = &m_cb_state;
 
     if (m_ia_state.topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) {
         m_te_state.sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO;
-        info.pTessellationState = &m_te_state;
+        gp_ci->pTessellationState = &m_te_state;
     } else {
-        info.pTessellationState = nullptr;
+        gp_ci->pTessellationState = nullptr;
     }
-
-    return init_try(*m_device, info);
 }
 
-VkCommandBufferObj::VkCommandBufferObj(VkDeviceObj *device, VkCommandPool pool) {
+VkResult VkPipelineObj::CreateVKPipeline(VkPipelineLayout layout, VkRenderPass render_pass,
+                                         VkGraphicsPipelineCreateInfo *gp_ci) {
+    VkGraphicsPipelineCreateInfo info = {};
+
+    // if not given a CreateInfo, create and initialize a local one.
+    if (gp_ci == nullptr) {
+        gp_ci = &info;
+        InitGraphicsPipelineCreateInfo(gp_ci);
+    }
+
+    gp_ci->layout = layout;
+    gp_ci->renderPass = render_pass;
+
+    return init_try(*m_device, *gp_ci);
+}
+
+VkCommandBufferObj::VkCommandBufferObj(VkDeviceObj *device, VkCommandPoolObj *pool) {
     m_device = device;
 
-    init(*device, vk_testing::CommandBuffer::create_info(pool));
+    init(*device, vk_testing::CommandBuffer::create_info(pool->handle()));
 }
 
 VkCommandBuffer VkCommandBufferObj::GetBufferHandle() { return handle(); }
@@ -1562,6 +1611,10 @@ void VkCommandBufferObj::BindVertexBuffer(VkConstantBufferObj *vertexBuffer, VkD
     vkCmdBindVertexBuffers(handle(), binding, 1, &vertexBuffer->handle(), &offset);
 }
 
+VkCommandPoolObj::VkCommandPoolObj(VkDeviceObj *device, uint32_t queue_family_index, VkCommandPoolCreateFlags flags) {
+    init(*device, vk_testing::CommandPool::create_info(queue_family_index, flags));
+}
+
 bool VkDepthStencilObj::Initialized() { return m_initialized; }
 VkDepthStencilObj::VkDepthStencilObj(VkDeviceObj *device) : VkImageObj(device) { m_initialized = false; }
 
@@ -1577,15 +1630,18 @@ void VkDepthStencilObj::Init(VkDeviceObj *device, int32_t width, int32_t height,
     /* create image */
     init(width, height, m_depth_stencil_fmt, usage, VK_IMAGE_TILING_OPTIMAL);
 
-    VkImageAspectFlags aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
-    if (vk_format_is_depth_and_stencil(format)) aspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    VkImageAspectFlags aspect = VK_IMAGE_ASPECT_STENCIL_BIT | VK_IMAGE_ASPECT_DEPTH_BIT;
+    if (vk_format_is_depth_only(format))
+        aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+    else if (vk_format_is_stencil_only(format))
+        aspect = VK_IMAGE_ASPECT_STENCIL_BIT;
 
     SetLayout(aspect, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
     view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     view_info.pNext = NULL;
     view_info.image = VK_NULL_HANDLE;
-    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    view_info.subresourceRange.aspectMask = aspect;
     view_info.subresourceRange.baseMipLevel = 0;
     view_info.subresourceRange.levelCount = 1;
     view_info.subresourceRange.baseArrayLayer = 0;

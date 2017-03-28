@@ -2,7 +2,7 @@
  * Copyright (c) 2013, NVIDIA CORPORATION. All rights reserved.
  * Copyright (c) 2014-2016 Valve Corporation. All rights reserved.
  * Copyright (C) 2014-2016 LunarG, Inc.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -38,13 +38,13 @@ extern "C" {
 #include "vktrace_filelike.h"
 #include "vktrace_interconnect.h"
 #include "vktrace_trace_packet_utils.h"
+#include "vktrace_vk_packet_id.h"
 }
 
 const unsigned long kWatchDogPollTime = 250;
 
 #if defined(WIN32)
-void SafeCloseHandle(HANDLE& _handle)
-{
+void SafeCloseHandle(HANDLE& _handle) {
     if (_handle) {
         CloseHandle(_handle);
         _handle = NULL;
@@ -58,64 +58,51 @@ static int rval;
 #endif
 
 // ------------------------------------------------------------------------------------------------
-VKTRACE_THREAD_ROUTINE_RETURN_TYPE Process_RunWatchdogThread(LPVOID _procInfoPtr)
-{
+VKTRACE_THREAD_ROUTINE_RETURN_TYPE Process_RunWatchdogThread(LPVOID _procInfoPtr) {
     vktrace_process_info* pProcInfo = (vktrace_process_info*)_procInfoPtr;
 
 #if defined(WIN32)
 
     DWORD rv;
-    while (WaitForSingleObject(pProcInfo->hProcess, kWatchDogPollTime) == WAIT_TIMEOUT)
-    {
-        if (pProcInfo->serverRequestsTermination)
-        {
+    while (WaitForSingleObject(pProcInfo->hProcess, kWatchDogPollTime) == WAIT_TIMEOUT) {
+        if (pProcInfo->serverRequestsTermination) {
             vktrace_LogVerbose("Vktrace has requested exit.");
             return 0;
         }
     }
 
     vktrace_LogVerbose("Child process has terminated.");
-    GetExitCodeProcess(pProcInfo->hProcess,  &rv);
+    GetExitCodeProcess(pProcInfo->hProcess, &rv);
     PostThreadMessage(pProcInfo->parentThreadId, VKTRACE_WM_COMPLETE, rv, 0);
     pProcInfo->serverRequestsTermination = TRUE;
     return 0;
-    
+
 #elif defined(PLATFORM_LINUX) || defined(PLATFORM_OSX)
     int status = 0;
     int options = 0;
 
     // Check to see if process exists
-    rval=waitpid(pProcInfo->processId, &status, WNOHANG);
-    if (rval == pProcInfo->processId)
-    {
+    rval = waitpid(pProcInfo->processId, &status, WNOHANG);
+    if (rval == pProcInfo->processId) {
         vktrace_LogVerbose("Child process was terminated.");
-        rval=1;
+        rval = 1;
         pthread_exit(&rval);
     }
 
-    rval=1;
-    while (waitpid(pProcInfo->processId, &status, options) != -1)
-    {
-        if (WIFEXITED(status))
-        {
+    rval = 1;
+    while (waitpid(pProcInfo->processId, &status, options) != -1) {
+        if (WIFEXITED(status)) {
             vktrace_LogVerbose("Child process exited.");
             rval = WEXITSTATUS(status);
             break;
-        }
-        else if (WCOREDUMP(status))
-        {
+        } else if (WCOREDUMP(status)) {
             vktrace_LogError("Child process crashed.");
             break;
-        }
-        else if (WIFSIGNALED(status))
-        {
+        } else if (WIFSIGNALED(status)) {
             vktrace_LogVerbose("Child process was signaled.");
-        }
-        else if (WIFSTOPPED(status))
-        {
+        } else if (WIFSTOPPED(status)) {
             vktrace_LogVerbose("Child process was stopped.");
-        }
-        else if (WIFCONTINUED(status))
+        } else if (WIFCONTINUED(status))
             vktrace_LogVerbose("Child process was continued.");
     }
     pthread_exit(&rval);
@@ -123,90 +110,152 @@ VKTRACE_THREAD_ROUTINE_RETURN_TYPE Process_RunWatchdogThread(LPVOID _procInfoPtr
 }
 
 // ------------------------------------------------------------------------------------------------
-VKTRACE_THREAD_ROUTINE_RETURN_TYPE Process_RunRecordTraceThread(LPVOID _threadInfo)
-{
+bool terminationSignalArrived = false;
+void terminationSignalHandler(int sig) { terminationSignalArrived = true; }
+
+// ------------------------------------------------------------------------------------------------
+VKTRACE_THREAD_ROUTINE_RETURN_TYPE Process_RunRecordTraceThread(LPVOID _threadInfo) {
     vktrace_process_capture_trace_thread_info* pInfo = (vktrace_process_capture_trace_thread_info*)_threadInfo;
+    FileLike* fileLikeSocket;
+    uint64_t fileHeaderSize;
+    vktrace_trace_file_header file_header;
+    vktrace_trace_packet_header* pHeader = NULL;
+    size_t bytes_written;
+    size_t fileOffset;
 
     MessageStream* pMessageStream = vktrace_MessageStream_create(TRUE, "", VKTRACE_BASE_PORT + pInfo->tracerId);
-    if (pMessageStream == NULL)
-    {
+    if (pMessageStream == NULL) {
         vktrace_LogError("Thread_CaptureTrace() cannot create message stream.");
         return 1;
     }
 
     // create trace file
-    pInfo->pProcessInfo->pTraceFile = vktrace_write_trace_file_header(pInfo->pProcessInfo);
+    pInfo->pProcessInfo->pTraceFile = vktrace_open_trace_file(pInfo->pProcessInfo);
 
     if (pInfo->pProcessInfo->pTraceFile == NULL) {
-        // writing trace file generated an error, no sense in continuing.
-        vktrace_LogError("Error cannot create trace file and write header.");
+        // open of trace file generated an error, no sense in continuing.
+        vktrace_LogError("Error cannot create trace file.");
         vktrace_process_info_delete(pInfo->pProcessInfo);
         return 1;
     }
 
-    FileLike* fileLikeSocket = vktrace_FileLike_create_msg(pMessageStream);
-    unsigned int total_packet_count = 0;
-    vktrace_trace_packet_header* pHeader = NULL;
-    size_t bytes_written;
+    // Open the socket
+    fileLikeSocket = vktrace_FileLike_create_msg(pMessageStream);
 
-    while (pInfo->pProcessInfo->serverRequestsTermination == FALSE)
-    {
+    // Read the size of the header packet from the socket
+    fileHeaderSize = 0;
+    vktrace_FileLike_ReadRaw(fileLikeSocket, &fileHeaderSize, sizeof(fileHeaderSize));
+
+    // Read the header, not including gpu_info
+    file_header.first_packet_offset = 0;
+    vktrace_FileLike_ReadRaw(fileLikeSocket, &file_header, sizeof(file_header));
+    if (fileHeaderSize != sizeof(fileHeaderSize) + sizeof(file_header) + file_header.n_gpuinfo * sizeof(struct_gpuinfo) ||
+        file_header.first_packet_offset != sizeof(file_header) + file_header.n_gpuinfo * sizeof(struct_gpuinfo)) {
+        // Trace file header we received is the wrong size
+        vktrace_LogError("Error creating trace file header. Are vktrace and trace layer the same version?");
+        vktrace_process_info_delete(pInfo->pProcessInfo);
+        return 1;
+    }
+
+    vktrace_enter_critical_section(&pInfo->pProcessInfo->traceFileCriticalSection);
+
+    // Write the trace file header to the file
+    bytes_written = fwrite(&file_header, 1, sizeof(file_header), pInfo->pProcessInfo->pTraceFile);
+
+    // Read and write the gpu_info structs
+    struct_gpuinfo gpuinfo;
+    for (uint64_t i = 0; i < file_header.n_gpuinfo; i++) {
+        vktrace_FileLike_ReadRaw(fileLikeSocket, &gpuinfo, sizeof(struct_gpuinfo));
+        bytes_written += fwrite(&gpuinfo, 1, sizeof(struct_gpuinfo), pInfo->pProcessInfo->pTraceFile);
+    }
+    fflush(pInfo->pProcessInfo->pTraceFile);
+    vktrace_leave_critical_section(&pInfo->pProcessInfo->traceFileCriticalSection);
+
+    if (bytes_written != sizeof(file_header) + file_header.n_gpuinfo * sizeof(struct_gpuinfo)) {
+        vktrace_LogError("Unable to write trace file header - fwrite failed.");
+        vktrace_process_info_delete(pInfo->pProcessInfo);
+        return 1;
+    }
+    fileOffset = file_header.first_packet_offset;
+
+#if defined(WIN32)
+    BOOL rval;
+    rval = SetConsoleCtrlHandler((PHANDLER_ROUTINE)terminationSignalHandler, TRUE);
+    assert(rval);
+#else
+#if defined(PLATFORM_LINUX)
+    sighandler_t rval;
+#elif defined(PLATFORM_OSX)
+    sig_t rval;
+#endif
+    rval = signal(SIGHUP, terminationSignalHandler);
+    assert(rval != SIG_ERR);
+    rval = signal(SIGINT, terminationSignalHandler);
+    assert(rval != SIG_ERR);
+    rval = signal(SIGTERM, terminationSignalHandler);
+    assert(rval != SIG_ERR);
+#endif
+
+    while (!terminationSignalArrived && pInfo->pProcessInfo->serverRequestsTermination == FALSE) {
         // get a packet
-        //vktrace_LogDebug("Waiting for a packet...");
+        // vktrace_LogDebug("Waiting for a packet...");
 
         // read entire packet in
         pHeader = vktrace_read_trace_packet(fileLikeSocket);
-        ++total_packet_count;
-        if (pHeader == NULL)
-        {
-            if (pMessageStream->mErrorNum == WSAECONNRESET)
-            {
+
+        if (pHeader == NULL) {
+            if (pMessageStream->mErrorNum == WSAECONNRESET) {
                 vktrace_LogVerbose("Network connection closed");
-            }
-            else
-            {
+            } else {
                 vktrace_LogError("Network connection failed");
             }
             break;
         }
 
-        //vktrace_LogDebug("Received packet id: %hu", pHeader->packet_id);
-        
-        if (pHeader->pBody == (uintptr_t) NULL)
-        {
+        // vktrace_LogDebug("Received packet id: %hu", pHeader->packet_id);
+
+        if (pHeader->pBody == (uintptr_t)NULL) {
             vktrace_LogWarning("Received empty packet body for id: %hu", pHeader->packet_id);
-        }
-        else
-        {
+        } else {
             // handle special case packets
-            if (pHeader->packet_id == VKTRACE_TPI_MESSAGE)
-            {
-                if (g_settings.print_trace_messages == TRUE)
-                {
+            if (pHeader->packet_id == VKTRACE_TPI_MESSAGE) {
+                if (g_settings.print_trace_messages == TRUE) {
                     vktrace_trace_packet_message* pPacket = vktrace_interpret_body_as_trace_packet_message(pHeader);
-                    vktrace_LogAlways("Packet %lu: Traced Message (%s): %s", pHeader->global_packet_index, vktrace_LogLevelToShortString(pPacket->type), pPacket->message);
-                    vktrace_finalize_buffer_address(pHeader, (void **) &(pPacket->message));
+                    vktrace_LogAlways("Packet %lu: Traced Message (%s): %s", pHeader->global_packet_index,
+                                      vktrace_LogLevelToShortString(pPacket->type), pPacket->message);
+                    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->message));
                 }
             }
 
-            if (pHeader->packet_id == VKTRACE_TPI_MARKER_TERMINATE_PROCESS)
-            {
+            if (pHeader->packet_id == VKTRACE_TPI_MARKER_TERMINATE_PROCESS) {
                 pInfo->pProcessInfo->serverRequestsTermination = true;
                 vktrace_delete_trace_packet(&pHeader);
                 vktrace_LogVerbose("Thread_CaptureTrace is exiting.");
                 break;
             }
 
-            if (pInfo->pProcessInfo->pTraceFile != NULL)
-            {
+            if (pInfo->pProcessInfo->pTraceFile != NULL) {
                 vktrace_enter_critical_section(&pInfo->pProcessInfo->traceFileCriticalSection);
                 bytes_written = fwrite(pHeader, 1, (size_t)pHeader->size, pInfo->pProcessInfo->pTraceFile);
                 fflush(pInfo->pProcessInfo->pTraceFile);
                 vktrace_leave_critical_section(&pInfo->pProcessInfo->traceFileCriticalSection);
-                if (bytes_written != pHeader->size)
-                {
+                if (bytes_written != pHeader->size) {
                     vktrace_LogError("Failed to write the packet for packet_id = %hu", pHeader->packet_id);
                 }
+
+                // If the packet is one we need to track, add it to the table
+                if (pHeader->packet_id == VKTRACE_TPI_VK_vkBindImageMemory ||
+                    pHeader->packet_id == VKTRACE_TPI_VK_vkBindBufferMemory ||
+                    pHeader->packet_id == VKTRACE_TPI_VK_vkGetImageMemoryRequirements ||
+                    pHeader->packet_id == VKTRACE_TPI_VK_vkGetBufferMemoryRequirements ||
+                    pHeader->packet_id == VKTRACE_TPI_VK_vkAllocateMemory || pHeader->packet_id == VKTRACE_TPI_VK_vkDestroyImage ||
+                    pHeader->packet_id == VKTRACE_TPI_VK_vkDestroyBuffer || pHeader->packet_id == VKTRACE_TPI_VK_vkFreeMemory) {
+                    portabilityTable.push_back(fileOffset);
+                }
+                lastPacketIndex = pHeader->global_packet_index;
+                lastPacketThreadId = pHeader->thread_id;
+                lastPacketEndTime = pHeader->vktrace_end_time;
+                fileOffset += bytes_written;
             }
         }
 

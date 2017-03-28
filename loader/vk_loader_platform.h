@@ -164,6 +164,9 @@ static inline void loader_platform_thread_cond_broadcast(loader_platform_thread_
 #define PATH_SEPARATOR ';'
 #define DIRECTORY_SYMBOL '\\'
 #define DEFAULT_VK_REGISTRY_HIVE HKEY_LOCAL_MACHINE
+#define DEFAULT_VK_REGISTRY_HIVE_STR "HKEY_LOCAL_MACHINE"
+#define SECONDARY_VK_REGISTRY_HIVE HKEY_CURRENT_USER
+#define SECONDARY_VK_REGISTRY_HIVE_STR "HKEY_CURRENT_USER"
 #define DEFAULT_VK_DRIVERS_INFO "SOFTWARE\\Khronos\\" API_NAME "\\Drivers"
 #define DEFAULT_VK_DRIVERS_PATH ""
 #define DEFAULT_VK_ELAYERS_INFO "SOFTWARE\\Khronos\\" API_NAME "\\ExplicitLayers"
@@ -287,9 +290,6 @@ static void loader_platform_thread_cond_wait(loader_platform_thread_cond *pCond,
     SleepConditionVariableCS(pCond, pMutex, INFINITE);
 }
 static void loader_platform_thread_cond_broadcast(loader_platform_thread_cond *pCond) { WakeAllConditionVariable(pCond); }
-
-// Windows Registry:
-char *loader_get_registry_string(const HKEY hive, const LPCTSTR sub_key, const char *value);
 
 #define loader_stack_alloc(size) _alloca(size)
 #else  // defined(_WIN32)

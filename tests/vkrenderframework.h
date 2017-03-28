@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 2015-2016 The Khronos Group Inc.
- * Copyright (c) 2015-2016 Valve Corporation
- * Copyright (c) 2015-2016 LunarG, Inc.
+ * Copyright (c) 2015-2017 The Khronos Group Inc.
+ * Copyright (c) 2015-2017 Valve Corporation
+ * Copyright (c) 2015-2017 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,6 +40,8 @@ class VkDeviceObj : public vk_testing::Device {
     VkDeviceObj(uint32_t id, VkPhysicalDevice obj, std::vector<const char *> &extension_names,
                 VkPhysicalDeviceFeatures *features = nullptr);
 
+    uint32_t QueueFamilyWithoutCapabilities(VkQueueFlags capabilities);
+
     VkDevice device() { return handle(); }
     void get_device_queue();
 
@@ -50,6 +52,7 @@ class VkDeviceObj : public vk_testing::Device {
     VkQueue m_queue;
 };
 
+class VkCommandPoolObj;
 class VkCommandBufferObj;
 class VkDepthStencilObj;
 
@@ -86,7 +89,7 @@ class VkRenderFramework : public VkTestFramework {
     VkPhysicalDevice objs[16];
     uint32_t gpu_count;
     VkDeviceObj *m_device;
-    VkCommandPool m_commandPool;
+    VkCommandPoolObj *m_commandPool;
     VkCommandBufferObj *m_commandBuffer;
     VkRenderPass m_renderPass;
     VkFramebuffer m_framebuffer;
@@ -145,9 +148,14 @@ class VkConstantBufferObj;
 class VkPipelineObj;
 class VkDescriptorSetObj;
 
+class VkCommandPoolObj : public vk_testing::CommandPool {
+   public:
+    VkCommandPoolObj(VkDeviceObj *device, uint32_t queue_family_index, VkCommandPoolCreateFlags flags = 0);
+};
+
 class VkCommandBufferObj : public vk_testing::CommandBuffer {
    public:
-    VkCommandBufferObj(VkDeviceObj *device, VkCommandPool pool);
+    VkCommandBufferObj(VkDeviceObj *device, VkCommandPoolObj *pool);
     VkCommandBuffer GetBufferHandle();
     VkResult BeginCommandBuffer();
     VkResult BeginCommandBuffer(VkCommandBufferBeginInfo *pInfo);
@@ -222,7 +230,7 @@ class VkConstantBufferObj : public vk_testing::Buffer {
     vk_testing::BufferView m_bufferView;
     int m_numVertices;
     int m_stride;
-    vk_testing::CommandPool *m_commandPool;
+    VkCommandPoolObj *m_commandPool;
     VkCommandBufferObj *m_commandBuffer;
     vk_testing::Fence m_fence;
 };
@@ -257,6 +265,8 @@ class VkImageObj : public vk_testing::Image {
    public:
     void init(uint32_t w, uint32_t h, VkFormat fmt, VkFlags usage, VkImageTiling tiling = VK_IMAGE_TILING_LINEAR,
               VkMemoryPropertyFlags reqs = 0);
+
+    void init(const VkImageCreateInfo *create_info);
 
     void init_no_layout(uint32_t w, uint32_t h, VkFormat fmt, VkFlags usage, VkImageTiling tiling = VK_IMAGE_TILING_LINEAR,
                         VkMemoryPropertyFlags reqs = 0);
@@ -411,7 +421,10 @@ class VkPipelineObj : public vk_testing::Pipeline {
     void SetTessellation(const VkPipelineTessellationStateCreateInfo *te_state);
     void SetViewport(const vector<VkViewport> viewports);
     void SetScissor(const vector<VkRect2D> scissors);
-    VkResult CreateVKPipeline(VkPipelineLayout layout, VkRenderPass render_pass);
+
+    void InitGraphicsPipelineCreateInfo(VkGraphicsPipelineCreateInfo *gp_ci);
+
+    VkResult CreateVKPipeline(VkPipelineLayout layout, VkRenderPass render_pass, VkGraphicsPipelineCreateInfo *gp_ci = nullptr);
 
    protected:
     VkPipelineVertexInputStateCreateInfo m_vi_state;
@@ -422,6 +435,7 @@ class VkPipelineObj : public vk_testing::Pipeline {
     VkPipelineViewportStateCreateInfo m_vp_state;
     VkPipelineMultisampleStateCreateInfo m_ms_state;
     VkPipelineTessellationStateCreateInfo m_te_state;
+    VkPipelineDynamicStateCreateInfo m_pd_state;
     vector<VkDynamicState> m_dynamic_state_enables;
     vector<VkViewport> m_viewports;
     vector<VkRect2D> m_scissors;
@@ -431,4 +445,5 @@ class VkPipelineObj : public vk_testing::Pipeline {
     vector<VkPipelineColorBlendAttachmentState> m_colorAttachments;
     int m_vertexBufferCount;
 };
+VkFormat find_depth_stencil_format(VkDeviceObj *device);
 #endif  // VKRENDERFRAMEWORK_H

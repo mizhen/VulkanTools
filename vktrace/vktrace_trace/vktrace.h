@@ -24,6 +24,7 @@ extern "C" {
 #include "vktrace_settings.h"
 }
 
+#include <vector>
 
 #if defined(WIN32)
 #define VKTRACE_WM_COMPLETE (WM_USER + 0)
@@ -32,18 +33,27 @@ extern "C" {
 //----------------------------------------------------------------------------------------------------------------------
 // globals
 //----------------------------------------------------------------------------------------------------------------------
-typedef struct vktrace_settings
-{
+typedef struct vktrace_settings {
     const char* program;
     const char* arguments;
     const char* working_dir;
     char* output_trace;
     BOOL print_trace_messages;
     const char* screenshotList;
+    const char* screenshotColorFormat;
     BOOL enable_pmb;
-    const char *verbosity;
-    const char *traceTrigger;
+    const char* verbosity;
+    const char* traceTrigger;
 
 } vktrace_settings;
 
 extern vktrace_settings g_settings;
+
+// Portability table - Table of trace file offsets to packets
+// we need to access to determine what memory index should be used
+// in vkAllocateMemory during trace playback. This table is appended
+// to the trace file.
+extern std::vector<size_t> portabilityTable;
+extern uint32_t lastPacketThreadId;
+extern uint64_t lastPacketIndex;
+extern uint64_t lastPacketEndTime;
