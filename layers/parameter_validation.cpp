@@ -98,6 +98,7 @@ struct layer_data {
             bool nv_external_memory : 1;
             bool nv_external_memory_win32 : 1;
             bool nvx_device_generated_commands : 1;
+            bool incremental_present : 1;
         };
         uint64_t padding[4];
     } enables;
@@ -1675,6 +1676,8 @@ static void CheckDeviceRegisterExtensions(const VkDeviceCreateInfo *pCreateInfo,
 #endif
         } else if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_NVX_DEVICE_GENERATED_COMMANDS_EXTENSION_NAME) == 0) {
             device_data->enables.nvx_device_generated_commands = true;
+        } else if (strcmp(pCreateInfo->ppEnabledExtensionNames[i], VK_KHR_INCREMENTAL_PRESENT_EXTENSION_NAME) == 0) {
+            device_data->enables.incremental_present = true;
         }
     }
 }
@@ -2543,7 +2546,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateImage(VkDevice device, const VkImageCreateI
     if (pCreateInfo != nullptr) {
 
         if ((device_data->physical_device_features.textureCompressionETC2 == false) &&
-            vk_format_is_compressed_ETC2_EAC(pCreateInfo->format)) {
+            FormatIsCompressed_ETC2_EAC(pCreateInfo->format)) {
             skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, __LINE__,
                             DEVICE_FEATURE, LayerName,
                             "vkCreateImage(): Attempting to create VkImage with format %s. The textureCompressionETC2 feature is "
@@ -2552,7 +2555,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateImage(VkDevice device, const VkImageCreateI
         }
 
         if ((device_data->physical_device_features.textureCompressionASTC_LDR == false) &&
-            vk_format_is_compressed_ASTC_LDR(pCreateInfo->format)) {
+            FormatIsCompressed_ASTC_LDR(pCreateInfo->format)) {
             skip |=
                 log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, __LINE__,
                         DEVICE_FEATURE, LayerName,
@@ -2562,7 +2565,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateImage(VkDevice device, const VkImageCreateI
         }
 
         if ((device_data->physical_device_features.textureCompressionBC == false) &&
-            vk_format_is_compressed_BC(pCreateInfo->format)) {
+            FormatIsCompressed_BC(pCreateInfo->format)) {
             skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, __LINE__,
                             DEVICE_FEATURE, LayerName,
                             "vkCreateImage(): Attempting to create VkImage with format %s. The textureCompressionBC feature is "
@@ -3792,6 +3795,11 @@ VKAPI_ATTR void VKAPI_CALL UpdateDescriptorSets(VkDevice device, uint32_t descri
                             i, validation_error_map[VALIDATION_ERROR_00957]);
             }
 
+            // dstSet must be a valid VkDescriptorSet handle
+            skip |= validate_required_handle(report_data, "vkUpdateDescriptorSets",
+                                             ParameterName("pDescriptorWrites[%i].dstSet", ParameterName::IndexVector{i}),
+                                             pDescriptorWrites[i].dstSet);
+
             if ((pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER) ||
                 (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) ||
                 (pDescriptorWrites[i].descriptorType == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE) ||
@@ -3875,7 +3883,7 @@ VKAPI_ATTR void VKAPI_CALL UpdateDescriptorSets(VkDevice device, uint32_t descri
                 VkDeviceSize uniformAlignment = device_data->device_limits.minUniformBufferOffsetAlignment;
                 for (uint32_t j = 0; j < pDescriptorWrites[i].descriptorCount; j++) {
                     if (pDescriptorWrites[i].pBufferInfo != NULL) {
-                        if (vk_safe_modulo(pDescriptorWrites[i].pBufferInfo[j].offset, uniformAlignment) != 0) {
+                        if (SafeModulo(pDescriptorWrites[i].pBufferInfo[j].offset, uniformAlignment) != 0) {
                             skip |= log_msg(
                                 device_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT,
                                 VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT, 0, __LINE__, VALIDATION_ERROR_00944, LayerName,
@@ -3891,7 +3899,7 @@ VKAPI_ATTR void VKAPI_CALL UpdateDescriptorSets(VkDevice device, uint32_t descri
                 VkDeviceSize storageAlignment = device_data->device_limits.minStorageBufferOffsetAlignment;
                 for (uint32_t j = 0; j < pDescriptorWrites[i].descriptorCount; j++) {
                     if (pDescriptorWrites[i].pBufferInfo != NULL) {
-                        if (vk_safe_modulo(pDescriptorWrites[i].pBufferInfo[j].offset, storageAlignment) != 0) {
+                        if (SafeModulo(pDescriptorWrites[i].pBufferInfo[j].offset, storageAlignment) != 0) {
                             skip |= log_msg(
                                 device_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT,
                                 VK_DEBUG_REPORT_OBJECT_TYPE_PHYSICAL_DEVICE_EXT, 0, __LINE__, VALIDATION_ERROR_00945, LayerName,
@@ -5175,6 +5183,42 @@ VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInf
                                      VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 
     skip |= parameter_validation_vkQueuePresentKHR(my_data->report_data, pPresentInfo);
+
+    if (pPresentInfo && pPresentInfo->pNext) {
+        // Verify ext struct
+        struct std_header {
+            VkStructureType sType;
+            const void *pNext;
+        };
+        std_header *pnext = (std_header *)pPresentInfo->pNext;
+        while (pnext) {
+            if (VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR == pnext->sType) {
+                skip |= require_device_extension(my_data, my_data->enables.incremental_present, "vkQueuePresentKHR",
+                                                 VK_KHR_INCREMENTAL_PRESENT_EXTENSION_NAME);
+                VkPresentRegionsKHR *present_regions = (VkPresentRegionsKHR *)pnext;
+                if (present_regions->swapchainCount != pPresentInfo->swapchainCount) {
+                    skip |= log_msg(my_data->report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0,
+                                    __LINE__, INVALID_USAGE, LayerName,
+                                    "QueuePresentKHR(): pPresentInfo->swapchainCount has a value of %i"
+                                    " but VkPresentRegionsKHR extension swapchainCount is %i. These values must be equal.",
+                                    pPresentInfo->swapchainCount, present_regions->swapchainCount);
+                }
+                skip |= validate_struct_pnext(my_data->report_data, "QueuePresentKHR", "pCreateInfo->pNext->pNext", NULL,
+                                              present_regions->pNext, 0, NULL, GeneratedHeaderVersion);
+                skip |= validate_array(my_data->report_data, "QueuePresentKHR", "pCreateInfo->pNext->swapchainCount",
+                                       "pCreateInfo->pNext->pRegions", present_regions->swapchainCount, present_regions->pRegions,
+                                       true, false);
+                for (uint32_t i = 0; i < present_regions->swapchainCount; ++i) {
+                    skip |=
+                        validate_array(my_data->report_data, "QueuePresentKHR", "pCreateInfo->pNext->pRegions[].rectangleCount",
+                                       "pCreateInfo->pNext->pRegions[].pRectangles", present_regions->pRegions[i].rectangleCount,
+                                       present_regions->pRegions[i].pRectangles, true, false);
+                }
+            }
+            pnext = (std_header *)pnext->pNext;
+        }
+    }
+
     if (!skip) {
         result = my_data->dispatch_table.QueuePresentKHR(queue, pPresentInfo);
 
