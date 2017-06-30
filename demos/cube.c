@@ -309,7 +309,6 @@ typedef struct {
     VkDeviceMemory uniform_memory;
     VkFramebuffer framebuffer;
     VkDescriptorSet descriptor_set;
-    VkFence fence;
 } SwapchainImageResources;
 
 struct demo {
@@ -809,9 +808,6 @@ void demo_update_data_buffer(struct demo *demo) {
                   (float)degreesToRadians(demo->spin_angle));
     mat4x4_mul(MVP, VP, demo->model_matrix);
 
-    vkWaitForFences(demo->device, 1, &demo->swapchain_image_resources[demo->current_buffer].fence,
-                    VK_TRUE, UINT64_MAX);
-
     err = vkMapMemory(demo->device,
                       demo->swapchain_image_resources[demo->current_buffer].uniform_memory, 0,
                       VK_WHOLE_SIZE, 0, (void **)&pData);
@@ -957,33 +953,32 @@ void DemoUpdateTargetIPD(struct demo *demo) {
 static void demo_draw(struct demo *demo) {
     VkResult U_ASSERT_ONLY err;
 
-    // Ensure no more than FRAME_LAG presentations are outstanding
+    // Ensure no more than FRAME_LAG renderings are outstanding
     vkWaitForFences(demo->device, 1, &demo->fences[demo->frame_index], VK_TRUE, UINT64_MAX);
     vkResetFences(demo->device, 1, &demo->fences[demo->frame_index]);
 
-    // Get the index of the next available swapchain image:
-    err = demo->fpAcquireNextImageKHR(demo->device, demo->swapchain, UINT64_MAX,
-                                      demo->image_acquired_semaphores[demo->frame_index],
-                                      demo->fences[demo->frame_index],
-                                      &demo->current_buffer);
+    err = !(VK_SUCCESS);
+    while (err != VK_SUCCESS) {
+        // Get the index of the next available swapchain image:
+        err = demo->fpAcquireNextImageKHR(demo->device, demo->swapchain, UINT64_MAX,
+                                          demo->image_acquired_semaphores[demo->frame_index],
+                                          VK_NULL_HANDLE, &demo->current_buffer);
+
+        if (err == VK_ERROR_OUT_OF_DATE_KHR) {
+            // demo->swapchain is out of date (e.g. the window was resized) and
+            // must be recreated:
+            demo_resize(demo);
+        } else if (err == VK_SUBOPTIMAL_KHR) {
+            // demo->swapchain is not as optimal as it could be, but the platform's
+            // presentation engine will still present the image correctly.
+            break;
+        } else {
+            assert(!err);
+        }
+    }
 
     demo_update_data_buffer(demo);
 
-    if (err == VK_ERROR_OUT_OF_DATE_KHR) {
-        // demo->swapchain is out of date (e.g. the window was resized) and
-        // must be recreated:
-        demo->frame_index += 1;
-        demo->frame_index %= FRAME_LAG;
-
-        demo_resize(demo);
-        demo_draw(demo);
-        return;
-    } else if (err == VK_SUBOPTIMAL_KHR) {
-        // demo->swapchain is not as optimal as it could be, but the platform's
-        // presentation engine will still present the image correctly.
-    } else {
-        assert(!err);
-    }
     if (demo->VK_GOOGLE_display_timing_enabled) {
         // Look at what happened to previous presents, and make appropriate
         // adjustments in timing:
@@ -1012,9 +1007,8 @@ static void demo_draw(struct demo *demo) {
     submit_info.pCommandBuffers = &demo->swapchain_image_resources[demo->current_buffer].cmd;
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = &demo->draw_complete_semaphores[demo->frame_index];
-    vkResetFences(demo->device, 1, &demo->swapchain_image_resources[demo->current_buffer].fence);
     err = vkQueueSubmit(demo->graphics_queue, 1, &submit_info,
-                        demo->swapchain_image_resources[demo->current_buffer].fence);
+                        demo->fences[demo->frame_index]);
     assert(!err);
 
     if (demo->separate_present_queue) {
@@ -1291,9 +1285,6 @@ static void demo_prepare_buffers(struct demo *demo) {
     // Note: destroying the swapchain also cleans up all its associated
     // presentable images once the platform is done with them.
     if (oldSwapchain != VK_NULL_HANDLE) {
-        // AMD driver times out waiting on fences used in AcquireNextImage on
-        // a swapchain that is subsequently destroyed before the wait.
-        vkWaitForFences(demo->device, FRAME_LAG, demo->fences, VK_TRUE, UINT64_MAX);
         demo->fpDestroySwapchainKHR(demo->device, oldSwapchain, NULL);
     }
 
@@ -1312,12 +1303,6 @@ static void demo_prepare_buffers(struct demo *demo) {
     demo->swapchain_image_resources = (SwapchainImageResources *)malloc(sizeof(SwapchainImageResources) *
                                                demo->swapchainImageCount);
     assert(demo->swapchain_image_resources);
-
-    VkFenceCreateInfo fence_ci = {
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .pNext = NULL,
-        .flags = VK_FENCE_CREATE_SIGNALED_BIT
-    };
 
     for (i = 0; i < demo->swapchainImageCount; i++) {
         VkImageViewCreateInfo color_image_view = {
@@ -1346,9 +1331,6 @@ static void demo_prepare_buffers(struct demo *demo) {
 
         err = vkCreateImageView(demo->device, &color_image_view, NULL,
                                 &demo->swapchain_image_resources[i].view);
-        assert(!err);
-
-        err = vkCreateFence(demo->device, &fence_ci, NULL, &demo->swapchain_image_resources[i].fence);
         assert(!err);
     }
 
@@ -2399,7 +2381,6 @@ static void demo_cleanup(struct demo *demo) {
                              &demo->swapchain_image_resources[i].cmd);
         vkDestroyBuffer(demo->device, demo->swapchain_image_resources[i].uniform_buffer, NULL);
         vkFreeMemory(demo->device, demo->swapchain_image_resources[i].uniform_memory, NULL);
-        vkDestroyFence(demo->device, demo->swapchain_image_resources[i].fence, NULL);
     }
     free(demo->swapchain_image_resources);
     free(demo->queue_props);
@@ -2414,7 +2395,6 @@ static void demo_cleanup(struct demo *demo) {
         demo->DestroyDebugReportCallback(demo->inst, demo->msg_callback, NULL);
     }
     vkDestroySurfaceKHR(demo->inst, demo->surface, NULL);
-    vkDestroyInstance(demo->inst, NULL);
 
 #if defined(VK_USE_PLATFORM_XLIB_KHR)
     XDestroyWindow(demo->display, demo->xlib_window);
@@ -2432,6 +2412,8 @@ static void demo_cleanup(struct demo *demo) {
     wl_display_disconnect(demo->display);
 #elif defined(VK_USE_PLATFORM_MIR_KHR)
 #endif
+
+    vkDestroyInstance(demo->inst, NULL);
 }
 
 static void demo_resize(struct demo *demo) {
@@ -2476,7 +2458,6 @@ static void demo_resize(struct demo *demo) {
                              &demo->swapchain_image_resources[i].cmd);
         vkDestroyBuffer(demo->device, demo->swapchain_image_resources[i].uniform_buffer, NULL);
         vkFreeMemory(demo->device, demo->swapchain_image_resources[i].uniform_memory, NULL);
-        vkDestroyFence(demo->device, demo->swapchain_image_resources[i].fence, NULL);
     }
     vkDestroyCommandPool(demo->device, demo->cmd_pool, NULL);
     if (demo->separate_present_queue) {
@@ -3035,7 +3016,7 @@ static void demo_init_vk(struct demo *demo) {
     char *instance_validation_layers_alt2[] = {
         "VK_LAYER_GOOGLE_threading",      "VK_LAYER_LUNARG_parameter_validation",
         "VK_LAYER_LUNARG_object_tracker", "VK_LAYER_LUNARG_core_validation",
-        "VK_LAYER_LUNARG_swapchain",      "VK_LAYER_GOOGLE_unique_objects"
+        "VK_LAYER_GOOGLE_unique_objects"
     };
 
     /* Look for validation layers */

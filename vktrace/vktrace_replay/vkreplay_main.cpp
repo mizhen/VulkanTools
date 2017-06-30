@@ -182,7 +182,7 @@ int main_loop(vktrace_replay::ReplayDisplay display, Sequencer& seq, vktrace_tra
                         vktrace_LogWarning("Tracer_id %d has no valid replayer.", packet->tracer_id);
                         continue;
                     }
-                    if (packet->packet_id >= VKTRACE_TPI_BEGIN_API_HERE) {
+                    if (packet->packet_id >= VKTRACE_TPI_VK_vkApiVersion) {
                         // replay the API packet
                         res = replayer->Replay(replayer->Interpret(packet));
                         if (res != VKTRACE_REPLAY_SUCCESS) {
@@ -305,6 +305,7 @@ static bool readPortabilityTable() {
     if (-1 == originalFilePos) return false;
     if (0 != fseek(tracefp, -sizeof(size_t), SEEK_END)) return false;
     if (1 != fread(&tableSize, sizeof(size_t), 1, tracefp)) return false;
+    if (tableSize == 0) return true;
     if (0 != fseek(tracefp, -(tableSize + 1) * sizeof(size_t), SEEK_END)) return false;
     portabilityTable.resize(tableSize);
     if (tableSize != fread(&portabilityTable[0], sizeof(size_t), tableSize, tracefp)) return false;

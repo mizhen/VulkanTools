@@ -24,15 +24,46 @@
 #include <algorithm>
 #include <cstdlib>
 #include <string>
+#include <bitset>
 
 #include "vulkan/vulkan.h"
 #include "vk_enum_string_helper.h"
 #include "vk_layer_logging.h"
 #include "vk_validation_error_messages.h"
+#include "vk_extension_helper.h"
+
 
 #include "parameter_name.h"
 
 namespace parameter_validation {
+
+struct instance_layer_data {
+    VkInstance instance = VK_NULL_HANDLE;
+
+    debug_report_data *report_data = nullptr;
+    std::vector<VkDebugReportCallbackEXT> logging_callback;
+
+    // The following are for keeping track of the temporary callbacks that can
+    // be used in vkCreateInstance and vkDestroyInstance:
+    uint32_t num_tmp_callbacks = 0;
+    VkDebugReportCallbackCreateInfoEXT *tmp_dbg_create_infos = nullptr;
+    VkDebugReportCallbackEXT *tmp_callbacks = nullptr;
+    InstanceExtensions extensions = {};
+    VkLayerInstanceDispatchTable dispatch_table = {};
+};
+
+struct layer_data {
+    debug_report_data *report_data = nullptr;
+    // Map for queue family index to queue count
+    std::unordered_map<uint32_t, uint32_t> queueFamilyIndexMap;
+    VkPhysicalDeviceLimits device_limits = {};
+    VkPhysicalDeviceFeatures physical_device_features = {};
+    VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+    VkDevice device = VK_NULL_HANDLE;
+    DeviceExtensions extensions;
+
+    VkLayerDispatchTable dispatch_table = {};
+};
 
 enum ErrorCode {
     NONE,                   // Used for INFO & other non-error messages
@@ -71,27 +102,6 @@ struct GenericHeader {
 // Layer name string to be logged with validation messages.
 const char LayerName[] = "ParameterValidation";
 
-// Enables for display-related instance extensions
-struct instance_extension_enables {
-    bool surface_enabled;
-    bool xlib_enabled;
-    bool xcb_enabled;
-    bool wayland_enabled;
-    bool mir_enabled;
-    bool android_enabled;
-    bool win32_enabled;
-    bool display_enabled;
-    bool khr_get_phys_dev_properties2_enabled;
-    bool khx_device_group_creation_enabled;
-    bool khx_external_fence_capabilities_enabled;
-    bool khx_external_memory_capabilities_enabled;
-    bool khx_external_semaphore_capabilities_enabled;
-    bool ext_acquire_xlib_display_enabled;
-    bool ext_direct_mode_display_enabled;
-    bool ext_display_surface_counter_enabled;
-    bool nv_external_memory_capabilities_enabled;
-};
-
 // String returned by string_VkStructureType for an unrecognized type.
 const std::string UnsupportedStructureTypeString = "Unhandled VkStructureType";
 
@@ -103,9 +113,16 @@ const std::string UnsupportedResultString = "Unhandled VkResult";
 // See Appendix C.10 "Assigning Extension Token Values" from the Vulkan specification
 const uint32_t ExtEnumBaseValue = 1000000000;
 
+// The value of all VK_xxx_MAX_ENUM tokens
+const uint32_t MaxEnumValue = 0x7FFFFFFF;
+
+// Forward declaration
+template <typename T>
+bool OutputExtensionError(const T *layer_data, const std::string &api_name, const std::string &extension_name);
+
 template <typename T>
 bool is_extension_added_token(T value) {
-    return (static_cast<uint32_t>(std::abs(static_cast<int32_t>(value))) >= ExtEnumBaseValue);
+    return (value != MaxEnumValue) && (static_cast<uint32_t>(std::abs(static_cast<int32_t>(value))) >= ExtEnumBaseValue);
 }
 
 // VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE token is a special case that was converted from a core token to an
@@ -113,8 +130,8 @@ bool is_extension_added_token(T value) {
 // the base value that other extension added tokens use, and it does not fall within the enum's begin/end range.
 template <>
 bool is_extension_added_token(VkSamplerAddressMode value) {
-    bool result = (static_cast<uint32_t>(std::abs(static_cast<int32_t>(value))) >= ExtEnumBaseValue);
-    return (result || (value == VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE));
+    bool result = is_extension_added_token(static_cast<uint32_t>(value));
+    return result || (value == VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE);
 }
 
 /**
@@ -135,8 +152,9 @@ bool ValidateGreaterThan(debug_report_data *report_data, const char *api_name, c
     bool skip_call = false;
 
     if (value <= lower_bound) {
-        skip_call |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, (VkDebugReportObjectTypeEXT)0, 0, __LINE__, 1, LayerName,
-                             "%s: parameter %s must be greater than %d", api_name, parameter_name.get_name().c_str(), lower_bound);
+        skip_call |=
+            log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, __LINE__, 1, LayerName,
+                    "%s: parameter %s must be greater than %d", api_name, parameter_name.get_name().c_str(), lower_bound);
     }
 
     return skip_call;
@@ -238,7 +256,7 @@ bool validate_array(debug_report_data *report_data, const char *apiName, const P
                                  countName.get_name().c_str());
         }
     } else {
-        skip_call |= validate_array(report_data, apiName, countName, arrayName, (*count), array, countValueRequired, arrayRequired);
+        skip_call |= validate_array(report_data, apiName, countName, arrayName, array ? (*count) : 0, array, countValueRequired, arrayRequired);
     }
 
     return skip_call;
@@ -709,10 +727,11 @@ static bool validate_reserved_flags(debug_report_data *report_data, const char *
 * @param all_flags A bit mask combining all valid flag bits for the VkFlags type being validated.
 * @param value VkFlags value to validate.
 * @param flags_required The 'value' parameter may not be 0 when true.
+* @param singleFlag The 'value' parameter may not contain more than one bit from all_flags.
 * @return Boolean value indicating that the call should be skipped.
 */
 static bool validate_flags(debug_report_data *report_data, const char *api_name, const ParameterName &parameter_name,
-                           const char *flag_bits_name, VkFlags all_flags, VkFlags value, bool flags_required) {
+                           const char *flag_bits_name, VkFlags all_flags, VkFlags value, bool flags_required, bool singleFlag) {
     bool skip_call = false;
 
     if (value == 0) {
@@ -726,6 +745,11 @@ static bool validate_flags(debug_report_data *report_data, const char *api_name,
             log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, __LINE__,
                     UNRECOGNIZED_VALUE, LayerName, "%s: value of %s contains flag bits that are not recognized members of %s",
                     api_name, parameter_name.get_name().c_str(), flag_bits_name);
+    } else if (singleFlag && (std::bitset<sizeof(VkFlags) * 8>(value).count() > 1)) {
+        skip_call |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, __LINE__,
+                             UNRECOGNIZED_VALUE, LayerName,
+                             "%s: value of %s contains multiple members of %s when only a single value is allowed", api_name,
+                             parameter_name.get_name().c_str(), flag_bits_name);
     }
 
     return skip_call;
@@ -833,12 +857,16 @@ static std::string get_result_description(VkResult result) {
 *
 * @param report_data debug_report_data object for routing validation messages.
 * @param apiName Name of API call being validated.
+* @param ignore vector of VkResult return codes to be ignored
 * @param value VkResult value to validate.
 */
-static void validate_result(debug_report_data *report_data, const char *apiName, VkResult result) {
+static void validate_result(debug_report_data *report_data, const char *apiName, std::vector<VkResult> const &ignore,
+                            VkResult result) {
     if (result < 0 && result != VK_ERROR_VALIDATION_FAILED_EXT) {
+        if (std::find(ignore.begin(), ignore.end(), result) != ignore.end()) {
+            return;
+        }
         std::string resultName = string_VkResult(result);
-
         if (resultName == UnsupportedResultString) {
             // Unrecognized result code
             log_msg(report_data, VK_DEBUG_REPORT_WARNING_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, __LINE__,

@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 2.8)
 project(vktrace)
 
-execute_process(COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/vktrace_generate.py AllPlatforms vktrace-packet-id VK_VERSION_1_0 OUTPUT_FILE ${GENERATED_FILES_DIR}/vktrace_vk_packet_id.h)
-execute_process(COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/vktrace_generate.py AllPlatforms vktrace-core-trace-packets VK_VERSION_1_0 OUTPUT_FILE ${GENERATED_FILES_DIR}/vktrace_vk_vk_packets.h)
+execute_process(COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/lvl_genvk.py -registry ${SCRIPTS_DIR}/vk.xml -o ${GENERATED_FILES_DIR} vktrace_vk_packet_id.h)
+execute_process(COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/lvl_genvk.py -registry ${SCRIPTS_DIR}/vk.xml -o ${GENERATED_FILES_DIR} vktrace_vk_vk_packets.h)
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/../)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/../)
@@ -12,8 +12,8 @@ set(SRC_LIST
     vktrace.cpp
     vktrace_process.h
     vktrace_process.cpp
-    ../../../layersvt/screenshot_parsing.h
-    ../../../layersvt/screenshot_parsing.cpp
+    ${SRC_DIR}/../layersvt/screenshot_parsing.h
+    ${SRC_DIR}/../layersvt/screenshot_parsing.cpp
 )
 
 include_directories(
@@ -38,3 +38,7 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 build_options_finalize()
+if(UNIX)
+    install(TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+

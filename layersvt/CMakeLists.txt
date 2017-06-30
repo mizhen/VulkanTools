@@ -1,5 +1,10 @@
 cmake_minimum_required (VERSION 2.8.11)
 
+file(GLOB IMAGES
+   "${PROJECT_SOURCE_DIR}/layersvt/images/*"
+)
+file(COPY ${IMAGES} DESTINATION ${CMAKE_BINARY_DIR}/layersvt/images)
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -DVK_USE_PLATFORM_WIN32_KHX -DWIN32_LEAN_AND_MEAN)
     set(DisplayServer Win32)
@@ -34,6 +39,7 @@ endif()
 
 add_custom_target( generate_api_cpp DEPENDS api_dump.cpp )
 add_custom_target( generate_api_h DEPENDS api_dump_text.h )
+add_custom_target( generate_api_html_h DEPENDS api_dump_html.h )
 #message("MSVC_VERSION is: " ${MSVC_VERSION} )
 if (MSVC_VERSION EQUAL 1900)
     #message ("Microsoft Visual Studio 2015")
@@ -70,6 +76,7 @@ set(LAYER_JSON_FILES
     VkLayer_api_dump
     VkLayer_monitor
     VkLayer_screenshot
+    VkLayer_device_simulation
     VkLayer_png_screenshot
     )
 
@@ -111,6 +118,19 @@ else()
              add_dependencies(${config_file}-json ${config_file})
         endforeach(config_file)
     endif()
+    # Add targets for JSON file install on Linux.
+    # Need to remove the "./" from the library path before installing to /etc.
+    foreach (config_file ${LAYER_JSON_FILES})
+        add_custom_target(${config_file}-staging-json ALL
+            COMMAND mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/staging-json
+            COMMAND cp ${CMAKE_CURRENT_SOURCE_DIR}/linux/${config_file}.json ${CMAKE_CURRENT_BINARY_DIR}/staging-json
+            COMMAND sed -i -e "/\"library_path\":/s$./libVkLayer$libVkLayer$" ${CMAKE_CURRENT_BINARY_DIR}/staging-json/${config_file}.json
+            VERBATIM
+            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/linux/${config_file}.json
+            )
+        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/staging-json/${config_file}.json DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/vulkan/explicit_layer.d)
+    endforeach(config_file)
+    
 endif()
 
 if (WIN32)
@@ -123,15 +143,15 @@ if (WIN32)
     add_library(VkLayer_${target} SHARED ${ARGN} VkLayer_${target}.def)
     add_dependencies(VkLayer_${target} generate_helper_files)
     target_link_Libraries(VkLayer_${target} VkLayer_utilsvt)
-    add_dependencies(VkLayer_${target} generate_helper_files generate_api_cpp generate_api_h VkLayer_utilsvt)
+    add_dependencies(VkLayer_${target} generate_helper_files generate_api_cpp generate_api_h generate_api_html_h VkLayer_utilsvt)
     endmacro()
 else()
     macro(add_vk_layer target)
     add_library(VkLayer_${target} SHARED ${ARGN})
     target_link_Libraries(VkLayer_${target} VkLayer_utilsvt)
-    add_dependencies(VkLayer_${target} generate_helper_files generate_api_cpp generate_api_h VkLayer_utilsvt)
+    add_dependencies(VkLayer_${target} generate_helper_files generate_api_cpp generate_api_h generate_api_html_h VkLayer_utilsvt)
     set_target_properties(VkLayer_${target} PROPERTIES LINK_FLAGS "-Wl,-Bsymbolic")
-    install(TARGETS VkLayer_${target} DESTINATION ${PROJECT_BINARY_DIR}/install_staging)
+    install(TARGETS VkLayer_${target} DESTINATION ${CMAKE_INSTALL_LIBDIR})
     endmacro()
 endif()
 
@@ -142,6 +162,8 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/vulkan
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_BINARY_DIR}
+    ${PROJECT_SOURCE_DIR}/../glslang/SPIRV
+    ${JSONCPP_INCLUDE_DIR}
     ${GLSLANG_SPIRV_INCLUDE_DIR}
     ${PROJECT_SOURCE_DIR}/libs/libpng-1.6.21/inc
     ${PROJECT_SOURCE_DIR}/libs/zlib-1.2.8/inc
@@ -173,6 +195,7 @@ endif()
 #VulkanTools layers
 run_vk_xml_generate(api_dump_generator.py api_dump.cpp)
 run_vk_xml_generate(api_dump_generator.py api_dump_text.h)
+run_vk_xml_generate(api_dump_generator.py api_dump_html.h)
 
 # Layer Utils Library
 # For Windows, we use a static lib because the Windows loader has a fairly restrictive loader search
@@ -181,13 +204,14 @@ if (WIN32)
     add_library(VkLayer_utilsvt STATIC ../layers/vk_layer_config.cpp ../layers/vk_layer_extension_utils.cpp ../layers/vk_layer_utils.cpp ../layers/vk_format_utils.cpp)
 else()
     add_library(VkLayer_utilsvt SHARED ../layers/vk_layer_config.cpp ../layers/vk_layer_extension_utils.cpp ../layers/vk_layer_utils.cpp ../layers/vk_format_utils.cpp)
-    install(TARGETS VkLayer_utilsvt DESTINATION ${PROJECT_BINARY_DIR}/install_staging)
+    install(TARGETS VkLayer_utilsvt DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endif()
 add_dependencies(VkLayer_utilsvt generate_helper_files)
 
 # VulkanTools layers
 add_vk_layer(monitor monitor.cpp ../layers/vk_layer_table.cpp)
 add_vk_layer(screenshot screenshot.cpp screenshot_parsing.h screenshot_parsing.cpp ../layers/vk_layer_table.cpp)
+add_vk_layer(device_simulation device_simulation.cpp ../layers/vk_layer_table.cpp ${JSONCPP_SOURCE_DIR}/jsoncpp.cpp)
 # generated
 add_vk_layer(api_dump api_dump.cpp ../layers/vk_layer_table.cpp)
 # AMD added

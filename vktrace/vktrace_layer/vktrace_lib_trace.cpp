@@ -51,6 +51,27 @@
 // Intentionally include the struct_size source file
 #include "vk_struct_size_helper.c"
 
+VKTRACER_LEAVE _Unload(void) {
+    // only do the hooking and networking if the tracer is NOT loaded by vktrace
+    if (vktrace_is_loaded_into_vktrace() == FALSE) {
+        if (vktrace_trace_get_trace_file() != NULL) {
+            vktrace_trace_packet_header *pHeader =
+                vktrace_create_trace_packet(VKTRACE_TID_VULKAN, VKTRACE_TPI_MARKER_TERMINATE_PROCESS, 0, 0);
+            vktrace_finalize_trace_packet(pHeader);
+            vktrace_write_trace_packet(pHeader, vktrace_trace_get_trace_file());
+            vktrace_delete_trace_packet(&pHeader);
+            vktrace_free(vktrace_trace_get_trace_file());
+            vktrace_trace_set_trace_file(NULL);
+            vktrace_deinitialize_trace_packet_utils();
+            trim::deinitialize();
+        }
+        if (gMessageStream != NULL) {
+            vktrace_MessageStream_destroy(&gMessageStream);
+        }
+        vktrace_LogVerbose("vktrace_lib library unloaded from PID %d", vktrace_get_pid());
+    }
+}
+
 // declared as extern in vktrace_lib_helpers.h
 VKTRACE_CRITICAL_SECTION g_memInfoLock;
 VKMemInfo g_memInfo = {0, NULL, NULL, 0};
@@ -402,7 +423,9 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkMapMemory(VkDevice dev
     pPacket->size = size;
     pPacket->flags = flags;
     if (ppData != NULL) {
-        vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->ppData), sizeof(void*), *ppData);
+        // here we add data(type is void*) pointed by ppData to trace_packet, and put its address to pPacket->ppData
+        // after adding to trace_packet.
+        vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->ppData), sizeof(void*), ppData);
         vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->ppData));
         add_data_to_mem_info(memory, size, offset, *ppData);
     }
@@ -453,7 +476,9 @@ VKTRACER_EXPORT VKAPI_ATTR void VKAPI_CALL __HOOKED_vkUnmapMemory(VkDevice devic
             siz = (size_t)entry->rangeSize;
         }
     }
-    CREATE_TRACE_PACKET(vkUnmapMemory, siz);
+    // some title is not 4 byte aligned when call vkMapMemory, so we need
+    // ROUNDUP_TO_4 to avoid access invalid memory
+    CREATE_TRACE_PACKET(vkUnmapMemory, ROUNDUP_TO_4(siz));
     pHeader->vktrace_begin_time = trace_begin_time;
     pPacket = interpret_body_as_vkUnmapMemory(pHeader);
     if (siz) {
@@ -928,14 +953,6 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateDevice(VkPhysica
     // remove the loader extended createInfo structure
     VkDeviceCreateInfo localCreateInfo;
     memcpy(&localCreateInfo, pCreateInfo, sizeof(localCreateInfo));
-    for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
-        char** ppName = (char**)&localCreateInfo.ppEnabledExtensionNames[i];
-        *ppName = (char*)pCreateInfo->ppEnabledExtensionNames[i];
-    }
-    for (uint32_t i = 0; i < pCreateInfo->enabledLayerCount; i++) {
-        char** ppName = (char**)&localCreateInfo.ppEnabledLayerNames[i];
-        *ppName = (char*)pCreateInfo->ppEnabledLayerNames[i];
-    }
     localCreateInfo.pNext = strip_create_extensions(pCreateInfo->pNext);
 
     CREATE_TRACE_PACKET(vkCreateDevice,
@@ -958,35 +975,30 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateDevice(VkPhysica
         info.belongsToPhysicalDevice = physicalDevice;
         info.ObjectInfo.Device.pCreatePacket = trim::copy_packet(pHeader);
 
-        trim::ObjectInfo *pPhysDevInfo = trim::get_PhysicalDevice_objectInfo(physicalDevice);
-        if (pPhysDevInfo != nullptr)
-        {
+        trim::ObjectInfo* pPhysDevInfo = trim::get_PhysicalDevice_objectInfo(physicalDevice);
+        if (pPhysDevInfo != nullptr) {
             info.ObjectInfo.Device.queueFamilyCount = pPhysDevInfo->ObjectInfo.PhysicalDevice.queueFamilyCount;
             info.ObjectInfo.Device.pQueueFamilies = VKTRACE_NEW_ARRAY(trim::QueueFamily, info.ObjectInfo.Device.queueFamilyCount);
-            for (uint32_t family = 0; family < info.ObjectInfo.Device.queueFamilyCount; family++)
-            {
+            for (uint32_t family = 0; family < info.ObjectInfo.Device.queueFamilyCount; family++) {
                 info.ObjectInfo.Device.pQueueFamilies[family].count = 0;
                 info.ObjectInfo.Device.pQueueFamilies[family].queues = nullptr;
             }
 
-            for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
-            {
+            for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++) {
                 uint32_t queueFamilyIndex = pCreateInfo->pQueueCreateInfos[i].queueFamilyIndex;
                 uint32_t count = pCreateInfo->pQueueCreateInfos[i].queueCount;
 
                 info.ObjectInfo.Device.pQueueFamilies[queueFamilyIndex].count = count;
                 info.ObjectInfo.Device.pQueueFamilies[queueFamilyIndex].queues = VKTRACE_NEW_ARRAY(VkQueue, count);
 
-                for (uint32_t q = 0; q < count; q++)
-                {
+                for (uint32_t q = 0; q < count; q++) {
                     VkQueue queue = VK_NULL_HANDLE;
                     mdd(*pDevice)->devTable.GetDeviceQueue(*pDevice, queueFamilyIndex, q, &queue);
                     info.ObjectInfo.Device.pQueueFamilies[queueFamilyIndex].queues[q] = queue;
                 }
             }
         }
-        if (pAllocator != NULL)
-        {
+        if (pAllocator != NULL) {
             info.ObjectInfo.Device.pAllocator = pAllocator;
             trim::add_Allocator(pAllocator);
         }
@@ -1256,8 +1268,7 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateInstance(const V
 
 VKTRACER_EXPORT VKAPI_ATTR void VKAPI_CALL __HOOKED_vkDestroyInstance(VkInstance instance,
                                                                       const VkAllocationCallbacks* pAllocator) {
-    if (g_trimEnabled && g_trimIsInTrim)
-    {
+    if (g_trimEnabled && g_trimIsInTrim) {
         trim::stop();
     }
 
@@ -1286,6 +1297,9 @@ VKTRACER_EXPORT VKAPI_ATTR void VKAPI_CALL __HOOKED_vkDestroyInstance(VkInstance
     g_instanceDataMap.erase(key);
 #if defined(USE_PAGEGUARD_SPEEDUP) && !defined(PAGEGUARD_MEMCPY_USE_PPL_LIB)
     vktrace_pageguard_done_multi_threads_memcpy();
+#endif
+#if defined(ANDROID)
+    _Unload();
 #endif
 }
 
@@ -1508,9 +1522,7 @@ VKTRACER_EXPORT VKAPI_ATTR void VKAPI_CALL __HOOKED_vkGetPhysicalDeviceQueueFami
             if (pQueueFamilyProperties == nullptr) {
                 pInfo->ObjectInfo.PhysicalDevice.pGetPhysicalDeviceQueueFamilyPropertiesCountPacket = trim::copy_packet(pHeader);
                 pInfo->ObjectInfo.PhysicalDevice.queueFamilyCount = *pQueueFamilyPropertyCount;
-            }
-            else
-            {
+            } else {
                 pInfo->ObjectInfo.PhysicalDevice.pGetPhysicalDeviceQueueFamilyPropertiesPacket = trim::copy_packet(pHeader);
             }
         }
@@ -1971,8 +1983,7 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkQueueSubmit(VkQueue qu
             if (pSubmits != NULL) {
                 for (uint32_t i = 0; i < submitCount; i++) {
                     // Update attachment objects based on RenderPass transitions
-                    for (uint32_t c = 0; c < pSubmits[i].commandBufferCount; c++)
-                    {
+                    for (uint32_t c = 0; c < pSubmits[i].commandBufferCount; c++) {
                         trim::ObjectInfo* pCBInfo = trim::get_CommandBuffer_objectInfo(pSubmits[i].pCommandBuffers[c]);
                         pCBInfo->ObjectInfo.CommandBuffer.submitQueue = queue;
 
@@ -2021,22 +2032,16 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkQueueSubmit(VkQueue qu
             }
         }
 
-        if (g_trimIsInTrim)
-        {
-            if (pSubmits != NULL && pSubmits->pCommandBuffers != NULL)
-            {
-                for (uint32_t s = 0; s < submitCount; s++)
-                {
-                    for (uint32_t i = 0; i < pSubmits[s].commandBufferCount; i++)
-                    {
+        if (g_trimIsInTrim) {
+            if (pSubmits != NULL && pSubmits->pCommandBuffers != NULL) {
+                for (uint32_t s = 0; s < submitCount; s++) {
+                    for (uint32_t i = 0; i < pSubmits[s].commandBufferCount; i++) {
                         trim::mark_CommandBuffer_reference(pSubmits[s].pCommandBuffers[i]);
                     }
                 }
             }
             trim::write_packet(pHeader);
-        }
-        else
-        {
+        } else {
             vktrace_delete_trace_packet(&pHeader);
         }
     }
@@ -2401,12 +2406,15 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateGraphicsPipeline
             info.ObjectInfo.Pipeline.pipelineCache = pipelineCache;
             info.ObjectInfo.Pipeline.renderPassVersion = trim::get_RenderPassVersion(pCreateInfos[i].renderPass);
             info.ObjectInfo.Pipeline.shaderModuleCreateInfoCount = pCreateInfos[i].stageCount;
-            info.ObjectInfo.Pipeline.pShaderModuleCreateInfos = VKTRACE_NEW_ARRAY(VkShaderModuleCreateInfo, pCreateInfos[i].stageCount);
+            info.ObjectInfo.Pipeline.pShaderModuleCreateInfos =
+                VKTRACE_NEW_ARRAY(VkShaderModuleCreateInfo, pCreateInfos[i].stageCount);
 
             for (uint32_t stageIndex = 0; stageIndex < info.ObjectInfo.Pipeline.shaderModuleCreateInfoCount; stageIndex++) {
-                trim::ObjectInfo *pShaderModuleInfo = trim::get_ShaderModule_objectInfo(pCreateInfos[i].pStages[stageIndex].module);
+                trim::ObjectInfo* pShaderModuleInfo = trim::get_ShaderModule_objectInfo(pCreateInfos[i].pStages[stageIndex].module);
                 if (pShaderModuleInfo != nullptr) {
-                    trim::StateTracker::copy_VkShaderModuleCreateInfo(&info.ObjectInfo.Pipeline.pShaderModuleCreateInfos[stageIndex], pShaderModuleInfo->ObjectInfo.ShaderModule.createInfo);
+                    trim::StateTracker::copy_VkShaderModuleCreateInfo(
+                        &info.ObjectInfo.Pipeline.pShaderModuleCreateInfos[stageIndex],
+                        pShaderModuleInfo->ObjectInfo.ShaderModule.createInfo);
                 }
             }
 
@@ -2486,9 +2494,10 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateComputePipelines
             info.ObjectInfo.Pipeline.shaderModuleCreateInfoCount = 1;
             info.ObjectInfo.Pipeline.pShaderModuleCreateInfos = VKTRACE_NEW(VkShaderModuleCreateInfo);
 
-            trim::ObjectInfo *pShaderModuleInfo = trim::get_ShaderModule_objectInfo(pCreateInfos[i].stage.module);
+            trim::ObjectInfo* pShaderModuleInfo = trim::get_ShaderModule_objectInfo(pCreateInfos[i].stage.module);
             if (pShaderModuleInfo != nullptr) {
-                trim::StateTracker::copy_VkShaderModuleCreateInfo(&info.ObjectInfo.Pipeline.pShaderModuleCreateInfos[0], pShaderModuleInfo->ObjectInfo.ShaderModule.createInfo);
+                trim::StateTracker::copy_VkShaderModuleCreateInfo(&info.ObjectInfo.Pipeline.pShaderModuleCreateInfos[0],
+                                                                  pShaderModuleInfo->ObjectInfo.ShaderModule.createInfo);
             }
 
             trim::StateTracker::copy_VkComputePipelineCreateInfo(&info.ObjectInfo.Pipeline.computePipelineCreateInfo,
@@ -2665,8 +2674,7 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateImage(VkDevice d
     vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pImage), sizeof(VkImage), pImage);
     pPacket->result = result;
 
-    if (g_trimEnabled)
-    {
+    if (g_trimEnabled) {
         VkImageCreateInfo* pCreateInfo = const_cast<VkImageCreateInfo*>(pPacket->pCreateInfo);
         pCreateInfo->usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     }
@@ -2711,6 +2719,62 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateImage(VkDevice d
             vktrace_delete_trace_packet(&pHeader);
         }
     }
+    return result;
+}
+
+VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateBuffer(VkDevice device, const VkBufferCreateInfo* pCreateInfo,
+                                                                       const VkAllocationCallbacks* pAllocator, VkBuffer* pBuffer)
+{
+    VkResult result;
+    vktrace_trace_packet_header* pHeader;
+    packet_vkCreateBuffer* pPacket = NULL;
+    CREATE_TRACE_PACKET(vkCreateBuffer, get_struct_chain_size((void*)pCreateInfo) + sizeof(VkAllocationCallbacks) + sizeof(VkBuffer));
+    VkBufferCreateInfo replayCreateInfo = *pCreateInfo;
+    VkBufferCreateInfo trimCreateInfo = *pCreateInfo;
+    if (g_trimEnabled) {
+        // need to add TRANSFER_SRC usage to the buffer so that we can copy out of it.
+        trimCreateInfo.usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        pCreateInfo = &trimCreateInfo;
+    }
+    result = mdd(device)->devTable.CreateBuffer(device, pCreateInfo, pAllocator, pBuffer);
+    vktrace_set_packet_entrypoint_end_time(pHeader);
+    if (g_trimEnabled) {
+        // need to add TRANSFER_DST usage to the buffer so that we can recreate it.
+        replayCreateInfo.usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        pCreateInfo = &replayCreateInfo;
+    }
+    pPacket = interpret_body_as_vkCreateBuffer(pHeader);
+    pPacket->device = device;
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pCreateInfo), sizeof(VkBufferCreateInfo), pCreateInfo);
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pCreateInfo->pQueueFamilyIndices), sizeof(uint32_t) * pCreateInfo->queueFamilyIndexCount, pCreateInfo->pQueueFamilyIndices);
+    add_extension_to_createbuffer_trace_packet(pHeader, (void**)&(pPacket->pCreateInfo->pNext), pCreateInfo->pNext);
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pAllocator), sizeof(VkAllocationCallbacks), NULL);
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pBuffer), sizeof(VkBuffer), pBuffer);
+    pPacket->result = result;
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pCreateInfo->pQueueFamilyIndices));
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pCreateInfo));
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pAllocator));
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pBuffer));
+    if (!g_trimEnabled) {
+        FINISH_TRACE_PACKET();
+    } else {
+        vktrace_finalize_trace_packet(pHeader);
+        trim::ObjectInfo &info = trim::add_Buffer_object(*pBuffer);
+        info.belongsToDevice = device;
+        info.ObjectInfo.Buffer.pCreatePacket = trim::copy_packet(pHeader);
+        info.ObjectInfo.Buffer.size = pCreateInfo->size;
+        if (pCreateInfo->queueFamilyIndexCount > 0) { info.ObjectInfo.Buffer.queueFamilyIndex = pCreateInfo->pQueueFamilyIndices[0]; }
+        if (pAllocator != NULL) {
+            info.ObjectInfo.Buffer.pAllocator = pAllocator;
+        }
+        if (pAllocator != NULL) {
+            trim::add_Allocator(pAllocator);
+        }
+        if (g_trimIsInTrim) {
+            trim::write_packet(pHeader);
+        } else {
+            vktrace_delete_trace_packet(&pHeader);
+        }    }
     return result;
 }
 
@@ -3259,6 +3323,203 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateAndroidSurfaceKH
 }
 #endif
 
+static std::unordered_map<VkDescriptorUpdateTemplateKHR, VkDescriptorUpdateTemplateCreateInfoKHR*>
+    descriptorUpdateTemplateCreateInfo;
+
+VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkCreateDescriptorUpdateTemplateKHR(
+    VkDevice device, const VkDescriptorUpdateTemplateCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator,
+    VkDescriptorUpdateTemplateKHR* pDescriptorUpdateTemplate) {
+    VkResult result;
+    vktrace_trace_packet_header* pHeader;
+    packet_vkCreateDescriptorUpdateTemplateKHR* pPacket = NULL;
+
+    CREATE_TRACE_PACKET(vkCreateDescriptorUpdateTemplateKHR,
+                        sizeof(VkDescriptorUpdateTemplateCreateInfoKHR) + sizeof(VkAllocationCallbacks) +
+                            sizeof(VkDescriptorUpdateTemplateKHR) +
+                            sizeof(VkDescriptorUpdateTemplateEntryKHR) * pCreateInfo->descriptorUpdateEntryCount);
+    result = mdd(device)->devTable.CreateDescriptorUpdateTemplateKHR(device, pCreateInfo, pAllocator, pDescriptorUpdateTemplate);
+    vktrace_set_packet_entrypoint_end_time(pHeader);
+
+    descriptorUpdateTemplateCreateInfo[*pDescriptorUpdateTemplate] =
+        (VkDescriptorUpdateTemplateCreateInfoKHR*)malloc(sizeof(VkDescriptorUpdateTemplateCreateInfoKHR));
+    memcpy(descriptorUpdateTemplateCreateInfo[*pDescriptorUpdateTemplate], pCreateInfo,
+           sizeof(VkDescriptorUpdateTemplateCreateInfoKHR));
+    descriptorUpdateTemplateCreateInfo[*pDescriptorUpdateTemplate]->pDescriptorUpdateEntries =
+        (VkDescriptorUpdateTemplateEntryKHR*)malloc(sizeof(VkDescriptorUpdateTemplateEntryKHR) *
+                                                    pCreateInfo->descriptorUpdateEntryCount);
+    memcpy((void*)descriptorUpdateTemplateCreateInfo[*pDescriptorUpdateTemplate]->pDescriptorUpdateEntries,
+           pCreateInfo->pDescriptorUpdateEntries,
+           sizeof(VkDescriptorUpdateTemplateEntryKHR) * pCreateInfo->descriptorUpdateEntryCount);
+
+    pPacket = interpret_body_as_vkCreateDescriptorUpdateTemplateKHR(pHeader);
+    pPacket->device = device;
+
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pCreateInfo), sizeof(VkDescriptorUpdateTemplateCreateInfoKHR),
+                                       pCreateInfo);
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pCreateInfo->pDescriptorUpdateEntries),
+                                       sizeof(VkDescriptorUpdateTemplateEntryKHR) * pCreateInfo->descriptorUpdateEntryCount,
+                                       pCreateInfo->pDescriptorUpdateEntries);
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pAllocator), sizeof(VkAllocationCallbacks), NULL);
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pDescriptorUpdateTemplate),
+                                       sizeof(VkDescriptorUpdateTemplateKHR), pDescriptorUpdateTemplate);
+    pPacket->result = result;
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pCreateInfo->pDescriptorUpdateEntries));
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pCreateInfo));
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pAllocator));
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pDescriptorUpdateTemplate));
+    if (!g_trimEnabled) {
+        FINISH_TRACE_PACKET();
+    } else {
+        vktrace_finalize_trace_packet(pHeader);
+        if (g_trimIsInTrim) {
+            trim::write_packet(pHeader);
+        } else {
+            vktrace_delete_trace_packet(&pHeader);
+        }
+    }
+
+    return result;
+}
+
+VKTRACER_EXPORT VKAPI_ATTR void VKAPI_CALL __HOOKED_vkDestroyDescriptorUpdateTemplateKHR(
+    VkDevice device, VkDescriptorUpdateTemplateKHR descriptorUpdateTemplate, const VkAllocationCallbacks* pAllocator) {
+    vktrace_trace_packet_header* pHeader;
+    packet_vkDestroyDescriptorUpdateTemplateKHR* pPacket = NULL;
+    CREATE_TRACE_PACKET(vkDestroyDescriptorUpdateTemplateKHR, sizeof(VkAllocationCallbacks));
+    mdd(device)->devTable.DestroyDescriptorUpdateTemplateKHR(device, descriptorUpdateTemplate, pAllocator);
+    vktrace_set_packet_entrypoint_end_time(pHeader);
+    pPacket = interpret_body_as_vkDestroyDescriptorUpdateTemplateKHR(pHeader);
+    pPacket->device = device;
+    pPacket->descriptorUpdateTemplate = descriptorUpdateTemplate;
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pAllocator), sizeof(VkAllocationCallbacks), NULL);
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pAllocator));
+    if (!g_trimEnabled) {
+        FINISH_TRACE_PACKET();
+    } else {
+        vktrace_finalize_trace_packet(pHeader);
+        if (g_trimIsInTrim) {
+            trim::write_packet(pHeader);
+        } else {
+            vktrace_delete_trace_packet(&pHeader);
+        }
+    }
+    if (descriptorUpdateTemplateCreateInfo.find(descriptorUpdateTemplate) != descriptorUpdateTemplateCreateInfo.end()) {
+        if (descriptorUpdateTemplateCreateInfo[descriptorUpdateTemplate]) {
+            if (descriptorUpdateTemplateCreateInfo[descriptorUpdateTemplate]->pDescriptorUpdateEntries)
+                free((void*)descriptorUpdateTemplateCreateInfo[descriptorUpdateTemplate]->pDescriptorUpdateEntries);
+            free(descriptorUpdateTemplateCreateInfo[descriptorUpdateTemplate]);
+        }
+        descriptorUpdateTemplateCreateInfo.erase(descriptorUpdateTemplate);
+    }
+}
+
+static size_t getDescriptorSetDataSize(VkDescriptorUpdateTemplateKHR descriptorUpdateTemplate) {
+    size_t dataSize = 0;
+    for (uint32_t i = 0; i < descriptorUpdateTemplateCreateInfo[descriptorUpdateTemplate]->descriptorUpdateEntryCount; i++) {
+        for (uint32_t j = 0;
+             j < descriptorUpdateTemplateCreateInfo[descriptorUpdateTemplate]->pDescriptorUpdateEntries[i].descriptorCount; j++) {
+            size_t thisSize;
+            switch (descriptorUpdateTemplateCreateInfo[descriptorUpdateTemplate]->pDescriptorUpdateEntries[i].descriptorType) {
+                case VK_DESCRIPTOR_TYPE_SAMPLER:
+                case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+                case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+                case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+                case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+                    thisSize =
+                        descriptorUpdateTemplateCreateInfo[descriptorUpdateTemplate]->pDescriptorUpdateEntries[i].offset +
+                        j * descriptorUpdateTemplateCreateInfo[descriptorUpdateTemplate]->pDescriptorUpdateEntries[i].stride +
+                        sizeof(VkDescriptorImageInfo);
+                    break;
+                case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+                case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+                case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+                case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+                    thisSize =
+                        descriptorUpdateTemplateCreateInfo[descriptorUpdateTemplate]->pDescriptorUpdateEntries[i].offset +
+                        j * descriptorUpdateTemplateCreateInfo[descriptorUpdateTemplate]->pDescriptorUpdateEntries[i].stride +
+                        sizeof(VkDescriptorBufferInfo);
+                    break;
+                case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+                case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+                    thisSize =
+                        descriptorUpdateTemplateCreateInfo[descriptorUpdateTemplate]->pDescriptorUpdateEntries[i].offset +
+                        j * descriptorUpdateTemplateCreateInfo[descriptorUpdateTemplate]->pDescriptorUpdateEntries[i].stride +
+                        sizeof(VkBufferView);
+                    break;
+                default:
+                    assert(0);
+                    break;
+            }
+            dataSize = std::max(dataSize, thisSize);
+        }
+    }
+    return dataSize;
+}
+
+VKTRACER_EXPORT VKAPI_ATTR void VKAPI_CALL __HOOKED_vkUpdateDescriptorSetWithTemplateKHR(
+    VkDevice device, VkDescriptorSet descriptorSet, VkDescriptorUpdateTemplateKHR descriptorUpdateTemplate, const void* pData) {
+    vktrace_trace_packet_header* pHeader;
+    packet_vkUpdateDescriptorSetWithTemplateKHR* pPacket = NULL;
+    size_t dataSize;
+
+    // TODO: We're saving all the data, from pData to the end of the last item, including data before offset and skipped data.
+    // This could be optimized to save only the data chunks that are actually needed.
+    dataSize = getDescriptorSetDataSize(descriptorUpdateTemplate);
+
+    CREATE_TRACE_PACKET(vkUpdateDescriptorSetWithTemplateKHR, dataSize);
+    mdd(device)->devTable.UpdateDescriptorSetWithTemplateKHR(device, descriptorSet, descriptorUpdateTemplate, pData);
+    vktrace_set_packet_entrypoint_end_time(pHeader);
+    pPacket = interpret_body_as_vkUpdateDescriptorSetWithTemplateKHR(pHeader);
+    pPacket->device = device;
+    pPacket->descriptorSet = descriptorSet;
+    pPacket->descriptorUpdateTemplate = descriptorUpdateTemplate;
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pData), dataSize, pData);
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pData));
+    if (!g_trimEnabled) {
+        FINISH_TRACE_PACKET();
+    } else {
+        vktrace_finalize_trace_packet(pHeader);
+        if (g_trimIsInTrim) {
+            trim::write_packet(pHeader);
+        } else {
+            vktrace_delete_trace_packet(&pHeader);
+        }
+    }
+}
+
+VKTRACER_EXPORT VKAPI_ATTR void VKAPI_CALL __HOOKED_vkCmdPushDescriptorSetWithTemplateKHR(
+    VkCommandBuffer commandBuffer, VkDescriptorUpdateTemplateKHR descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set,
+    const void* pData) {
+    vktrace_trace_packet_header* pHeader;
+    packet_vkCmdPushDescriptorSetWithTemplateKHR* pPacket = NULL;
+    size_t dataSize;
+
+    // TODO: We're saving all the data, from pData to the end of the last item, including data before offset and skipped data.
+    // This could be optimized to save only the data chunks that are actually needed.
+    dataSize = getDescriptorSetDataSize(descriptorUpdateTemplate);
+
+    CREATE_TRACE_PACKET(vkCmdPushDescriptorSetWithTemplateKHR, dataSize);
+    mdd(commandBuffer)->devTable.CmdPushDescriptorSetWithTemplateKHR(commandBuffer, descriptorUpdateTemplate, layout, set, pData);
+    vktrace_set_packet_entrypoint_end_time(pHeader);
+    pPacket = interpret_body_as_vkCmdPushDescriptorSetWithTemplateKHR(pHeader);
+    pPacket->commandBuffer = commandBuffer;
+    pPacket->descriptorUpdateTemplate = descriptorUpdateTemplate;
+    pPacket->layout = layout;
+    pPacket->set = set;
+    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->pData), dataSize, pData);
+    vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->pData));
+    if (!g_trimEnabled) {
+        FINISH_TRACE_PACKET();
+    } else {
+        vktrace_finalize_trace_packet(pHeader);
+        if (g_trimIsInTrim) {
+            trim::write_packet(pHeader);
+        } else {
+            vktrace_delete_trace_packet(&pHeader);
+        }
+    }
+}
+
 // TODO Wayland and Mir support
 
 /* TODO: Probably want to make this manual to get the result of the boolean and then check it on replay
@@ -3432,6 +3693,13 @@ static inline PFN_vkVoidFunction layer_intercept_proc(const char* name) {
     if (!strcmp(name, "CmdPushConstants")) return (PFN_vkVoidFunction)__HOOKED_vkCmdPushConstants;
     if (!strcmp(name, "CmdEndRenderPass")) return (PFN_vkVoidFunction)__HOOKED_vkCmdEndRenderPass;
     if (!strcmp(name, "CmdExecuteCommands")) return (PFN_vkVoidFunction)__HOOKED_vkCmdExecuteCommands;
+    if (!strcmp(name, "CreateDescriptorUpdateTemplateKHR")) return (PFN_vkVoidFunction)__HOOKED_vkCreateDescriptorUpdateTemplateKHR;
+    if (!strcmp(name, "DestroyDescriptorUpdateTemplateKHR"))
+        return (PFN_vkVoidFunction)__HOOKED_vkDestroyDescriptorUpdateTemplateKHR;
+    if (!strcmp(name, "UpdateDescriptorSetWithTemplateKHR"))
+        return (PFN_vkVoidFunction)__HOOKED_vkUpdateDescriptorSetWithTemplateKHR;
+    if (!strcmp(name, "CmdPushDescriptorSetWithTemplateKHR"))
+        return (PFN_vkVoidFunction)__HOOKED_vkCmdPushDescriptorSetWithTemplateKHR;
 
     return NULL;
 }
@@ -3467,6 +3735,7 @@ static inline PFN_vkVoidFunction layer_intercept_instance_proc(const char* name)
  */
 VKTRACER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vktraceGetDeviceProcAddr(VkDevice device, const char* funcName) {
     PFN_vkVoidFunction addr;
+
     vktrace_trace_packet_header* pHeader;
     packet_vkGetDeviceProcAddr* pPacket = NULL;
     CREATE_TRACE_PACKET(vkGetDeviceProcAddr, ((funcName != NULL) ? ROUNDUP_TO_4(strlen(funcName) + 1) : 0));

@@ -687,7 +687,6 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
                 tables += '                                                             VkDevice dev) {\n'
                 tables += '    VkLayerDispatchTable *table = &dev_table->core_dispatch;\n'
                 tables += '    for (uint32_t i = 0; i < MAX_NUM_UNKNOWN_EXTS; i++) dev_table->ext_dispatch.dev_ext[i] = (PFN_vkDevExt)vkDevExtError;\n'
-                tables += '\n'
 
             elif x == 1:
                 cur_type = 'device'
@@ -698,7 +697,6 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
                 tables += 'VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct loader_dev_dispatch_table *dev_table,\n'
                 tables += '                                                                       PFN_vkGetDeviceProcAddr gpa, VkDevice dev) {\n'
                 tables += '    VkLayerDispatchTable *table = &dev_table->core_dispatch;\n'
-                tables += '\n'
 
             elif x == 2:
                 cur_type = 'instance'
@@ -740,7 +738,14 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
                     if cur_cmd.protect is not None:
                         tables += '#ifdef %s\n' % cur_cmd.protect
 
-                    tables += '    table->%s = (PFN_%s)gpa(%s, "%s");\n' % (base_name, cur_cmd.name, gpa_param, cur_cmd.name)
+                    # If we're looking for the proc we are passing in, just point the table to it.  This fixes the issue where
+                    # a layer overrides the function name for the loader.
+                    if (x <= 1 and base_name == 'GetDeviceProcAddr'):
+                        tables += '    table->GetDeviceProcAddr = gpa;\n'
+                    elif (x > 1 and base_name == 'GetInstanceProcAddr'):
+                        tables += '    table->GetInstanceProcAddr = gpa;\n'
+                    else:
+                        tables += '    table->%s = (PFN_%s)gpa(%s, "%s");\n' % (base_name, cur_cmd.name, gpa_param, cur_cmd.name)
 
                     if cur_cmd.protect is not None:
                         tables += '#endif // %s\n' % cur_cmd.protect
@@ -830,7 +835,20 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
         # Some extensions have to be manually added.  Skip those in the automatic
         # generation.  They will be manually added later.
         manual_ext_commands = ['vkEnumeratePhysicalDeviceGroupsKHX',
-                               'vkGetPhysicalDeviceExternalImageFormatPropertiesNV']
+                               'vkGetPhysicalDeviceExternalImageFormatPropertiesNV',
+                               'vkGetPhysicalDeviceFeatures2KHR',
+                               'vkGetPhysicalDeviceProperties2KHR',
+                               'vkGetPhysicalDeviceFormatProperties2KHR',
+                               'vkGetPhysicalDeviceImageFormatProperties2KHR',
+                               'vkGetPhysicalDeviceQueueFamilyProperties2KHR',
+                               'vkGetPhysicalDeviceMemoryProperties2KHR',
+                               'vkGetPhysicalDeviceSparseImageFormatProperties2KHR',
+                               'vkGetPhysicalDeviceSurfaceCapabilities2KHR',
+                               'vkGetPhysicalDeviceSurfaceFormats2KHR',
+                               'vkGetPhysicalDeviceSurfaceCapabilities2EXT',
+                               'vkReleaseDisplayEXT',
+                               'vkAcquireXlibDisplayEXT',
+                               'vkGetRandROutputDisplayEXT']
 
         for ext_cmd in self.ext_commands:
             if (ext_cmd.ext_name in WSI_EXT_NAMES or
@@ -853,19 +871,42 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
             return_prefix = '    '
             base_name = ext_cmd.name[2:]
             has_surface = 0
+            update_structure_surface = 0
+            update_structure_string = ''
             requires_terminator = 0
             surface_var_name = ''
             phys_dev_var_name = ''
             has_return_type = False
+            always_use_param_name = True
+            surface_type_to_replace = ''
+            surface_name_replacement = ''
+            physdev_type_to_replace = ''
+            physdev_name_replacement = ''
 
             for param in ext_cmd.params:
                 if param.type == 'VkSurfaceKHR':
                     has_surface = 1
                     surface_var_name = param.name
                     requires_terminator = 1
+                    always_use_param_name = False
+                    surface_type_to_replace = 'VkSurfaceKHR'
+                    surface_name_replacement = 'icd_surface->real_icd_surfaces[icd_index]'
+                if param.type == 'VkPhysicalDeviceSurfaceInfo2KHR':
+                    has_surface = 1
+                    surface_var_name = param.name + '->surface'
+                    requires_terminator = 1
+                    update_structure_surface = 1
+                    update_structure_string = '        VkPhysicalDeviceSurfaceInfo2KHR info_copy = *pSurfaceInfo;\n'
+                    update_structure_string += '        info_copy.surface = icd_surface->real_icd_surfaces[icd_index];\n'
+                    always_use_param_name = False
+                    surface_type_to_replace = 'VkPhysicalDeviceSurfaceInfo2KHR'
+                    surface_name_replacement = '&info_copy'
                 if param.type == 'VkPhysicalDevice':
                     requires_terminator = 1
                     phys_dev_var_name = param.name
+                    always_use_param_name = False
+                    physdev_type_to_replace = 'VkPhysicalDevice'
+                    physdev_name_replacement = 'phys_dev_term->phys_dev'
 
             if (ext_cmd.return_type != None):
                 return_prefix += 'return '
@@ -930,9 +971,14 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
                     funcs += '    }\n'
 
                     if has_surface == 1:
-                        funcs += '    VkIcdSurface *icd_surface = (VkIcdSurface *)(surface);\n'
+                        funcs += '    VkIcdSurface *icd_surface = (VkIcdSurface *)(%s);\n' % (surface_var_name)
                         funcs += '    uint8_t icd_index = phys_dev_term->icd_index;\n'
                         funcs += '    if (NULL != icd_surface->real_icd_surfaces && NULL != (void *)icd_surface->real_icd_surfaces[icd_index]) {\n'
+
+                        # If there's a structure with a surface, we need to update its internals with the correct surface for the ICD
+                        if update_structure_surface == 1:
+                            funcs += update_structure_string
+
                         funcs += '    ' + return_prefix + 'icd_term->dispatch.'
                         funcs += base_name
                         funcs += '('
@@ -941,10 +987,13 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
                             if count != 0:
                                 funcs += ', '
 
-                            if param.type == 'VkPhysicalDevice':
-                                funcs += 'phys_dev_term->phys_dev'
-                            elif param.type == 'VkSurfaceKHR':
-                                funcs += 'icd_surface->real_icd_surfaces[icd_index]'
+                            if not always_use_param_name:
+                                if surface_type_to_replace and surface_type_to_replace == param.type:
+                                    funcs += surface_name_replacement
+                                elif physdev_type_to_replace and physdev_type_to_replace == param.type:
+                                    funcs += physdev_name_replacement
+                                else:
+                                    funcs += param.name
                             else:
                                 funcs += param.name
 
@@ -1238,7 +1287,7 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
                 commands = self.ext_commands
 
             for cur_cmd in commands:
-                if cur_cmd.ext_type == 'instance':
+                if cur_cmd.ext_type == 'instance' or (cur_cmd.ext_type == 'device' and cur_cmd.handle_type == 'VkPhysicalDevice'):
                     if cur_cmd.ext_name != cur_extension_name:
                         if 'VK_VERSION_' in cur_cmd.ext_name:
                             table += '\n    // ---- Core %s commands\n' % cur_cmd.ext_name[11:]

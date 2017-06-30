@@ -49,34 +49,34 @@ layer_source_files = [
 'descriptor_sets.cpp',
 'parameter_validation.cpp',
 'object_tracker.cpp',
+'shader_validation.cpp',
 'buffer_validation.cpp',
-'swapchain.cpp'
 ]
 header_file = 'vk_validation_error_messages.h'
 # TODO : Don't hardcode linux path format if we want this to run on windows
 test_file = '../tests/layer_validation_tests.cpp'
 # List of enums that are allowed to be used more than once so don't warn on their duplicates
 duplicate_exceptions = [
-'VALIDATION_ERROR_00018', # This covers the broad case that all child objects must be destroyed at DestroyInstance time
-'VALIDATION_ERROR_00049', # This covers the broad case that all child objects must be destroyed at DestroyDevice time
-'VALIDATION_ERROR_00112', # Obj tracker check makes sure non-null framebuffer is valid & CV check makes sure it's compatible w/ renderpass framebuffer
-'VALIDATION_ERROR_00324', # This is an aliasing error that we report twice, for each of the two allocations that are aliasing
-'VALIDATION_ERROR_00515', # Covers valid shader module handle for both Compute & Graphics pipelines
-'VALIDATION_ERROR_00648', # This is a case for VkMappedMemoryRange struct that is used by both Flush & Invalidate MappedMemoryRange
-'VALIDATION_ERROR_00741', # This is a blanket case for all invalid image aspect bit errors. The spec link has appropriate details for all separate cases.
-'VALIDATION_ERROR_00768', # This case covers two separate checks which are done independently
-'VALIDATION_ERROR_00769', # This case covers two separate checks which are done independently
-'VALIDATION_ERROR_00942', # This is a descriptor set write update error that we use for a couple copy cases as well
-'VALIDATION_ERROR_00988', # Single error for mis-matched stageFlags of vkCmdPushConstants() that is flagged for no stage flags & mis-matched flags
-'VALIDATION_ERROR_01088', # Handles both depth/stencil & compressed image errors for vkCmdClearColorImage()
-'VALIDATION_ERROR_01223', # Used for the mipLevel check of both dst & src images on vkCmdCopyImage call
-'VALIDATION_ERROR_01224', # Used for the arraySize check of both dst & src images on vkCmdCopyImage call
-'VALIDATION_ERROR_01450', # Used for both x & y bounds of viewport
-'VALIDATION_ERROR_01489', # Used for both x & y value of scissors to make sure they're not negative
-'VALIDATION_ERROR_01926', # Surface of VkSwapchainCreateInfoKHR must be valid when creating both single or shared swapchains
-'VALIDATION_ERROR_01935', # oldSwapchain of VkSwapchainCreateInfoKHR must be valid when creating both single or shared swapchains
-'VALIDATION_ERROR_02333', # Single error for both imageFormat & imageColorSpace requirements when creating swapchain
-'VALIDATION_ERROR_02525', # Used twice for the same error codepath as both a param & to set a variable, so not really a duplicate
+'VALIDATION_ERROR_258004ea', # This covers the broad case that all child objects must be destroyed at DestroyInstance time
+'VALIDATION_ERROR_24a002f4', # This covers the broad case that all child objects must be destroyed at DestroyDevice time
+'VALIDATION_ERROR_0280006e', # Obj tracker check makes sure non-null framebuffer is valid & CV check makes sure it's compatible w/ renderpass framebuffer
+'VALIDATION_ERROR_12200682', # This is an aliasing error that we report twice, for each of the two allocations that are aliasing
+'VALIDATION_ERROR_1060d201', # Covers valid shader module handle for both Compute & Graphics pipelines
+'VALIDATION_ERROR_0c20c601', # This is a case for VkMappedMemoryRange struct that is used by both Flush & Invalidate MappedMemoryRange
+'VALIDATION_ERROR_0a400c01', # This is a blanket case for all invalid image aspect bit errors. The spec link has appropriate details for all separate cases.
+'VALIDATION_ERROR_0a8007fc', # This case covers two separate checks which are done independently
+'VALIDATION_ERROR_0a800800', # This case covers two separate checks which are done independently
+'VALIDATION_ERROR_15c0028a', # This is a descriptor set write update error that we use for a couple copy cases as well
+'VALIDATION_ERROR_1bc002de', # Single error for mis-matched stageFlags of vkCmdPushConstants() that is flagged for no stage flags & mis-matched flags
+'VALIDATION_ERROR_1880000e', # Handles both depth/stencil & compressed image errors for vkCmdClearColorImage()
+'VALIDATION_ERROR_0a600152', # Used for the mipLevel check of both dst & src images on vkCmdCopyImage call
+'VALIDATION_ERROR_0a600154', # Used for the arraySize check of both dst & src images on vkCmdCopyImage call
+'VALIDATION_ERROR_1500099e', # Used for both x & y bounds of viewport
+'VALIDATION_ERROR_1d8004a6', # Used for both x & y value of scissors to make sure they're not negative
+'VALIDATION_ERROR_1462ec01', # Surface of VkSwapchainCreateInfoKHR must be valid when creating both single or shared swapchains
+'VALIDATION_ERROR_1460de01', # oldSwapchain of VkSwapchainCreateInfoKHR must be valid when creating both single or shared swapchains
+'VALIDATION_ERROR_146009f2', # Single error for both imageFormat & imageColorSpace requirements when creating swapchain
+'VALIDATION_ERROR_15c00294', # Used twice for the same error codepath as both a param & to set a variable, so not really a duplicate
 ]
 
 class ValidationDatabase:
@@ -100,19 +100,23 @@ class ValidationDatabase:
                 if line.startswith('#') or '' == line:
                     continue
                 db_line = line.split(self.delimiter)
-                if len(db_line) != 6:
-                    print("ERROR: Bad database line doesn't have 6 elements: %s" % (line))
+                if len(db_line) != 8:
+                    print("ERROR: Bad database line doesn't have 8 elements: %s" % (line))
                 error_enum = db_line[0]
                 implemented = db_line[1]
                 testname = db_line[2]
                 api = db_line[3]
-                error_str = db_line[4]
-                note = db_line[5]
+                vuid_string = db_line[4]
+                core_ext = db_line[5]
+                error_str = db_line[6]
+                note = db_line[7]
                 # Read complete database contents into our class var for later use
                 self.db_dict[error_enum] = {}
                 self.db_dict[error_enum]['check_implemented'] = implemented
                 self.db_dict[error_enum]['testname'] = testname
                 self.db_dict[error_enum]['api'] = api
+                self.db_dict[error_enum]['vuid_string'] = vuid_string
+                self.db_dict[error_enum]['core_ext'] = core_ext
                 self.db_dict[error_enum]['error_string'] = error_str
                 self.db_dict[error_enum]['note'] = note
                 # Now build custom data structs
@@ -122,7 +126,7 @@ class ValidationDatabase:
                     self.db_unimplemented_implicit.append(error_enum)
                 if implemented not in ['Y', 'N']:
                     self.db_invalid_implemented.append(error_enum)
-                if testname.lower() not in ['unknown', 'none']:
+                if testname.lower() not in ['unknown', 'none', 'nottestable']:
                     self.db_enum_to_tests[error_enum] = testname.split(',')
                     #if len(self.db_enum_to_tests[error_enum]) > 1:
                     #    print "Found check %s that has multiple tests: %s" % (error_enum, self.db_enum_to_tests[error_enum])
@@ -163,9 +167,10 @@ class ValidationSource:
     def __init__(self, source_file_list):
         self.source_files = source_file_list
         self.enum_count_dict = {} # dict of enum values to the count of how much they're used, and location of where they're used
-        # 1790 is a special case that provides an exception when an extension is enabled. No specific error is flagged, but the exception is handled so add it here
-        self.enum_count_dict['VALIDATION_ERROR_01790'] = {}
-        self.enum_count_dict['VALIDATION_ERROR_01790']['count'] = 1
+        # 1500099c is a special case that provides an exception when an extension is enabled. No specific error is flagged, but the exception is handled so add it here
+        self.enum_count_dict['VALIDATION_ERROR_1500099c'] = {}
+        self.enum_count_dict['VALIDATION_ERROR_1500099c']['count'] = 1
+        self.enum_count_dict['VALIDATION_ERROR_1500099c']['file_line'] = []
     def parse(self):
         duplicate_checks = 0
         for sf in self.source_files:
@@ -272,8 +277,9 @@ class bcolors:
     def endc(self):
         return self.ENDC
 
-def main(argv=None):
+def main(argv):
     result = 0 # Non-zero result indicates an error case
+    terse_mode = 'terse_mode' in sys.argv
     # parse db
     val_db = ValidationDatabase()
     val_db.read()
@@ -290,13 +296,16 @@ def main(argv=None):
     # Process stats - Just doing this inline in main, could make a fancy class to handle
     #   all the processing of data and then get results from that
     txt_color = bcolors()
-
-    print("Validation Statistics")
+    if terse_mode == False:
+        print("Validation Statistics")
+    else:
+        print("Validation/Documentation Consistency Test)")
     # First give number of checks in db & header and report any discrepancies
     db_enums = len(val_db.db_dict.keys())
     hdr_enums = len(val_header.enums)
-    print(" Database file includes %d unique checks" % (db_enums))
-    print(" Header file declares %d unique checks" % (hdr_enums))
+    if not terse_mode:
+        print(" Database file includes %d unique checks" % (db_enums))
+        print(" Header file declares %d unique checks" % (hdr_enums))
 
     # Report any checks that have an invalid check_implemented flag
     if len(val_db.db_invalid_implemented) > 0:
@@ -313,7 +322,8 @@ def main(argv=None):
         if not tmp_db_dict.pop(enum, False):
             db_missing.append(enum)
     if db_enums == hdr_enums and len(db_missing) == 0 and len(tmp_db_dict.keys()) == 0:
-        print(txt_color.green() + "  Database and Header match, GREAT!" + txt_color.endc())
+        if not terse_mode:
+            print(txt_color.green() + "  Database and Header match, GREAT!" + txt_color.endc())
     else:
         print(txt_color.red() + "  Uh oh, Database doesn't match Header :(" + txt_color.endc())
         result = 1
@@ -338,14 +348,16 @@ def main(argv=None):
             multiple_uses = True
         if src_enum not in val_db.db_implemented_enums:
             imp_not_claimed.append(src_enum)
-    print(" Database file claims that %d checks (%s) are implemented in source." % (len(val_db.db_implemented_enums), "{0:.0f}%".format(float(len(val_db.db_implemented_enums))/db_enums * 100)))
+    if not terse_mode:
+        print(" Database file claims that %d checks (%s) are implemented in source." % (len(val_db.db_implemented_enums), "{0:.0f}%".format(float(len(val_db.db_implemented_enums))/db_enums * 100)))
 
-    if len(val_db.db_unimplemented_implicit) > 0:
+    if len(val_db.db_unimplemented_implicit) > 0 and not terse_mode:
         print(" Database file claims %d implicit checks (%s) that are not implemented." % (len(val_db.db_unimplemented_implicit), "{0:.0f}%".format(float(len(val_db.db_unimplemented_implicit))/db_enums * 100)))
         total_checks = len(val_db.db_implemented_enums) + len(val_db.db_unimplemented_implicit)
         print(" If all implicit checks are handled by parameter validation this is a total of %d (%s) checks covered." % (total_checks, "{0:.0f}%".format(float(total_checks)/db_enums * 100)))
     if len(imp_not_found) == 0 and len(imp_not_claimed) == 0:
-        print(txt_color.green() + "  All claimed Database implemented checks have been found in source, and no source checks aren't claimed in Database, GREAT!" + txt_color.endc())
+        if not terse_mode:
+            print(txt_color.green() + "  All claimed Database implemented checks have been found in source, and no source checks aren't claimed in Database, GREAT!" + txt_color.endc())
     else:
         result = 1
         print(txt_color.red() + "  Uh oh, Database claimed implemented don't match Source :(" + txt_color.endc())
@@ -358,7 +370,7 @@ def main(argv=None):
             for imp_enum in imp_not_claimed:
                 print(txt_color.red() + "    %s" % (imp_enum) + txt_color.endc())
 
-    if multiple_uses:
+    if multiple_uses and not terse_mode:
         print(txt_color.yellow() + "  Note that some checks are used multiple times. These may be good candidates for new valid usage spec language." + txt_color.endc())
         print(txt_color.yellow() + "  Here is a list of each check used multiple times with its number of uses:" + txt_color.endc())
         for enum in val_source.enum_count_dict:
@@ -385,7 +397,7 @@ def main(argv=None):
                     if testname not in tests_missing_enum:
                         tests_missing_enum[testname] = []
                     tests_missing_enum[testname].append(enum)
-    if tests_missing_enum:
+    if tests_missing_enum and not terse_mode:
         print(txt_color.yellow() + "  \nThe following tests do not use their reported enums to check for the validation error. You may want to update these to pass the expected enum to SetDesiredFailureMsg:" + txt_color.endc())
         for testname in tests_missing_enum:
             print(txt_color.yellow() + "   Testname %s does not explicitly check for these ids:" % (testname) + txt_color.endc())
@@ -393,9 +405,11 @@ def main(argv=None):
                 print(txt_color.yellow() + "    %s" % (enum) + txt_color.endc())
 
     # TODO : Go through all enums found in the test file and make sure they're correctly documented in the database file
-    print(" Database file claims that %d checks have tests written." % len(val_db.db_enum_to_tests))
+    if not terse_mode:
+        print(" Database file claims that %d checks have tests written." % len(val_db.db_enum_to_tests))
     if len(bad_testnames) == 0:
-        print(txt_color.green() + "  All claimed tests have valid names. That's good!" + txt_color.endc())
+        if not terse_mode:
+            print(txt_color.green() + "  All claimed tests have valid names. That's good!" + txt_color.endc())
     else:
         print(txt_color.red() + "  The following testnames in Database appear to be invalid:")
         result = 1
@@ -405,5 +419,5 @@ def main(argv=None):
     return result
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
 

@@ -63,6 +63,7 @@ set(COMMON_CPP
    )
 
 include_directories(
+    "${PROJECT_SOURCE_DIR}/tests"
     "${PROJECT_SOURCE_DIR}/tests/gtest-1.7.0/include"
     "${PROJECT_SOURCE_DIR}/icd/common"
     "${PROJECT_SOURCE_DIR}/layers"
@@ -84,6 +85,8 @@ if (NOT WIN32)
             COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/vkvalidatelayerdoc.sh
             # Files unique to VulkanTools go below this line
             COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/vktracereplay.sh
+            COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/devsim_layer_test.sh
+            COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/devsim_test1.json
             VERBATIM
             )
     endif()
@@ -92,10 +95,12 @@ else()
         FILE(TO_NATIVE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/_run_all_tests.ps1 RUN_ALL)
         FILE(TO_NATIVE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/_vktracereplay.ps1 VKTRACEREPLAY)
         FILE(TO_NATIVE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/_vkvalidatelayerdoc.ps1 VKVALIDATELAYERDOC)
+        FILE(TO_NATIVE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/trace_positive_validation.ps1 VKTRACEPOSITIVE)
         add_custom_target(binary-dir-symlinks ALL
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${RUN_ALL} _run_all_tests.ps1
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${VKTRACEREPLAY} _vktracereplay.ps1
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${VKVALIDATELAYERDOC} _vkvalidatelayerdoc.ps1
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${VKTRACEPOSITIVE} trace_positive_validation.ps1
             VERBATIM
             )
     endif()
@@ -125,7 +130,6 @@ endif()
 add_dependencies(vk_layer_validation_tests
    VkLayer_core_validation
    VkLayer_object_tracker
-   VkLayer_swapchain
    VkLayer_threading
    VkLayer_unique_objects
    VkLayer_parameter_validation

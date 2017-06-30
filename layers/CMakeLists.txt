@@ -32,14 +32,19 @@ else()
     message(FATAL_ERROR "Unsupported Platform!")
 endif()
 
-set(LAYER_JSON_FILES
+set(LAYER_JSON_FILES_WITH_DEPENDENCIES
     VkLayer_core_validation
     VkLayer_object_tracker
     VkLayer_unique_objects
     VkLayer_parameter_validation
-    VkLayer_swapchain
     VkLayer_threading
     )
+
+set(LAYER_JSON_FILES_NO_DEPENDENCIES
+    VkLayer_standard_validation
+    )
+
+set(LAYER_JSON_FILES ${LAYER_JSON_FILES_WITH_DEPENDENCIES} ${LAYER_JSON_FILES_NO_DEPENDENCIES})
 
 if (WIN32)
     if (NOT (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_CURRENT_BINARY_DIR))
@@ -51,7 +56,6 @@ if (WIN32)
                     COMMAND copy ${src_json} ${dst_json}
                     VERBATIM
                     )
-                add_dependencies(${config_file}-json ${config_file})
             endforeach(config_file)
         else()
             foreach (config_file ${LAYER_JSON_FILES})
@@ -61,7 +65,6 @@ if (WIN32)
                     COMMAND copy ${src_json} ${dst_json}
                     VERBATIM
                     )
-                add_dependencies(${config_file}-json ${config_file})
             endforeach(config_file)
         endif()
     endif()
@@ -73,24 +76,36 @@ else()
                 COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/linux/${config_file}.json
                 VERBATIM
                 )
-                add_dependencies(${config_file}-json ${config_file})
         endforeach(config_file)
     endif()
 endif()
+# If a layer has a direcgt dependency on a project with the same name, use it.
+foreach (config_file ${LAYER_JSON_FILES_WITH_DEPENDENCIES})
+    add_dependencies(${config_file}-json ${config_file})
+endforeach(config_file)
+# If a layer has no direct dependencies, give it one so it copies in the proper order
+foreach (config_file ${LAYER_JSON_FILES_NO_DEPENDENCIES})
+    add_dependencies(${config_file}-json VkLayer_utils)
+endforeach(config_file)
+
+
+
 
 # Add targets for JSON file install on Linux.
 # Need to remove the "./" from the library path before installing to /etc.
 if(UNIX)
-    foreach (config_file ${LAYER_JSON_FILES})
-        add_custom_target(${config_file}-staging-json ALL
-            COMMAND mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/staging-json
-            COMMAND cp ${CMAKE_CURRENT_SOURCE_DIR}/linux/${config_file}.json ${CMAKE_CURRENT_BINARY_DIR}/staging-json
-            COMMAND sed -i -e "/\"library_path\":/s$./libVkLayer$libVkLayer$" ${CMAKE_CURRENT_BINARY_DIR}/staging-json/${config_file}.json
-            VERBATIM
-            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/linux/${config_file}.json
-            )
-        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/staging-json/${config_file}.json DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/vulkan/explicit_layer.d)
-    endforeach(config_file)
+    if(INSTALL_LVL_FILES)
+        foreach (config_file ${LAYER_JSON_FILES})
+            add_custom_target(${config_file}-staging-json ALL
+                COMMAND mkdir -p ${CMAKE_CURRENT_BINARY_DIR}/staging-json
+                COMMAND cp ${CMAKE_CURRENT_SOURCE_DIR}/linux/${config_file}.json ${CMAKE_CURRENT_BINARY_DIR}/staging-json
+                COMMAND sed -i -e "/\"library_path\":/s$./libVkLayer$libVkLayer$" ${CMAKE_CURRENT_BINARY_DIR}/staging-json/${config_file}.json
+                VERBATIM
+                DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/linux/${config_file}.json
+                )
+            install(FILES ${CMAKE_CURRENT_BINARY_DIR}/staging-json/${config_file}.json DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/vulkan/explicit_layer.d)
+        endforeach(config_file)
+    endif()
 endif()
 
 if (WIN32)
@@ -111,7 +126,9 @@ else()
     target_link_Libraries(VkLayer_${target} VkLayer_utils)
     add_dependencies(VkLayer_${target} generate_helper_files VkLayer_utils)
     set_target_properties(VkLayer_${target} PROPERTIES LINK_FLAGS "-Wl,-Bsymbolic,--exclude-libs,ALL")
-    install(TARGETS VkLayer_${target} DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    if(INSTALL_LVL_FILES)
+        install(TARGETS VkLayer_${target} DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    endif()
     endmacro()
 endif()
 
@@ -157,13 +174,14 @@ if (WIN32)
     add_library(VkLayer_utils STATIC vk_layer_config.cpp vk_layer_extension_utils.cpp vk_layer_utils.cpp vk_format_utils.cpp)
 else()
     add_library(VkLayer_utils SHARED vk_layer_config.cpp vk_layer_extension_utils.cpp vk_layer_utils.cpp vk_format_utils.cpp)
-    install(TARGETS VkLayer_utils DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    if(INSTALL_LVL_FILES)
+        install(TARGETS VkLayer_utils DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    endif()
 endif()
 add_dependencies(VkLayer_utils generate_helper_files)
 
-add_vk_layer(core_validation core_validation.cpp vk_layer_table.cpp descriptor_sets.cpp buffer_validation.cpp)
+add_vk_layer(core_validation core_validation.cpp vk_layer_table.cpp descriptor_sets.cpp buffer_validation.cpp shader_validation.cpp)
 add_vk_layer(object_tracker object_tracker.cpp vk_layer_table.cpp)
-add_vk_layer(swapchain swapchain.cpp vk_layer_table.cpp)
 # generated
 add_vk_layer(threading threading.cpp thread_check.h vk_layer_table.cpp)
 add_vk_layer(unique_objects unique_objects.cpp unique_objects_wrappers.h vk_layer_table.cpp)
