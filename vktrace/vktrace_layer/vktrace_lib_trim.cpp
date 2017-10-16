@@ -2799,6 +2799,12 @@ bool removeInvalidDescriptorsBeforeUpdateDescriptorSet(const VkWriteDescriptorSe
             }
         }
     }
+    else
+    {
+        // all descriptors in this pDescriptorWrites is invalid, we should remove it;
+        VkWriteDescriptorSet *pDescriptorWritesToChange = const_cast<VkWriteDescriptorSet *>(pDescriptorWrites);
+        pDescriptorWritesToChange->descriptorCount = 0;
+    }
     return removeInvalidDescriptorsFlag;
 }
 
@@ -3744,12 +3750,21 @@ void write_all_referenced_object_calls() {
                 // By Doc, descriptors must be valid in vkUpdateDescriptorSets call,
                 // so here, before we generate the update call, we check every
                 // descriptor in pDescriptorWrites and remove all invalid descriptors.
+                std::vector<uint32_t> descriptorCountsBackup(descriptorWriteCount);
+                for (int i = 0; i < descriptorWriteCount; i++)
+                {
+                    descriptorCountsBackup[i] = pDescriptorWrites[i].descriptorCount;
+                }
                 removeInvalidDescriptorsBeforeUpdateDescriptorSets( descriptorWriteCount, pDescriptorWrites);
                 vktrace_trace_packet_header *pHeader =
                     generate::vkUpdateDescriptorSets(false, setObj->second.belongsToDevice, descriptorWriteCount, pDescriptorWrites,
                                                      descriptorCopyCount, pDescriptorCopies);
                 vktrace_write_trace_packet(pHeader, vktrace_trace_get_trace_file());
                 vktrace_delete_trace_packet(&pHeader);
+                for (int i = 0; i < descriptorWriteCount; i++)
+                {
+                    pDescriptorWrites[i].descriptorCount = descriptorCountsBackup[i];
+                }
             }
         }
     }
