@@ -140,6 +140,7 @@ int main_loop(vktrace_replay::ReplayDisplay display, Sequencer& seq, vktrace_tra
     // record the location of looping start packet
     seq.record_bookmark();
     seq.get_bookmark(startingPacket);
+    unsigned int totalLoops = settings.numLoops;
     while (settings.numLoops > 0) {
         while (trace_running) {
             display.process_event();
@@ -200,7 +201,9 @@ int main_loop(vktrace_replay::ReplayDisplay display, Sequencer& seq, vktrace_tra
                         if (prevFrameNumber != frameNumber) {
                             prevFrameNumber = frameNumber;
 
-                            if (frameNumber == settings.loopStartFrame) {
+                            // Only set the loop start location in the first loop when loopStartFrame is not 0
+                            if (frameNumber == settings.loopStartFrame && settings.loopStartFrame > 0 &&
+                                settings.numLoops == totalLoops) {
                                 // record the location of looping start packet
                                 seq.record_bookmark();
                                 seq.get_bookmark(startingPacket);
@@ -232,7 +235,7 @@ int main_loop(vktrace_replay::ReplayDisplay display, Sequencer& seq, vktrace_tra
         seq.set_bookmark(startingPacket);
         trace_running = true;
         if (replayer != NULL) {
-            replayer->ResetFrameNumber();
+            replayer->ResetFrameNumber(settings.loopStartFrame);
         }
     }
 
@@ -301,15 +304,15 @@ static bool readPortabilityTable() {
     size_t tableSize;
     int originalFilePos;
 
-    originalFilePos = ftell(tracefp);
+    originalFilePos = vktrace_FileLike_GetCurrentPosition(traceFile);
     if (-1 == originalFilePos) return false;
-    if (0 != fseek(tracefp, -sizeof(size_t), SEEK_END)) return false;
-    if (1 != fread(&tableSize, sizeof(size_t), 1, tracefp)) return false;
+    if (!vktrace_FileLike_SetCurrentPosition(traceFile, traceFile->mFileLen - sizeof(size_t))) return false;
+    if (!vktrace_FileLike_ReadRaw(traceFile, &tableSize, sizeof(size_t))) return false;
     if (tableSize == 0) return true;
-    if (0 != fseek(tracefp, -(tableSize + 1) * sizeof(size_t), SEEK_END)) return false;
+    if (!vktrace_FileLike_SetCurrentPosition(traceFile, traceFile->mFileLen - ((tableSize + 1) * sizeof(size_t)))) return false;
     portabilityTable.resize(tableSize);
-    if (tableSize != fread(&portabilityTable[0], sizeof(size_t), tableSize, tracefp)) return false;
-    if (0 != fseek(tracefp, originalFilePos, SEEK_SET)) return false;
+    if (!vktrace_FileLike_ReadRaw(traceFile, &portabilityTable[0], sizeof(size_t) * tableSize)) return false;
+    if (!vktrace_FileLike_SetCurrentPosition(traceFile, originalFilePos)) return false;
 
     vktrace_LogDebug("portabilityTable size=%ld\n", tableSize);
     for (size_t i = 0; i < tableSize; i++) vktrace_LogDebug("   %p %ld", &portabilityTable[i], portabilityTable[i]);
@@ -392,6 +395,8 @@ int vkreplay_main(int argc, char** argv, vktrace_window_handle window = 0) {
     vktrace_trace_file_header fileHeader;
     vktrace_trace_file_header* pFileHeader;  // File header, including gpuinfo structs
 
+    FILE* tracefp;
+
     if (pTraceFile != NULL && strlen(pTraceFile) > 0) {
         tracefp = fopen(pTraceFile, "rb");
         if (tracefp == NULL) {
@@ -413,7 +418,7 @@ int vkreplay_main(int argc, char** argv, vktrace_window_handle window = 0) {
     }
 
     // read the header
-    FileLike* traceFile = vktrace_FileLike_create_file(tracefp);
+    traceFile = vktrace_FileLike_create_file(tracefp);
     if (vktrace_FileLike_ReadRaw(traceFile, &fileHeader, sizeof(fileHeader)) == false) {
         vktrace_LogError("Unable to read header from file.");
         if (pAllSettings != NULL) {
@@ -650,8 +655,6 @@ static void processCommand(struct android_app* app, int32_t cmd) {
 
 // Start with carbon copy of main() and convert it to support Android, then diff them and move common code to helpers.
 void android_main(struct android_app* app) {
-    app_dummy();
-
     const char* appTag = "vkreplay";
 
     int vulkanSupport = InitVulkan();
@@ -703,7 +706,10 @@ void android_main(struct android_app* app) {
             ANativeActivity_finish(app->activity);
             free(argv);
 
-            return;
+            // Kill the process
+            // This is not a necessarily good practice.  But it works to make sure the process is killed after replaying a trace
+            // file.  So user will not need to run "adb shell am force-stop come.example.vkreplay" afterwards.
+            exit(err);
         }
     }
 }

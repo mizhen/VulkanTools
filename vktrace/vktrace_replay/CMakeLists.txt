@@ -15,12 +15,18 @@ endif()
 execute_process(COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/lvl_genvk.py -registry ${SCRIPTS_DIR}/vk.xml -o ${GENERATED_FILES_DIR} vktrace_vk_packet_id.h)
 execute_process(COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/lvl_genvk.py -registry ${SCRIPTS_DIR}/vk.xml -o ${GENERATED_FILES_DIR} vktrace_vk_vk_packets.h)
 execute_process(COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/lvl_genvk.py -registry ${SCRIPTS_DIR}/vk.xml -o ${GENERATED_FILES_DIR} vkreplay_vk_replay_gen.cpp)
-execute_process(COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/lvl_genvk.py -registry ${SCRIPTS_DIR}/vk.xml -o ${GENERATED_FILES_DIR} vkreplay_vk_func_ptrs.h)
 execute_process(COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/lvl_genvk.py -registry ${SCRIPTS_DIR}/vk.xml -o ${GENERATED_FILES_DIR} vkreplay_vk_objmapper.h)
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-    set(OS_REPLAYER_LIBS xcb  ${LIBRARIES})
+
+    if(BUILD_WSI_XCB_SUPPORT AND VKREPLAY_WSI_SELECTION STREQUAL XCB)
+        set(OS_REPLAYER_LIBS xcb ${LIBRARIES})
+    elseif(BUILD_WSI_WAYLAND_SUPPORT AND VKREPLAY_WSI_SELECTION STREQUAL WAYLAND)
+        set(OS_REPLAYER_LIBS ${WAYLAND_CLIENT_LIBRARIES} ${LIBRARIES})
+    endif()
+    
+    # TODO Add Mir Support
 endif()
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Windows" OR
@@ -46,11 +52,9 @@ set(SRC_LIST
 set (HDR_LIST
     vkreplay.h
     vkreplay_settings.h
-    vkreplay_vkdisplay.h
     vkreplay_vkreplay.h
     ${SRC_DIR}/../layersvt/screenshot_parsing.h
     ${GENERATED_FILES_DIR}/vkreplay_vk_objmapper.h
-    ${GENERATED_FILES_DIR}/vkreplay_vk_func_ptrs.h
     ${GENERATED_FILES_DIR}/vktrace_vk_packet_id.h
     ${GENERATED_FILES_DIR}/vktrace_vk_vk_packets.h
 )

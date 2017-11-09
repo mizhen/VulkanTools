@@ -25,8 +25,8 @@ import vuid_mapping
 #############################
 
 
-out_filename = "vk_validation_error_messages.h" # can override w/ '-out <filename>' option
-db_filename = "vk_validation_error_database.txt" # can override w/ '-gendb <filename>' option
+out_filename = "../layers/vk_validation_error_messages.h" # can override w/ '-out <filename>' option
+db_filename = "../layers/vk_validation_error_database.txt" # can override w/ '-gendb <filename>' option
 json_filename = None # con pass in w/ '-json <filename> option
 gen_db = False # set to True when '-gendb <filename>' option provided
 json_compare = False # compare existing DB to json file input
@@ -139,6 +139,8 @@ class Specification:
                             just_txt = just_txt.get_text().strip()
                             unicode_map = {
                             u"\u2019" : "'",
+                            u"\u201c" : "\"",
+                            u"\u201d" : "\"",
                             u"\u2192" : "->",
                             }
                             for um in unicode_map:
@@ -228,7 +230,7 @@ class Specification:
                 enum_value = vuid_mapping.convertVUID(vuid_str)
             new_enum = "%s%s" % (validation_error_enum_name, get8digithex(enum_value))
             enum_decl.append('    %s = 0x%s,' % (new_enum, get8digithex(enum_value)))
-            error_string_map.append('    {%s, "%s"},' % (new_enum, self.error_db_dict[enum]['error_msg']))
+            error_string_map.append('    {%s, "%s"},' % (new_enum, self.error_db_dict[enum]['error_msg'].replace('"', '\\"')))
             max_enum_val = max(max_enum_val, enum_value)
         enum_decl.append('    %sMAX_ENUM = %d,' % (validation_error_enum_name, max_enum_val + 1))
         enum_decl.append('};')
@@ -277,7 +279,7 @@ class Specification:
             outfile.write("\n".join(db_lines))
     def readDB(self, db_file):
         """Read a db file into a dict, refer to genDB function above for format of each line"""
-        with open(db_file, "r") as infile:
+        with open(db_file, "r", encoding='utf-8') as infile:
             for line in infile:
                 line = line.strip()
                 if line.startswith('#') or '' == line:

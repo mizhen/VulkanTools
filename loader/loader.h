@@ -48,9 +48,6 @@
 #define DEBUG_DISABLE_APP_ALLOCATORS 0
 
 #define MAX_STRING_SIZE 1024
-#define VK_MAJOR(version) (version >> 22)
-#define VK_MINOR(version) ((version >> 12) & 0x3ff)
-#define VK_PATCH(version) (version & 0xfff)
 
 // This is defined in vk_layer.h, but if there's problems we need to create the define
 // here.
@@ -440,6 +437,7 @@ void loader_scanned_icd_clear(const struct loader_instance *inst, struct loader_
 VkResult loader_icd_scan(const struct loader_instance *inst, struct loader_icd_tramp_list *icd_tramp_list);
 void loader_layer_scan(const struct loader_instance *inst, struct loader_layer_list *instance_layers);
 void loader_implicit_layer_scan(const struct loader_instance *inst, struct loader_layer_list *instance_layers);
+bool loader_is_implicit_layer_enabled(const struct loader_instance *inst, const struct loader_layer_properties *prop);
 VkResult loader_get_icd_loader_instance_extensions(const struct loader_instance *inst, struct loader_icd_tramp_list *icd_tramp_list,
                                                    struct loader_extension_list *inst_exts);
 struct loader_icd_term *loader_get_icd_and_device(const VkDevice device, struct loader_device **found_dev, uint32_t *icd_index);

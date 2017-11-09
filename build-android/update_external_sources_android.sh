@@ -26,26 +26,74 @@ GLSLANG_REVISION=$(cat $ANDROIDBUILDDIR/glslang_revision_android)
 SPIRV_TOOLS_REVISION=$(cat $ANDROIDBUILDDIR/spirv-tools_revision_android)
 SPIRV_HEADERS_REVISION=$(cat $ANDROIDBUILDDIR/spirv-headers_revision_android)
 SHADERC_REVISION=$(cat $ANDROIDBUILDDIR/shaderc_revision_android)
+JSONCPP_REVISION=$(cat $ANDROIDBUILDDIR/jsoncpp_revision_android)
 
 echo "GLSLANG_REVISION=$GLSLANG_REVISION"
 echo "SPIRV_TOOLS_REVISION=$SPIRV_TOOLS_REVISION"
 echo "SPIRV_HEADERS_REVISION=$SPIRV_HEADERS_REVISION"
 echo "SHADERC_REVISION=$SHADERC_REVISION"
+echo "JSONCPP_REVISION=$JSONCPP_REVISION"
 
 GLSLANG_URL=$(cat $ANDROIDBUILDDIR/glslang_url_android)
 SPIRV_TOOLS_URL=$(cat $ANDROIDBUILDDIR/spirv-tools_url_android)
 SPIRV_HEADERS_URL=$(cat $ANDROIDBUILDDIR/spirv-headers_url_android)
 SHADERC_URL=$(cat $ANDROIDBUILDDIR/shaderc_url_android)
+JSONCPP_URL=$(cat $ANDROIDBUILDDIR/jsoncpp_url_android)
 
 echo "GLSLANG_URL=$GLSLANG_URL"
 echo "SPIRV_TOOL_URLS_=$SPIRV_TOOLS_URL"
 echo "SPIRV_HEADERS_URL=$SPIRV_HEADERS_URL"
 echo "SHADERC_URL=$SHADERC_URL"
+echo "JSONCPP_URL=$JSONCPP_URL"
 
 if [[ $(uname) == "Linux" ]]; then
     cores="$(nproc || echo 4)"
 elif [[ $(uname) == "Darwin" ]]; then
     cores=$(sysctl -n hw.ncpu)
+fi
+
+#
+# Parse parameters
+#
+
+function printUsage {
+   echo "Supported parameters are:"
+   echo "    --abi <abi> (optional)"
+   echo
+   echo "i.e. ${0##*/} --abi arm64-v8a \\"
+   exit 1
+}
+
+if [[ $(($# % 2)) -ne 0 ]]
+then
+    echo Parameters must be provided in pairs.
+    echo parameter count = $#
+    echo
+    printUsage
+    exit 1
+fi
+
+while [[ $# -gt 0 ]]
+do
+    case $1 in
+        --abi)
+            abi="$2"
+            shift 2
+            ;;
+        *)
+            # unknown option
+            echo Unknown option: $1
+            echo
+            printUsage
+            exit 1
+            ;;
+    esac
+done
+
+echo abi=$abi
+if [[ -z $abi ]]
+then
+    echo No abi provided, so building for all supported abis.
 fi
 
 function create_glslang () {
@@ -111,6 +159,28 @@ function update_spirv-headers () {
    git checkout $SPIRV_HEADERS_REVISION
 }
 
+function create_jsoncpp () {
+   rm -rf ${BASEDIR}/jsoncpp
+   echo "Creating local jsoncpp repository (${BASEDIR}/jsoncpp)."
+   mkdir -p ${BASEDIR}/jsoncpp
+   cd ${BASEDIR}/jsoncpp
+   git clone ${JSONCPP_URL} .
+   git checkout ${JSONCPP_REVISION}
+}
+
+function update_jsoncpp () {
+   echo "Updating ${BASEDIR}/jsoncpp"
+   cd ${BASEDIR}/jsoncpp
+   git fetch --all
+   git checkout ${JSONCPP_REVISION}
+}
+
+function build_jsoncpp () {
+   echo "Building ${BASEDIR}/jsoncpp"
+   cd ${BASEDIR}/jsoncpp
+   python amalgamate.py
+}
+
 function create_shaderc () {
    rm -rf $BASEDIR/shaderc
    echo "Creating local shaderc repository ($BASEDIR/shaderc)."
@@ -135,7 +205,11 @@ function update_shaderc () {
 function build_shaderc () {
    echo "Building $BASEDIR/shaderc"
    cd $BASEDIR/shaderc/android_test
-   ndk-build THIRD_PARTY_PATH=../.. -j $cores
+   if [[ $abi ]]; then
+      ndk-build THIRD_PARTY_PATH=../.. APP_ABI=$abi -j $cores;
+   else
+      ndk-build THIRD_PARTY_PATH=../.. -j $cores;
+   fi
 }
 
 if [ ! -d "$BASEDIR/glslang" -o ! -d "$BASEDIR/glslang/.git" -o -d "$BASEDIR/glslang/.svn" ]; then
@@ -159,6 +233,12 @@ if [ ! -d "$BASEDIR/shaderc" -o ! -d "$BASEDIR/shaderc/.git" ]; then
 fi
 update_shaderc
 build_shaderc
+
+if [ ! -d "${BASEDIR}/jsoncpp" -o ! -d "${BASEDIR}/jsoncpp/.git" ]; then
+   create_jsoncpp
+fi
+update_jsoncpp
+build_jsoncpp
 
 echo ""
 echo "${0##*/} finished."

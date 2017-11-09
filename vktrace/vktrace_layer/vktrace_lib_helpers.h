@@ -229,24 +229,29 @@ static void rm_handle_from_mem_info(const VkDeviceMemory handle) {
 }
 
 static void add_alloc_memory_to_trace_packet(vktrace_trace_packet_header *pHeader, void **ppOut, const void *pIn) {
+    void **ppOutNext;
     while (pIn) {
         switch (((VkApplicationInfo *)pIn)->sType) {
             case VK_STRUCTURE_TYPE_DEDICATED_ALLOCATION_MEMORY_ALLOCATE_INFO_NV:
                 vktrace_add_buffer_to_trace_packet(pHeader, ppOut, sizeof(VkDedicatedAllocationMemoryAllocateInfoNV), pIn);
+                ppOutNext = (void **)&(((VkDedicatedAllocationMemoryAllocateInfoNV *)*ppOut)->pNext);
                 vktrace_finalize_buffer_address(pHeader, ppOut);
                 break;
             case VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO_NV:
                 vktrace_add_buffer_to_trace_packet(pHeader, ppOut, sizeof(VkExportMemoryAllocateInfoNV), pIn);
+                ppOutNext = (void **)&(((VkExportMemoryAllocateInfoNV *)*ppOut)->pNext);
                 vktrace_finalize_buffer_address(pHeader, ppOut);
                 break;
 #ifdef VK_USE_PLATFORM_WIN32_KHR
             case VK_STRUCTURE_TYPE_EXPORT_MEMORY_WIN32_HANDLE_INFO_NV:
                 vktrace_add_buffer_to_trace_packet(pHeader, ppOut, sizeof(VkExportMemoryWin32HandleInfoNV), pIn);
+                ppOutNext = (void **)&(((VkExportMemoryWin32HandleInfoNV *)*ppOut)->pNext);
                 vktrace_finalize_buffer_address(pHeader, ppOut);
                 break;
 
             case VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_NV:
                 vktrace_add_buffer_to_trace_packet(pHeader, ppOut, sizeof(VkImportMemoryWin32HandleInfoNV), pIn);
+                ppOutNext = (void **)&(((VkImportMemoryWin32HandleInfoNV *)*ppOut)->pNext);
                 vktrace_finalize_buffer_address(pHeader, ppOut);
                 break;
 #endif
@@ -254,40 +259,48 @@ static void add_alloc_memory_to_trace_packet(vktrace_trace_packet_header *pHeade
                 vktrace_LogError("vkAllocateMemory: unrecognized pNext list structure");
                 break;
         }
+        ppOut = ppOutNext;
         pIn = ((VkApplicationInfo *)pIn)->pNext;
     }
 }
 
 static void add_extension_to_createimage_trace_packet(vktrace_trace_packet_header *pHeader, void **ppOut, const void *pIn) {
+    void **ppOutNext;
     while (pIn) {
         switch (((VkExternalMemoryImageCreateInfoNV *)pIn)->sType) {
             case VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_NV:
                 vktrace_add_buffer_to_trace_packet(pHeader, ppOut, sizeof(VkExternalMemoryImageCreateInfoNV), pIn);
+                ppOutNext = (void **)&(((VkExternalMemoryImageCreateInfoNV *)*ppOut)->pNext);
                 vktrace_finalize_buffer_address(pHeader, ppOut);
                 break;
             case VK_STRUCTURE_TYPE_DEDICATED_ALLOCATION_IMAGE_CREATE_INFO_NV:
                 vktrace_add_buffer_to_trace_packet(pHeader, ppOut, sizeof(VkDedicatedAllocationImageCreateInfoNV), pIn);
+                ppOutNext = (void **)&(((VkDedicatedAllocationImageCreateInfoNV *)*ppOut)->pNext);
                 vktrace_finalize_buffer_address(pHeader, ppOut);
                 break;
             default:
                 vktrace_LogError("vkCreateImage: unrecognized pNext list structure");
                 break;
         }
+        ppOut = ppOutNext;
         pIn = ((VkExternalMemoryImageCreateInfoNV *)pIn)->pNext;
     }
 }
 
 static void add_extension_to_createbuffer_trace_packet(vktrace_trace_packet_header *pHeader, void **ppOut, const void *pIn) {
+    void **ppOutNext;
     while (pIn) {
         switch (((VkDedicatedAllocationBufferCreateInfoNV *)pIn)->sType) {
             case VK_STRUCTURE_TYPE_DEDICATED_ALLOCATION_BUFFER_CREATE_INFO_NV:
                 vktrace_add_buffer_to_trace_packet(pHeader, ppOut, sizeof(VkDedicatedAllocationBufferCreateInfoNV), pIn);
+                ppOutNext = (void **)&(((VkDedicatedAllocationBufferCreateInfoNV *)*ppOut)->pNext);
                 vktrace_finalize_buffer_address(pHeader, ppOut);
                 break;
             default:
                 vktrace_LogError("vkCreateBuffer: unrecognized pNext list structure");
                 break;
         }
+        ppOut = ppOutNext;
         pIn = ((VkDedicatedAllocationBufferCreateInfoNV *)pIn)->pNext;
     }
 }
@@ -336,6 +349,26 @@ static void add_create_ds_layout_to_trace_packet(vktrace_trace_packet_header *pH
     vktrace_finalize_buffer_address(pHeader, (void **)&((*ppOut)->pBindings));
     vktrace_finalize_buffer_address(pHeader, (void **)(ppOut));
     return;
+}
+
+// The accurate size of VkGraphicsPipelineCreateInfo can be got from
+// get_struct_chain_size, but it's needed to ROUNDUP_TO_4 because
+// VkGraphicsPipelineCreateInfo might include valid entry point name of shader.
+static size_t get_VkGraphicsPipelineCreateInfo_size_ROUNDUP_TO_4(const VkGraphicsPipelineCreateInfo *pCreateInfos) {
+    size_t entryPointNameLength = 0;
+    size_t struct_size = get_struct_chain_size(pCreateInfos);
+
+    if ((pCreateInfos->stageCount) && (pCreateInfos->pStages != nullptr)) {
+        VkPipelineShaderStageCreateInfo *pStage = const_cast<VkPipelineShaderStageCreateInfo *>(pCreateInfos->pStages);
+        for (uint32_t i = 0; i < pCreateInfos->stageCount; i++) {
+            if (pStage->pName) {
+                entryPointNameLength = strlen(pStage->pName) + 1;
+                struct_size += ROUNDUP_TO_4(entryPointNameLength) - entryPointNameLength;
+            }
+            ++pStage;
+        }
+    }
+    return struct_size;
 }
 
 static void add_VkGraphicsPipelineCreateInfos_to_trace_packet(vktrace_trace_packet_header *pHeader,
@@ -402,6 +435,35 @@ static void add_VkGraphicsPipelineCreateInfos_to_trace_packet(vktrace_trace_pack
             if (pParam[i].pRasterizationState) {
                 vktrace_add_buffer_to_trace_packet(pHeader, (void **)&(pPacket[i].pRasterizationState),
                                                    sizeof(VkPipelineRasterizationStateCreateInfo), pParam[i].pRasterizationState);
+                if (pParam[i].pRasterizationState->pNext != nullptr) {
+                    // there's an extension struct here, we need to handle it. Without the extension handling,
+                    // some tile crash during playback and the reason is the extension struct data is not
+                    // recorded during capture, so when playback, an invalid pNext point is given to driver
+                    // and cause crash. The whole handing include two parts:
+                    //    1. for capture, we need record the content of the extension struct.
+                    //    2. for playback, we need to make sure interpret the pNext pointer
+                    //       and load the extension struct.
+                    // The following source code is part 1, part 2 is in playback source code.
+
+                    // We don't know what type of extension struct here, so we first use
+                    // VkApplicationInfo type to cast, what we want to detect is its
+                    // sType which is included in all Vulkan struct definition.
+                    const VkApplicationInfo *pNextStruct =
+                        reinterpret_cast<const VkApplicationInfo *>(pParam[i].pRasterizationState->pNext);
+                    if (pNextStruct->sType ==
+                        VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_RASTERIZATION_ORDER_AMD) {  // it's an AMD extension.
+
+                        // add this extension struct to trace packet
+                        vktrace_add_buffer_to_trace_packet(pHeader, const_cast<void **>(&(pPacket[i].pRasterizationState->pNext)),
+                                                           sizeof(VkPipelineRasterizationStateRasterizationOrderAMD),
+                                                           pParam[i].pRasterizationState->pNext);
+                        vktrace_finalize_buffer_address(pHeader, const_cast<void **>(&(pPacket[i].pRasterizationState->pNext)));
+                    } else {
+                        // so far we only handle this extension, more extension
+                        // handling can be added here;
+                        assert(false);
+                    }
+                }
                 vktrace_finalize_buffer_address(pHeader, (void **)&(pPacket[i].pRasterizationState));
             }
             // MultiSample State

@@ -174,7 +174,29 @@ bool is_trim_trigger_enabled(enum enum_trim_trigger triggerType) {
 // return:
 //  char* value pointer to user defined hotkey string.
 //=========================================================================
-char *get_hotkey_string() { return getTraceTriggerOptionString(enum_trim_trigger::hotKey); }
+char *get_hotkey_string() {
+    static bool firstTimeRunning = true;
+    static char trim_trigger_hotkey[MAX_TRIM_TRIGGER_OPTION_STRING_LENGTH] = "";
+
+    if (firstTimeRunning) {
+        firstTimeRunning = false;
+        const char *trimHotKeyOption = getTraceTriggerOptionString(enum_trim_trigger::hotKey);
+
+        // the hotkey trigger option string could be <keyname> or
+        // <keyname>-<frameCount>, we seperate the two case by search
+        // "-" from the string.
+        const char *trimHotKeyFrames = strstr(trimHotKeyOption, "-");
+        if (trimHotKeyFrames) {
+            // if the trigger option string include "-", we get the hotkey by
+            // only picking the part string before "-";
+            size_t len = trimHotKeyFrames - trimHotKeyOption;
+            strncat(trim_trigger_hotkey, trimHotKeyOption, len);
+        } else {
+            strcpy(trim_trigger_hotkey, trimHotKeyOption);
+        }
+    }
+    return trim_trigger_hotkey;
+}
 
 #if defined(PLATFORM_LINUX)
 #if defined(ANDROID)
@@ -390,6 +412,45 @@ void initialize() {
         }
     }
     if ((!g_trimEnabled) && (trim::is_trim_trigger_enabled(trim::enum_trim_trigger::hotKey))) {
+
+        // There are two types of hotkey trigger, their command line option string
+        // are hotkey-<keyname> and hotkey-<keyname>-<frameCount>, the latter one
+        // means capture the next <frameCount> frames after pressing the hotkey
+        // once.
+        //
+        // Here we first get the hotkey option string, it's supposed to be <keyname>
+        // or <keyname>-<frameCount>, then we search "-" from the string. if include
+        // "-", it should not belong to the case of only <keyname> and  we need to
+        // handle hotkey-<keyname>-<frameCount>.
+        //
+        // the way of handling is we get frameCount here through parsing and save it
+        // to g_trimEndFrame, then when user press hotkey later, the frame counter at
+        // that time will be set to g_trimStartFrame and g_trimEndFrame will be added
+        // g_trimStartFrame.
+        //
+        // the following process is to get frameCount through parsing and save it to
+        // g_trimEndFrame. only valid value can be set to g_trimEndFrame, if the
+        // parsing meet any error, the g_trimEndFrame will keep it initial value
+        // UINT64_MAX which means the trim capture still stop by hotkey.
+        const char *trimHotKeyOption = getTraceTriggerOptionString(enum_trim_trigger::hotKey);
+        const char *trimHotKeyFrames = strstr(trimHotKeyOption,"-");
+        if (trimHotKeyFrames)
+        { //trimHotKeyOption include "-", we continue the parsing to get frameCount
+
+            uint32_t numFrames = 0;
+            trimHotKeyFrames++;//ignore the "-" symbol
+            if (!strstr(trimHotKeyFrames, "-"))
+            {
+                if (sscanf(trimHotKeyFrames, "%" PRIu32, &numFrames) == 1)
+                {
+                    //the frame number after hotkey press should not be 0 or negtive.
+                    if (numFrames > 0)
+                    {
+                        g_trimEndFrame = static_cast<uint64_t>(numFrames);
+                    }
+                }
+            }
+        }
         g_trimEnabled = true;
         g_trimIsPreTrim = true;
         g_trimIsInTrim = false;
@@ -790,10 +851,17 @@ void generateMapUnmap(bool makeCalls, VkDevice device, VkDeviceMemory memory, Vk
         // By creating the packet for UnmapMemory, we'll be adding the pData
         // buffer to it, which inherently copies it.
 
-        // need to adjust the pointer to ensure it points to the beginning of
-        // the image memory, which may NOT be
-        // the same as the offset of the mapped address.
-        void *bufferAddress = (BYTE *)pIsMappedAddress + (offset - isMappedOffset);
+        void *bufferAddress = NULL;
+        if (makeCalls) {
+            // No need to adjust the pointer when the memory is actually mapped in generate::vkMapMemory() because the
+            // pIsMappedAddress is re-populated to point to the beginning of the image memory.
+            bufferAddress = pIsMappedAddress;
+        } else {
+            // Need to adjust the pointer to ensure it points to the beginning of
+            // the image memory, which may NOT be
+            // the same as the offset of the mapped address.
+            bufferAddress = (BYTE *)pIsMappedAddress + (offset - isMappedOffset);
+        }
 
         // Actually unmap the memory if it wasn't already mapped by the
         // application
@@ -809,20 +877,48 @@ void snapshot_state_tracker() {
     vktrace_enter_critical_section(&trimStateTrackerLock);
     s_trimStateTrackerSnapshot = s_trimGlobalStateTracker;
 
-    // Copying all the buffers is a length process:
-    // 1a) Transition all images into host-readable state.
-    // 1b) Transition all buffers into host-readable state.
-    // 2a) Map, copy, unmap each image.
-    // 2b) Map, copy, unmap each buffer.
-    // 3a) Transition all the images back to their previous state.
-    // 3b) Transition all the images back to their previous state.
+    //
+    // Copying all the buffers is a length process, it include the following
+    // sub-processes:
+    //
+    // for (any image in all tracked images)
+    // {
+    //    1a) Transition the image into host - readable state.
+    //    2a) Map, copy, unmap the image.
+    //    3a) Transition the images back to their previous state.
+    // }
+    //
+    // for (any buffer in all tracked buffers)
+    // {
+    //    1b) Transition the buffers into host - readable state.
+    //    2b) Map, copy, unmap the buffer.
+    //    3b) Transition the buffer back to their previous state.
+    // }
+    //
     // 4) Destroy the command pools, command buffers, and fences.
+    //
+    // Please note: the above sub-process order arrangement include some
+    // consideration about driver limitation:
+    //
+    // Some driver has limitation on the max GPU memory allocations. For
+    // some title with heavily sub-allocation behavior, the staging memory
+    // allocations needed by trim will be a large number, the following
+    // sub-process order minimize the active GPU memory allocations needed
+    // by trim at same time, and avoid the allocations (needed by trim and
+    // by the title itself) beyond driver limitation. Otherwise, it cause
+    // some title hang problem due to fail to allocate memory.
 
-    // 1a) Transition all images into host-readable state.
+    // a) dump all images, the process include the following sub-process:
+    //    1a) Transition the image into host - readable state.
+    //    2a) Map, copy, unmap the image.
+    //    3a) Transition the image back to their previous state.
+    //
     for (auto imageIter = s_trimStateTrackerSnapshot.createdImages.begin();
          imageIter != s_trimStateTrackerSnapshot.createdImages.end(); imageIter++) {
         VkDevice device = imageIter->second.belongsToDevice;
         VkImage image = imageIter->first;
+
+        // 1a) Transition the image into host-readable state.
 
         if (device == VK_NULL_HANDLE) {
             // this is likely a swapchain image which we haven't associated a
@@ -1023,13 +1119,130 @@ void snapshot_state_tracker() {
         VkResult waitResult = mdd(device)->devTable.QueueWaitIdle(queue);
         assert(waitResult == VK_SUCCESS);
         if (waitResult != VK_SUCCESS) continue;
+
+        // 2a) Map, copy, unmap the image.
+        device = imageIter->second.belongsToDevice;
+        image = imageIter->first;
+
+        VkDeviceMemory memory = imageIter->second.ObjectInfo.Image.memory;
+        VkDeviceSize offset = imageIter->second.ObjectInfo.Image.memoryOffset;
+        VkDeviceSize size = ROUNDUP_TO_4(imageIter->second.ObjectInfo.Image.memorySize);
+
+        if (imageIter->second.ObjectInfo.Image.needsStagingBuffer) {
+            // Note that the staged memory object won't be in the state tracker,
+            // so we want to swap out the buffer and memory
+            // that will be mapped / unmapped.
+            StagingInfo staged = s_imageToStagedInfoMap[image];
+            memory = staged.memory;
+            offset = 0;
+
+            void *mappedAddress = NULL;
+
+            if (size != 0) {
+                generateMapUnmap(true, device, memory, offset, size, 0, mappedAddress,
+                                 &imageIter->second.ObjectInfo.Image.pMapMemoryPacket,
+                                 &imageIter->second.ObjectInfo.Image.pUnmapMemoryPacket);
+            }
+        } else {
+            auto memoryIter = s_trimStateTrackerSnapshot.createdDeviceMemorys.find(memory);
+
+            if (memoryIter != s_trimStateTrackerSnapshot.createdDeviceMemorys.end()) {
+                void *mappedAddress = memoryIter->second.ObjectInfo.DeviceMemory.mappedAddress;
+                VkDeviceSize mappedOffset = memoryIter->second.ObjectInfo.DeviceMemory.mappedOffset;
+                VkDeviceSize mappedSize = memoryIter->second.ObjectInfo.DeviceMemory.mappedSize;
+
+                if (size != 0) {
+                    // actually map the memory if it was not already mapped.
+                    bool bAlreadyMapped = (mappedAddress != NULL);
+                    if (bAlreadyMapped) {
+                        // I imagine there could be a scenario where the
+                        // application has persistently
+                        // mapped PART of the memory, which may not contain the
+                        // image that we're trying to copy right now.
+                        // In that case, there will be errors due to this code.
+                        // We know the range of memory that is mapped
+                        // so we should be able to confirm whether or not we get
+                        // into this situation.
+                        bAlreadyMapped = (offset >= mappedOffset && (offset + size) <= (mappedOffset + mappedSize));
+                    }
+
+                    generateMapUnmap(!bAlreadyMapped, device, memory, offset, size, 0, mappedAddress,
+                                     &imageIter->second.ObjectInfo.Image.pMapMemoryPacket,
+                                     &imageIter->second.ObjectInfo.Image.pUnmapMemoryPacket);
+                }
+            }
+        }
+
+        // 3a) Transition the image back to their previous state.
+        device = imageIter->second.belongsToDevice;
+        image = imageIter->first;
+
+        queueFamilyIndex = imageIter->second.ObjectInfo.Image.queueFamilyIndex;
+
+        if (imageIter->second.ObjectInfo.Image.sharingMode == VK_SHARING_MODE_CONCURRENT) {
+            queueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        }
+
+        commandPool = getCommandPoolFromDevice(device, queueFamilyIndex);
+        commandBuffer = getCommandBufferFromDevice(device, commandPool);
+
+        // Begin the command buffer
+        memset(reinterpret_cast<void *>(&commandBufferBeginInfo), 0, sizeof(VkCommandBufferBeginInfo));
+        commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        commandBufferBeginInfo.pNext = NULL;
+        commandBufferBeginInfo.pInheritanceInfo = NULL;
+        commandBufferBeginInfo.flags = 0;
+        result = mdd(device)->devTable.BeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+        assert(result == VK_SUCCESS);
+        if (result != VK_SUCCESS) continue;
+
+        // only need to restore the images that did NOT need a staging buffer
+        if (imageIter->second.ObjectInfo.Image.needsStagingBuffer) {
+            // delete the staging objects
+            StagingInfo staged = s_imageToStagedInfoMap[image];
+            mdd(device)->devTable.DestroyBuffer(device, staged.buffer, NULL);
+            mdd(device)->devTable.FreeMemory(device, staged.memory, NULL);
+        } else {
+            transitionImage(device, commandBuffer, image, VK_ACCESS_HOST_READ_BIT, imageIter->second.ObjectInfo.Image.accessFlags,
+                            queueFamilyIndex, imageIter->second.ObjectInfo.Image.mostRecentLayout,
+                            imageIter->second.ObjectInfo.Image.mostRecentLayout, imageIter->second.ObjectInfo.Image.aspectMask,
+                            imageIter->second.ObjectInfo.Image.arrayLayers, imageIter->second.ObjectInfo.Image.mipLevels);
+        }
+
+        // End the CommandBuffer
+        mdd(device)->devTable.EndCommandBuffer(commandBuffer);
+
+        // now submit the command buffer
+        memset(reinterpret_cast<void *>(&submitInfo), 0, sizeof(VkSubmitInfo));
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.pNext = NULL;
+        submitInfo.waitSemaphoreCount = 0;
+        submitInfo.pWaitSemaphores = NULL;
+        submitInfo.pWaitDstStageMask = NULL;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+        submitInfo.signalSemaphoreCount = 0;
+        submitInfo.pSignalSemaphores = NULL;
+
+        // Submit the queue and wait for it to complete
+        queue = trim::get_DeviceQueue(device, queueFamilyIndex, 0);
+
+        mdd(device)->devTable.QueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+        waitResult = mdd(device)->devTable.QueueWaitIdle(queue);
+        assert(waitResult == VK_SUCCESS);
     }
 
-    // 1b) Transition all buffers into host-readable state.
+    // b) Dump all buffers, the process include the following sub-process:
+    //    1b) Transition the buffer into host - readable state.
+    //    2b) Map, copy, unmap the buffer.
+    //    3b) Transition the buffer back to their previous state.
     for (auto bufferIter = s_trimStateTrackerSnapshot.createdBuffers.begin();
          bufferIter != s_trimStateTrackerSnapshot.createdBuffers.end(); bufferIter++) {
         VkDevice device = bufferIter->second.belongsToDevice;
         VkBuffer buffer = static_cast<VkBuffer>(bufferIter->first);
+
+        // 1b) Transition the buffer into host-readable state.
+
         uint32_t queueFamilyIndex = bufferIter->second.ObjectInfo.Buffer.queueFamilyIndex;
 
         VkCommandPool commandPool = getCommandPoolFromDevice(device, queueFamilyIndex);
@@ -1099,75 +1312,11 @@ void snapshot_state_tracker() {
         VkResult waitResult = mdd(device)->devTable.QueueWaitIdle(queue);
         assert(waitResult == VK_SUCCESS);
         if (waitResult != VK_SUCCESS) continue;
-    }
 
-    // 2a) Map, copy, unmap each image.
-    for (auto imageIter = s_trimStateTrackerSnapshot.createdImages.begin();
-         imageIter != s_trimStateTrackerSnapshot.createdImages.end(); imageIter++) {
-        VkDevice device = imageIter->second.belongsToDevice;
-        VkImage image = imageIter->first;
+        // 2b) Map, copy, unmap the buffer.
 
-        if (device == VK_NULL_HANDLE) {
-            // this is likely a swapchain image which we haven't associated a
-            // device to, just skip over it.
-            continue;
-        }
-
-        VkDeviceMemory memory = imageIter->second.ObjectInfo.Image.memory;
-        VkDeviceSize offset = imageIter->second.ObjectInfo.Image.memoryOffset;
-        VkDeviceSize size = ROUNDUP_TO_4(imageIter->second.ObjectInfo.Image.memorySize);
-
-        if (imageIter->second.ObjectInfo.Image.needsStagingBuffer) {
-            // Note that the staged memory object won't be in the state tracker,
-            // so we want to swap out the buffer and memory
-            // that will be mapped / unmapped.
-            StagingInfo staged = s_imageToStagedInfoMap[image];
-            memory = staged.memory;
-            offset = 0;
-
-            void *mappedAddress = NULL;
-
-            if (size != 0) {
-                generateMapUnmap(true, device, memory, offset, size, 0, mappedAddress,
-                                 &imageIter->second.ObjectInfo.Image.pMapMemoryPacket,
-                                 &imageIter->second.ObjectInfo.Image.pUnmapMemoryPacket);
-            }
-        } else {
-            auto memoryIter = s_trimStateTrackerSnapshot.createdDeviceMemorys.find(memory);
-
-            if (memoryIter != s_trimStateTrackerSnapshot.createdDeviceMemorys.end()) {
-                void *mappedAddress = memoryIter->second.ObjectInfo.DeviceMemory.mappedAddress;
-                VkDeviceSize mappedOffset = memoryIter->second.ObjectInfo.DeviceMemory.mappedOffset;
-                VkDeviceSize mappedSize = memoryIter->second.ObjectInfo.DeviceMemory.mappedSize;
-
-                if (size != 0) {
-                    // actually map the memory if it was not already mapped.
-                    bool bAlreadyMapped = (mappedAddress != NULL);
-                    if (bAlreadyMapped) {
-                        // I imagine there could be a scenario where the
-                        // application has persistently
-                        // mapped PART of the memory, which may not contain the
-                        // image that we're trying to copy right now.
-                        // In that case, there will be errors due to this code.
-                        // We know the range of memory that is mapped
-                        // so we should be able to confirm whether or not we get
-                        // into this situation.
-                        bAlreadyMapped = (offset >= mappedOffset && (offset + size) <= (mappedOffset + mappedSize));
-                    }
-
-                    generateMapUnmap(!bAlreadyMapped, device, memory, offset, size, 0, mappedAddress,
-                                     &imageIter->second.ObjectInfo.Image.pMapMemoryPacket,
-                                     &imageIter->second.ObjectInfo.Image.pUnmapMemoryPacket);
-                }
-            }
-        }
-    }
-
-    // 2b) Map, copy, unmap each buffer.
-    for (auto bufferIter = s_trimStateTrackerSnapshot.createdBuffers.begin();
-         bufferIter != s_trimStateTrackerSnapshot.createdBuffers.end(); bufferIter++) {
-        VkDevice device = bufferIter->second.belongsToDevice;
-        VkBuffer buffer = bufferIter->first;
+        device = bufferIter->second.belongsToDevice;
+        buffer = bufferIter->first;
 
         VkDeviceMemory memory = bufferIter->second.ObjectInfo.Buffer.memory;
         VkDeviceSize offset = bufferIter->second.ObjectInfo.Buffer.memoryOffset;
@@ -1214,99 +1363,24 @@ void snapshot_state_tracker() {
                              &bufferIter->second.ObjectInfo.Buffer.pMapMemoryPacket,
                              &bufferIter->second.ObjectInfo.Buffer.pUnmapMemoryPacket);
         }
-    }
 
-    // 3a) Transition all the images back to their previous state.
-    for (auto imageIter = s_trimStateTrackerSnapshot.createdImages.begin();
-         imageIter != s_trimStateTrackerSnapshot.createdImages.end(); imageIter++) {
-        VkDevice device = imageIter->second.belongsToDevice;
-        VkImage image = imageIter->first;
+        // 3b) Transition the buffer back to their previous state.
 
-        if (device == VK_NULL_HANDLE) {
-            // this is likely a swapchain image which we haven't associated a
-            // device to, just skip over it.
-            continue;
-        }
+        device = bufferIter->second.belongsToDevice;
+        buffer = static_cast<VkBuffer>(bufferIter->first);
 
-        uint32_t queueFamilyIndex = imageIter->second.ObjectInfo.Image.queueFamilyIndex;
+        queueFamilyIndex = bufferIter->second.ObjectInfo.Buffer.queueFamilyIndex;
 
-        if (imageIter->second.ObjectInfo.Image.sharingMode == VK_SHARING_MODE_CONCURRENT) {
-            queueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        }
-
-        VkCommandPool commandPool = getCommandPoolFromDevice(device, queueFamilyIndex);
-        VkCommandBuffer commandBuffer = getCommandBufferFromDevice(device, commandPool);
+        commandPool = getCommandPoolFromDevice(device, queueFamilyIndex);
+        commandBuffer = getCommandBufferFromDevice(device, commandPool);
 
         // Begin the command buffer
-        VkCommandBufferBeginInfo commandBufferBeginInfo;
+        memset(reinterpret_cast<void *>(&commandBufferBeginInfo), 0, sizeof(VkCommandBufferBeginInfo));
         commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         commandBufferBeginInfo.pNext = NULL;
         commandBufferBeginInfo.pInheritanceInfo = NULL;
         commandBufferBeginInfo.flags = 0;
-        VkResult result = mdd(device)->devTable.BeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
-        assert(result == VK_SUCCESS);
-        if (result != VK_SUCCESS) continue;
-
-        // only need to restore the images that did NOT need a staging buffer
-        if (imageIter->second.ObjectInfo.Image.needsStagingBuffer) {
-            // delete the staging objects
-            StagingInfo staged = s_imageToStagedInfoMap[image];
-            mdd(device)->devTable.DestroyBuffer(device, staged.buffer, NULL);
-            mdd(device)->devTable.FreeMemory(device, staged.memory, NULL);
-        } else {
-            transitionImage(device, commandBuffer, image, VK_ACCESS_HOST_READ_BIT, imageIter->second.ObjectInfo.Image.accessFlags,
-                            queueFamilyIndex, imageIter->second.ObjectInfo.Image.mostRecentLayout,
-                            imageIter->second.ObjectInfo.Image.mostRecentLayout, imageIter->second.ObjectInfo.Image.aspectMask,
-                            imageIter->second.ObjectInfo.Image.arrayLayers, imageIter->second.ObjectInfo.Image.mipLevels);
-        }
-
-        // End the CommandBuffer
-        mdd(device)->devTable.EndCommandBuffer(commandBuffer);
-
-        // now submit the command buffer
-        VkSubmitInfo submitInfo = {};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.pNext = NULL;
-        submitInfo.waitSemaphoreCount = 0;
-        submitInfo.pWaitSemaphores = NULL;
-        submitInfo.pWaitDstStageMask = NULL;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffer;
-        submitInfo.signalSemaphoreCount = 0;
-        submitInfo.pSignalSemaphores = NULL;
-
-        // Submit the queue and wait for it to complete
-        VkQueue queue = trim::get_DeviceQueue(device, queueFamilyIndex, 0);
-
-        mdd(device)->devTable.QueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-        VkResult waitResult = mdd(device)->devTable.QueueWaitIdle(queue);
-        assert(waitResult == VK_SUCCESS);
-        if (waitResult != VK_SUCCESS) continue;
-    }
-
-    // 3b) Transition all the buffers back to their previous state.
-    for (auto bufferIter = s_trimStateTrackerSnapshot.createdBuffers.begin();
-         bufferIter != s_trimStateTrackerSnapshot.createdBuffers.end(); bufferIter++) {
-        VkDevice device = bufferIter->second.belongsToDevice;
-        VkBuffer buffer = static_cast<VkBuffer>(bufferIter->first);
-
-        uint32_t queueFamilyIndex = bufferIter->second.ObjectInfo.Buffer.queueFamilyIndex;
-
-        // if (imageIter->second.ObjectInfo.Image.sharingMode ==
-        //    VK_SHARING_MODE_CONCURRENT) {
-        //    queueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        //}
-
-        VkCommandPool commandPool = getCommandPoolFromDevice(device, queueFamilyIndex);
-        VkCommandBuffer commandBuffer = getCommandBufferFromDevice(device, commandPool);
-
-        // Begin the command buffer
-        VkCommandBufferBeginInfo commandBufferBeginInfo;
-        commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        commandBufferBeginInfo.pNext = NULL;
-        commandBufferBeginInfo.pInheritanceInfo = NULL;
-        commandBufferBeginInfo.flags = 0;
-        VkResult result = mdd(device)->devTable.BeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+        result = mdd(device)->devTable.BeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
         assert(result == VK_SUCCESS);
         if (result != VK_SUCCESS) continue;
 
@@ -1325,7 +1399,7 @@ void snapshot_state_tracker() {
         mdd(device)->devTable.EndCommandBuffer(commandBuffer);
 
         // now submit the command buffer
-        VkSubmitInfo submitInfo = {};
+        memset(reinterpret_cast<void *>(&submitInfo), 0, sizeof(VkSubmitInfo));
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.pNext = NULL;
         submitInfo.waitSemaphoreCount = 0;
@@ -1337,14 +1411,12 @@ void snapshot_state_tracker() {
         submitInfo.pSignalSemaphores = NULL;
 
         // Submit the queue and wait for it to complete
-        VkQueue queue = trim::get_DeviceQueue(device, queueFamilyIndex, 0);
+        queue = trim::get_DeviceQueue(device, queueFamilyIndex, 0);
 
         mdd(device)->devTable.QueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-        VkResult waitResult = mdd(device)->devTable.QueueWaitIdle(queue);
+        waitResult = mdd(device)->devTable.QueueWaitIdle(queue);
         assert(waitResult == VK_SUCCESS);
-        if (waitResult != VK_SUCCESS) continue;
     }
-
     // 4) Destroy the command pools / command buffers and fences
     for (auto deviceIter = s_trimStateTrackerSnapshot.createdDevices.begin();
          deviceIter != s_trimStateTrackerSnapshot.createdDevices.end(); deviceIter++) {
@@ -1484,6 +1556,232 @@ ObjectInfo &add_Device_object(VkDevice var) {
 }
 
 //=========================================================================
+// The method can be used to query all specific type vulkan objects belong
+// to a device. The query result will be packed into an input vector and
+// return to the caller.
+//
+// \param result_objects, the input vector which is used to store the query
+// result.
+//
+// \param object_map, the input map object which include trim track info of
+// all vulkan objects of the specific type, the method will check every one
+// item in this map to find out which object is created on the device.
+//
+// \param device, the input vulkan device, the method will query all specific
+// type objects belong to this device.
+//
+// \tparam object_class, this is the class type that the method query all
+// objects of this type, it can be QueryPool, Event, Fence and all trim
+// tracked vulkan classes.
+//=========================================================================
+template <class object_class>
+void get_device_objects(VkDevice device, const std::unordered_map<object_class, ObjectInfo> &object_map,
+                        std::vector<object_class> &result_objects) {
+    for (auto info = object_map.begin(); info != object_map.end(); ++info) {
+        if (info->second.belongsToDevice == device) {
+            result_objects.push_back(info->first);
+        }
+    }
+}
+
+//=========================================================================
+// The method can be used to delete all vulkan objects that currently belong
+// to the device. For every trim tracked objects belong to the device, the
+// method delete all these objects one type by one type. it first delete
+// all QueryPool objects, then Event, Fence, Semaphore......CommandPool.
+//
+// For every class type, it first query all objects of this class for the
+// device, then delete all of them by the query result.
+//
+// \param device, this is the device that this method will delete all
+// assossiate objects based on it.
+//=========================================================================
+void delete_objects_for_destroy_device(VkDevice device) {
+    size_t delete_objects_number = 0;
+    // QueryPool
+    std::vector<VkQueryPool> QueryPoolsToRemove;
+    get_device_objects<VkQueryPool>(device, s_trimGlobalStateTracker.createdQueryPools, QueryPoolsToRemove);
+    for (size_t i = 0; i < QueryPoolsToRemove.size(); i++) {
+        trim::remove_QueryPool_object(QueryPoolsToRemove[i]);
+    }
+    delete_objects_number += QueryPoolsToRemove.size();
+
+    // Event
+    std::vector<VkEvent> EventsToRemove;
+    get_device_objects<VkEvent>(device, s_trimGlobalStateTracker.createdEvents, EventsToRemove);
+    for (size_t i = 0; i < EventsToRemove.size(); i++) {
+        trim::remove_Event_object(EventsToRemove[i]);
+    }
+    delete_objects_number += EventsToRemove.size();
+
+    // Fence
+    std::vector<VkFence> FencesToRemove;
+    get_device_objects<VkFence>(device, s_trimGlobalStateTracker.createdFences, FencesToRemove);
+    for (size_t i = 0; i < FencesToRemove.size(); i++) {
+        trim::remove_Fence_object(FencesToRemove[i]);
+    }
+    delete_objects_number += FencesToRemove.size();
+
+    // Semaphore
+    std::vector<VkSemaphore> SemaphoresToRemove;
+    get_device_objects<VkSemaphore>(device, s_trimGlobalStateTracker.createdSemaphores, SemaphoresToRemove);
+    for (size_t i = 0; i < SemaphoresToRemove.size(); i++) {
+        trim::remove_Semaphore_object(SemaphoresToRemove[i]);
+    }
+    delete_objects_number += SemaphoresToRemove.size();
+
+    // Framebuffer
+    std::vector<VkFramebuffer> FramebuffersToRemove;
+    get_device_objects<VkFramebuffer>(device, s_trimGlobalStateTracker.createdFramebuffers, FramebuffersToRemove);
+    for (size_t i = 0; i < FramebuffersToRemove.size(); i++) {
+        trim::remove_Framebuffer_object(FramebuffersToRemove[i]);
+    }
+    delete_objects_number += FramebuffersToRemove.size();
+
+    // DescriptorSet
+    std::vector<VkDescriptorSet> DescriptorSetsToRemove;
+    get_device_objects<VkDescriptorSet>(device, s_trimGlobalStateTracker.createdDescriptorSets, DescriptorSetsToRemove);
+    for (size_t i = 0; i < DescriptorSetsToRemove.size(); i++) {
+        trim::remove_DescriptorSet_object(DescriptorSetsToRemove[i]);
+    }
+    delete_objects_number += DescriptorSetsToRemove.size();
+
+    // DescriptorPool
+    std::vector<VkDescriptorPool> DescriptorPoolsToRemove;
+    get_device_objects<VkDescriptorPool>(device, s_trimGlobalStateTracker.createdDescriptorPools, DescriptorPoolsToRemove);
+    for (size_t i = 0; i < DescriptorPoolsToRemove.size(); i++) {
+        trim::remove_DescriptorPool_object(DescriptorPoolsToRemove[i]);
+    }
+    delete_objects_number += DescriptorPoolsToRemove.size();
+
+    // Pipeline
+    std::vector<VkPipeline> PipelinesToRemove;
+    get_device_objects<VkPipeline>(device, s_trimGlobalStateTracker.createdPipelines, PipelinesToRemove);
+    for (size_t i = 0; i < PipelinesToRemove.size(); i++) {
+        trim::remove_Pipeline_object(PipelinesToRemove[i]);
+    }
+    delete_objects_number += PipelinesToRemove.size();
+
+    // PipelineCache
+    std::vector<VkPipelineCache> PipelineCachesToRemove;
+    get_device_objects<VkPipelineCache>(device, s_trimGlobalStateTracker.createdPipelineCaches, PipelineCachesToRemove);
+    for (size_t i = 0; i < PipelineCachesToRemove.size(); i++) {
+        trim::remove_PipelineCache_object(PipelineCachesToRemove[i]);
+    }
+    delete_objects_number += PipelineCachesToRemove.size();
+
+    // ShaderModule
+    std::vector<VkShaderModule> ShaderModulesToRemove;
+    get_device_objects<VkShaderModule>(device, s_trimGlobalStateTracker.createdShaderModules, ShaderModulesToRemove);
+    for (size_t i = 0; i < ShaderModulesToRemove.size(); i++) {
+        trim::remove_ShaderModule_object(ShaderModulesToRemove[i]);
+    }
+    delete_objects_number += ShaderModulesToRemove.size();
+
+    // RenderPass
+    std::vector<VkRenderPass> RenderPasssToRemove;
+    get_device_objects<VkRenderPass>(device, s_trimGlobalStateTracker.createdRenderPasss, RenderPasssToRemove);
+    for (size_t i = 0; i < RenderPasssToRemove.size(); i++) {
+        trim::remove_RenderPass_object(RenderPasssToRemove[i]);
+    }
+    delete_objects_number += RenderPasssToRemove.size();
+
+    // PipelineLayout
+    std::vector<VkPipelineLayout> PipelineLayoutsToRemove;
+    get_device_objects<VkPipelineLayout>(device, s_trimGlobalStateTracker.createdPipelineLayouts, PipelineLayoutsToRemove);
+    for (size_t i = 0; i < PipelineLayoutsToRemove.size(); i++) {
+        trim::remove_PipelineLayout_object(PipelineLayoutsToRemove[i]);
+    }
+    delete_objects_number += PipelineLayoutsToRemove.size();
+
+    // DescriptorSetLayout
+    std::vector<VkDescriptorSetLayout> DescriptorSetLayoutsToRemove;
+    get_device_objects<VkDescriptorSetLayout>(device, s_trimGlobalStateTracker.createdDescriptorSetLayouts,
+                                              DescriptorSetLayoutsToRemove);
+    for (size_t i = 0; i < DescriptorSetLayoutsToRemove.size(); i++) {
+        trim::remove_DescriptorSetLayout_object(DescriptorSetLayoutsToRemove[i]);
+    }
+    delete_objects_number += DescriptorSetLayoutsToRemove.size();
+
+    // Sampler
+    std::vector<VkSampler> SamplersToRemove;
+    get_device_objects<VkSampler>(device, s_trimGlobalStateTracker.createdSamplers, SamplersToRemove);
+    for (size_t i = 0; i < SamplersToRemove.size(); i++) {
+        trim::remove_Sampler_object(SamplersToRemove[i]);
+    }
+    delete_objects_number += SamplersToRemove.size();
+
+    // Buffer
+    std::vector<VkBuffer> BuffersToRemove;
+    get_device_objects<VkBuffer>(device, s_trimGlobalStateTracker.createdBuffers, BuffersToRemove);
+    for (size_t i = 0; i < BuffersToRemove.size(); i++) {
+        trim::remove_Buffer_object(BuffersToRemove[i]);
+    }
+    delete_objects_number += BuffersToRemove.size();
+
+    // BufferView
+    std::vector<VkBufferView> BufferViewsToRemove;
+    get_device_objects<VkBufferView>(device, s_trimGlobalStateTracker.createdBufferViews, BufferViewsToRemove);
+    for (size_t i = 0; i < BufferViewsToRemove.size(); i++) {
+        trim::remove_BufferView_object(BufferViewsToRemove[i]);
+    }
+    delete_objects_number += BufferViewsToRemove.size();
+
+    // Image
+    std::vector<VkImage> ImagesToRemove;
+    get_device_objects<VkImage>(device, s_trimGlobalStateTracker.createdImages, ImagesToRemove);
+    for (size_t i = 0; i < ImagesToRemove.size(); i++) {
+        trim::remove_Image_object(ImagesToRemove[i]);
+    }
+    delete_objects_number += ImagesToRemove.size();
+
+    // ImageView
+    std::vector<VkImageView> ImageViewsToRemove;
+    get_device_objects<VkImageView>(device, s_trimGlobalStateTracker.createdImageViews, ImageViewsToRemove);
+    for (size_t i = 0; i < ImageViewsToRemove.size(); i++) {
+        trim::remove_ImageView_object(ImageViewsToRemove[i]);
+    }
+    delete_objects_number += ImageViewsToRemove.size();
+
+    // DeviceMemory
+    std::vector<VkDeviceMemory> DeviceMemorysToRemove;
+    get_device_objects<VkDeviceMemory>(device, s_trimGlobalStateTracker.createdDeviceMemorys, DeviceMemorysToRemove);
+    for (size_t i = 0; i < DeviceMemorysToRemove.size(); i++) {
+        trim::remove_DeviceMemory_object(DeviceMemorysToRemove[i]);
+    }
+    delete_objects_number += DeviceMemorysToRemove.size();
+
+    // SwapchainKHR
+    std::vector<VkSwapchainKHR> SwapchainKHRsToRemove;
+    get_device_objects<VkSwapchainKHR>(device, s_trimGlobalStateTracker.createdSwapchainKHRs, SwapchainKHRsToRemove);
+    for (size_t i = 0; i < SwapchainKHRsToRemove.size(); i++) {
+        trim::remove_SwapchainKHR_object(SwapchainKHRsToRemove[i]);
+    }
+    delete_objects_number += SwapchainKHRsToRemove.size();
+
+    // CommandBuffer
+    std::vector<VkCommandBuffer> CommandBuffersToRemove;
+    get_device_objects<VkCommandBuffer>(device, s_trimGlobalStateTracker.createdCommandBuffers, CommandBuffersToRemove);
+    for (size_t i = 0; i < CommandBuffersToRemove.size(); i++) {
+        trim::remove_CommandBuffer_object(CommandBuffersToRemove[i]);
+    }
+    delete_objects_number += CommandBuffersToRemove.size();
+
+    // CommandPool
+    std::vector<VkCommandPool> CommandPoolsToRemove;
+    get_device_objects<VkCommandPool>(device, s_trimGlobalStateTracker.createdCommandPools, CommandPoolsToRemove);
+    for (size_t i = 0; i < CommandPoolsToRemove.size(); i++) {
+        trim::remove_CommandPool_object(CommandPoolsToRemove[i]);
+    }
+    delete_objects_number += CommandPoolsToRemove.size();
+
+    if (delete_objects_number != 0) {
+        vktrace_LogWarning("Device destroyed but %d child objects were not destroyed.",
+                           delete_objects_number);
+    }
+}
+
+//=========================================================================
 void remove_Device_object(VkDevice var) {
     vktrace_enter_critical_section(&trimStateTrackerLock);
 
@@ -1502,6 +1800,32 @@ void remove_Device_object(VkDevice var) {
         // If vktrace is in the middle of a trim, then we want to also generate calls to destroy any objects that have not yet been
         // destroyed by the app.
         add_destroy_device_object_packets(var);
+    } else {
+        // If vktrace is not in the middle of a trim, that means it's in
+        // pre-trim, and the target app destroy the device before we start
+        // to trim (hot-key not pressed until now or it haven't reach
+        // the start-frame), the device object will not be used later, so
+        // we should not include related creation call for the device
+        // in final trimmed trace file. not only this device, any objects
+        // if created base on the device should be also excluded in final
+        // trimmed trace file. We should remove all these associate
+        // objects from trim track system to avoid generating any creation
+        // call for them.
+        //
+        // If a target app destroys a device, it should already have
+        // destroyed all objects based on the device. But some apps destroy
+        // device without first destroying objects based on the device.
+        //
+        // Such behavior causes a problem if we only delete these associated
+        // objects in corresponding destroy call, because target app
+        // doesn't call these before destroy the device, we end up
+        // generating all associate objects creation. When playback the
+        // trimmed trace file, vkreplay will fail to remap the device when
+        // it create those associate objects and output errors. So here
+        // we delete all associate objects of the device from trim track
+        // system to avoid any such creation call be included in final
+        // trimmed trace file.
+        delete_objects_for_destroy_device(var);
     }
 
     s_trimGlobalStateTracker.remove_Device(var);
@@ -2266,6 +2590,14 @@ void write_all_referenced_object_calls() {
 
     // PhysicalDevice memory and queue family properties
     for (auto obj = stateTracker.createdPhysicalDevices.begin(); obj != stateTracker.createdPhysicalDevices.end(); obj++) {
+        if (obj->second.ObjectInfo.PhysicalDevice.pGetPhysicalDevicePropertiesPacket != nullptr) {
+            // Generate GetPhysicalDeviceProperties Packet. It's needed by portability
+            // process in vkAllocateMemory during playback.
+            vktrace_write_trace_packet(obj->second.ObjectInfo.PhysicalDevice.pGetPhysicalDevicePropertiesPacket,
+                                       vktrace_trace_get_trace_file());
+            vktrace_delete_trace_packet(&(obj->second.ObjectInfo.PhysicalDevice.pGetPhysicalDevicePropertiesPacket));
+        }
+
         if (obj->second.ObjectInfo.PhysicalDevice.pGetPhysicalDeviceMemoryPropertiesPacket != nullptr) {
             vktrace_write_trace_packet(obj->second.ObjectInfo.PhysicalDevice.pGetPhysicalDeviceMemoryPropertiesPacket,
                                        vktrace_trace_get_trace_file());
@@ -3086,6 +3418,16 @@ void write_all_referenced_object_calls() {
         for (auto setObj = stateTracker.createdDescriptorSets.begin(); setObj != stateTracker.createdDescriptorSets.end();
              setObj++) {
             if (setObj->second.belongsToDevice == (VkDevice)deviceObj->first) {
+                // when trim track vkAllocateDescriptorSets, it create numBindings
+                // WriteDescriptorSets and CopyDescriptorSets to record the binding
+                // change, here we will use these recorded data of changed binding
+                // to generate vkUpdateDescriptorSets packet for playback to
+                // update/restore the descriptorSets state when starting trim.
+                // descriptorWriteCount and descriptorCopyCount all <= numBindings.
+                // they are used to indicate so far how many bindings of this
+                // descriptorset has been updated, if we start to trim at a location
+                // close to title's beginning, that's very possible not all bindings
+                // has been updated.
                 uint32_t descriptorWriteCount = setObj->second.ObjectInfo.DescriptorSet.writeDescriptorCount;
                 uint32_t descriptorCopyCount = setObj->second.ObjectInfo.DescriptorSet.copyDescriptorCount;
                 VkWriteDescriptorSet *pDescriptorWrites = setObj->second.ObjectInfo.DescriptorSet.pWriteDescriptorSets;
@@ -3217,16 +3559,34 @@ void write_all_referenced_object_calls() {
 
     // write out the packets to recreate the command buffers that were allocated
     vktrace_enter_critical_section(&trimCommandBufferPacketLock);
+    // Secondary command buffers should be replayed before primary command buffers.
+    // 1. Go through secondary command buffers
     for (auto cmdBuffer = stateTracker.createdCommandBuffers.begin(); cmdBuffer != stateTracker.createdCommandBuffers.end();
          ++cmdBuffer) {
-        std::list<vktrace_trace_packet_header *> &packets = stateTracker.m_cmdBufferPackets[(VkCommandBuffer)cmdBuffer->first];
+        if (cmdBuffer->second.ObjectInfo.CommandBuffer.level == VK_COMMAND_BUFFER_LEVEL_SECONDARY) {
+            std::list<vktrace_trace_packet_header *> &packets = stateTracker.m_cmdBufferPackets[(VkCommandBuffer)cmdBuffer->first];
 
-        for (std::list<vktrace_trace_packet_header *>::iterator packet = packets.begin(); packet != packets.end(); ++packet) {
-            vktrace_trace_packet_header *pHeader = *packet;
-            vktrace_write_trace_packet(pHeader, vktrace_trace_get_trace_file());
-            vktrace_delete_trace_packet(&pHeader);
+            for (std::list<vktrace_trace_packet_header *>::iterator packet = packets.begin(); packet != packets.end(); ++packet) {
+                vktrace_trace_packet_header *pHeader = *packet;
+                vktrace_write_trace_packet(pHeader, vktrace_trace_get_trace_file());
+                vktrace_delete_trace_packet(&pHeader);
+            }
+            packets.clear();
         }
-        packets.clear();
+    }
+    // 2. Go through primary command buffers
+    for (auto cmdBuffer = stateTracker.createdCommandBuffers.begin(); cmdBuffer != stateTracker.createdCommandBuffers.end();
+         ++cmdBuffer) {
+        if (cmdBuffer->second.ObjectInfo.CommandBuffer.level == VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
+            std::list<vktrace_trace_packet_header *> &packets = stateTracker.m_cmdBufferPackets[(VkCommandBuffer)cmdBuffer->first];
+
+            for (std::list<vktrace_trace_packet_header *>::iterator packet = packets.begin(); packet != packets.end(); ++packet) {
+                vktrace_trace_packet_header *pHeader = *packet;
+                vktrace_write_trace_packet(pHeader, vktrace_trace_get_trace_file());
+                vktrace_delete_trace_packet(&pHeader);
+            }
+            packets.clear();
+        }
     }
     vktrace_leave_critical_section(&trimCommandBufferPacketLock);
 

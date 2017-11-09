@@ -27,6 +27,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     option(BUILD_WSI_WAYLAND_SUPPORT "Build Wayland WSI support" ON)
     option(BUILD_WSI_MIR_SUPPORT "Build Mir WSI support" OFF)
     set(DEMOS_WSI_SELECTION "XCB" CACHE STRING "Select WSI target for demos (XCB, XLIB, WAYLAND, MIR, DISPLAY)")
+    set(VKREPLAY_WSI_SELECTION "XCB" CACHE STRING "Select WSI target for vkreplay (XCB, WAYLAND, DISPLAY)")
+
+    # Need to turn WSI_SELECTION into boolean definitions for preprocessor directives
+    if (VKREPLAY_WSI_SELECTION STREQUAL "XCB")
+        add_definitions(-DVKREPLAY_USE_WSI_XCB)
+    elseif (VKREPLAY_WSI_SELECTION STREQUAL "WAYLAND")
+        add_definitions(-DVKREPLAY_USE_WSI_WAYLAND)
+    endif()
 
     if (BUILD_WSI_XCB_SUPPORT)
         find_package(XCB REQUIRED)
@@ -38,9 +46,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
     if (BUILD_WSI_WAYLAND_SUPPORT)
         find_package(Wayland REQUIRED)
+        include_directories(${WAYLAND_CLIENT_INCLUDE_DIR})
     endif()
 
-    if (BUILD_WSI_MIR_SUPPORT)
+    if(BUILD_WSI_MIR_SUPPORT)
         find_package(Mir REQUIRED)
     endif()
 
@@ -59,6 +68,13 @@ include_directories("${PROJECT_SOURCE_DIR}/include")
 if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
     set(COMMON_COMPILE_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers")
     set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -fno-strict-aliasing -fno-builtin-memcmp")
+
+    # For GCC version 7.1 or greater, we need to disable the implicit fallthrough warning since
+    # there's no consistent way to satisfy all compilers until they all accept the C++17 standard
+    if (CMAKE_COMPILER_IS_GNUCC AND NOT (CMAKE_CXX_COMPILER_VERSION LESS 7.1))
+        set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -Wimplicit-fallthrough=0")
+    endif()
+
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 ${COMMON_COMPILE_FLAGS}")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_COMPILE_FLAGS} -std=c++11 -fno-rtti")
     if (UNIX)
@@ -118,7 +134,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows" OR
     option(BUILD_VIA "Build via" ON)
     option(CUSTOM_GLSLANG_BIN_ROOT "Use the user defined GLSLANG_BINARY_ROOT" OFF)
     option(CUSTOM_SPIRV_TOOLS_BIN_ROOT "Use the user defined SPIRV_TOOLS_BINARY_ROOT" OFF)
-    if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT BUILD_WSI_XCB_SUPPORT)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT (BUILD_WSI_XCB_SUPPORT OR BUILD_WSI_WAYLAND_SUPPORT))
         option(BUILD_VKTRACE_REPLAY "Build VkReplay" OFF)
     else()
         option(BUILD_VKTRACE_REPLAY "Build VkReplay" ON)
@@ -221,7 +237,6 @@ find_path(SPIRV_TOOLS_INCLUDE_DIR spirv-tools/libspirv.h HINTS "${EXTERNAL_SOURC
                                                    "${EXTERNAL_SOURCE_ROOT}/source/spirv-tools/external/include"
                                              DOC "Path to spirv-tools/libspirv.h")
 
-if(BUILD_VIA)
 find_path(JSONCPP_INCLUDE_DIR json/json.h HINTS "${EXTERNAL_SOURCE_ROOT}/jsoncpp/dist"
                                                    "${EXTERNAL_SOURCE_ROOT}/JsonCpp/dist"
                                                    "${EXTERNAL_SOURCE_ROOT}/JsonCPP/dist"
@@ -235,7 +250,6 @@ find_path(JSONCPP_SOURCE_DIR jsoncpp.cpp HINTS "${EXTERNAL_SOURCE_ROOT}/jsoncpp/
                                                    "${EXTERNAL_SOURCE_ROOT}/JSONCPP/dist"
                                                    "${CMAKE_SOURCE_DIR}/../jsoncpp/dist"
                                              DOC "Path to jsoncpp/dist/json.cpp")
-endif()
 
     find_library(GLSLANG_LIB NAMES glslang
         HINTS ${GLSLANG_SEARCH_PATH} )
@@ -258,10 +272,8 @@ endif()
     find_library(SPIRV_TOOLS_LIB NAMES SPIRV-Tools
              HINTS ${SPIRV_TOOLS_SEARCH_PATH} )
 
-if(BUILD_VIA)
     find_library(JSONCPP_LIB NAMES jsoncpp
              HINTS ${JSONCPP_SEARCH_PATH} )
-endif()
 
 if (WIN32)
     add_library(glslang     STATIC IMPORTED)
@@ -373,6 +385,7 @@ endif()
 if(UNIX)
     if(INSTALL_LVL_FILES)
         install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/vulkan" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+        install(FILES "${CMAKE_CURRENT_BINARY_DIR}/vk_layer_dispatch_table.h" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/vulkan")
     endif()
 
 # uninstall target
@@ -384,6 +397,8 @@ configure_file(
 add_custom_target(uninstall
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
 endif()
+
+add_definitions(-DAPI_NAME="${API_NAME}")
 
 # loader: Generic VULKAN ICD loader
 # tests: VULKAN tests

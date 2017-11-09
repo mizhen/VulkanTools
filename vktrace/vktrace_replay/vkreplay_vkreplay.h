@@ -1,7 +1,7 @@
 /*
  *
- * Copyright (C) 2015-2016 Valve Corporation
- * Copyright (C) 2015-2016 LunarG, Inc.
+ * Copyright (C) 2015-2017 Valve Corporation
+ * Copyright (C) 2015-2017 LunarG, Inc.
  * All Rights Reserved
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,8 +49,10 @@ extern "C" {
 
 #include "vulkan/vulkan.h"
 
+#include "vk_layer_dispatch_table.h"
+#include "vk_dispatch_table_helper.h"
+
 #include "vkreplay_vkdisplay.h"
-#include "vkreplay_vk_func_ptrs.h"
 #include "vkreplay_vk_objmapper.h"
 
 #define CHECK_RETURN_VALUE(entrypoint) returnValue = handle_replay_errors(#entrypoint, replayResult, pPacket->result, returnValue);
@@ -74,10 +76,13 @@ class vkReplay {
     vktrace_replay::VKTRACE_REPLAY_RESULT pop_validation_msgs();
     int dump_validation_data();
     int get_frame_number() { return m_frameNumber; }
-    void reset_frame_number() { m_frameNumber = 0; }
+    void reset_frame_number(int frameNumber) { m_frameNumber = frameNumber > 0 ? frameNumber : 0; }
 
    private:
-    struct vkFuncs m_vkFuncs;
+    void init_funcs(void* handle);
+    void* m_libHandle;
+    VkLayerInstanceDispatchTable m_vkFuncs;
+    VkLayerDispatchTable m_vkDeviceFuncs;
     vkReplayObjMapper m_objMapper;
     void (*m_pDSDump)(char*);
     void (*m_pCBDump)(char*);
@@ -168,6 +173,7 @@ class vkReplay {
     VkResult manually_replay_vkGetPhysicalDeviceSurfaceFormatsKHR(packet_vkGetPhysicalDeviceSurfaceFormatsKHR* pPacket);
     VkResult manually_replay_vkGetPhysicalDeviceSurfacePresentModesKHR(packet_vkGetPhysicalDeviceSurfacePresentModesKHR* pPacket);
     VkResult manually_replay_vkCreateSwapchainKHR(packet_vkCreateSwapchainKHR* pPacket);
+    void manually_replay_vkDestroySwapchainKHR(packet_vkDestroySwapchainKHR* pPacket);
     VkResult manually_replay_vkGetSwapchainImagesKHR(packet_vkGetSwapchainImagesKHR* pPacket);
     VkResult manually_replay_vkQueuePresentKHR(packet_vkQueuePresentKHR* pPacket);
     VkResult manually_replay_vkCreateXcbSurfaceKHR(packet_vkCreateXcbSurfaceKHR* pPacket);
@@ -176,6 +182,9 @@ class vkReplay {
     VkResult manually_replay_vkCreateXlibSurfaceKHR(packet_vkCreateXlibSurfaceKHR* pPacket);
     VkBool32 manually_replay_vkGetPhysicalDeviceXlibPresentationSupportKHR(
         packet_vkGetPhysicalDeviceXlibPresentationSupportKHR* pPacket);
+    VkResult manually_replay_vkCreateWaylandSurfaceKHR(packet_vkCreateWaylandSurfaceKHR* pPacket);
+    VkBool32 manually_replay_vkGetPhysicalDeviceWaylandPresentationSupportKHR(
+        packet_vkGetPhysicalDeviceWaylandPresentationSupportKHR* pPacket);
     VkResult manually_replay_vkCreateWin32SurfaceKHR(packet_vkCreateWin32SurfaceKHR* pPacket);
     VkBool32 manually_replay_vkGetPhysicalDeviceWin32PresentationSupportKHR(
         packet_vkGetPhysicalDeviceWin32PresentationSupportKHR* pPacket);
@@ -186,6 +195,12 @@ class vkReplay {
     void manually_replay_vkDestroyDescriptorUpdateTemplateKHR(packet_vkDestroyDescriptorUpdateTemplateKHR* pPacket);
     void manually_replay_vkUpdateDescriptorSetWithTemplateKHR(packet_vkUpdateDescriptorSetWithTemplateKHR* pPacket);
     void manually_replay_vkCmdPushDescriptorSetWithTemplateKHR(packet_vkCmdPushDescriptorSetWithTemplateKHR* pPacket);
+    VkResult manually_replay_vkBindBufferMemory(packet_vkBindBufferMemory* pPacket);
+    VkResult manually_replay_vkRegisterDeviceEventEXT(packet_vkRegisterDeviceEventEXT *pPacket);
+    VkResult manually_replay_vkRegisterDisplayEventEXT(packet_vkRegisterDisplayEventEXT *pPacket);
+    VkResult manually_replay_vkCreateObjectTableNVX(packet_vkCreateObjectTableNVX *pPacket);
+    void manually_replay_vkCmdProcessCommandsNVX(packet_vkCmdProcessCommandsNVX *pPacket);
+    VkResult manually_replay_vkCreateIndirectCommandsLayoutNVX(packet_vkCreateIndirectCommandsLayoutNVX *pPacket);
 
     void process_screenshot_list(const char* list) {
         std::string spec(list), word;
@@ -227,16 +242,17 @@ class vkReplay {
     std::unordered_map<VkImage, VkDevice> traceImageToDevice;
     std::unordered_map<VkImage, VkDevice> replayImageToDevice;
 
+    // Map VkSwapchainKHR to vector of VkImage, so we can unmap swapchain images at vkDestroySwapchainKHR
+    std::unordered_map<VkSwapchainKHR, std::vector<VkImage>> traceSwapchainToImages;
+
     // Map VkPhysicalDevice to VkPhysicalDeviceMemoryProperites
     std::unordered_map<VkPhysicalDevice, VkPhysicalDeviceMemoryProperties> traceMemoryProperties;
     std::unordered_map<VkPhysicalDevice, VkPhysicalDeviceMemoryProperties> replayMemoryProperties;
 
     // Map VkImage to VkMemoryRequirements
-    std::unordered_map<VkImage, VkMemoryRequirements> traceGetImageMemoryRequirements;
     std::unordered_map<VkImage, VkMemoryRequirements> replayGetImageMemoryRequirements;
 
     // Map VkBuffer to VkMemoryRequirements
-    std::unordered_map<VkBuffer, VkMemoryRequirements> traceGetBufferMemoryRequirements;
     std::unordered_map<VkBuffer, VkMemoryRequirements> replayGetBufferMemoryRequirements;
 
     bool getMemoryTypeIdx(VkDevice traceDevice, VkDevice replayDevice, uint32_t traceIdx, VkMemoryRequirements* memRequirements,

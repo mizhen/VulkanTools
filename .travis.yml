@@ -13,6 +13,10 @@ matrix:
     - os: linux
       compiler: gcc
       env: VULKAN_BUILD_TARGET=ANDROID ANDROID_TARGET=android-23 ANDROID_ABI=armeabi-v7a
+    # Android 64-bit build.
+    - os: linux
+      compiler: gcc
+      env: VULKAN_BUILD_TARGET=ANDROID ANDROID_TARGET=android-23 ANDROID_ABI=arm64-v8a
     # Linux GCC debug build.
     - os: linux
       compiler: gcc
@@ -46,12 +50,15 @@ before_install:
   - if [[ "$VULKAN_BUILD_TARGET" == "ANDROID" ]]; then export JAVA_HOME="/usr/lib/jvm/java-8-oracle"; fi
   - if [[ "$VULKAN_BUILD_TARGET" == "ANDROID" ]]; then export PATH="$ANDROID_NDK_HOME:$PATH"; fi
 
+  # Clear the toolchain contents if revisions have changed
+  - ./scripts/check_toolchain_revisions.sh
+
 script:
   - if [[ "$VULKAN_BUILD_TARGET" == "LINUX" ]]; then ./update_external_sources.sh; fi
   - if [[ "$VULKAN_BUILD_TARGET" == "LINUX" ]]; then cmake -H. -Bdbuild -DCMAKE_BUILD_TYPE=Debug; fi
   - if [[ "$VULKAN_BUILD_TARGET" == "LINUX" ]]; then make -C dbuild; fi
   - if [[ "$VULKAN_BUILD_TARGET" == "ANDROID" ]]; then pushd build-android; fi
-  - if [[ "$VULKAN_BUILD_TARGET" == "ANDROID" ]]; then ./update_external_sources_android.sh; fi
+  - if [[ "$VULKAN_BUILD_TARGET" == "ANDROID" ]]; then ./update_external_sources_android.sh --abi $ANDROID_ABI; fi
   - if [[ "$VULKAN_BUILD_TARGET" == "ANDROID" ]]; then ./android-generate.sh; fi
   - if [[ "$VULKAN_BUILD_TARGET" == "ANDROID" ]]; then ndk-build APP_ABI=$ANDROID_ABI; fi
   - if [[ "$VULKAN_BUILD_TARGET" == "ANDROID" ]]; then popd; fi

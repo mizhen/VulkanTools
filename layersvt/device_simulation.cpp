@@ -20,14 +20,10 @@
 
 /*
  * layersvt/device_simulation.cpp - The VK_LAYER_LUNARG_device_simulation layer.
- * This DevSim layer simulates a device by loading a configuration file to override values that would normally be returned from a
- * Vulkan implementation.
- *
- * NOTICE: This is a "version 0" prerelease of the DevSim layer.
- * Behaviors may change before a general "version 1.x" public release, particularly the configuration fileformat.
- * vkjson-style JSON was used as a configuration fileformat for this initial DevSim release because it was available; however, it is
- * not really suited to the DevSim usemodel.
- * Recommend refining the format (and a schema for validation) specifically for use by DevSim.
+ * This DevSim layer simulates a device by loading a JSON configuration file to override values that would normally be returned
+ * from a Vulkan implementation.  Configuration files must validate with the DevSim schema; this layer does not redundantly
+ * check for configuration errors that would be caught by schema validation.
+ * See JsonLoader::IdentifySchema() for the URIs of supported schemas.
  *
  * References (several documents are also included in the LunarG Vulkan SDK, see [SDK]):
  * [SPEC]   https://www.khronos.org/registry/vulkan/specs/1.0-extensions/html/vkspec.html
@@ -44,7 +40,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
+#include <inttypes.h>
 #include <string.h>
 
 #include <functional>
@@ -53,30 +49,79 @@
 #include <fstream>
 #include <mutex>
 
-#include <json/json.h>
+#include <json/json.h>  // https://github.com/open-source-parsers/jsoncpp
 
 #include "vulkan/vk_layer.h"
 #include "vk_layer_table.h"
 
-#define ENABLE_VKJSON_LOADER 1
-
 namespace {
 
-const uint32_t kVersionDevsimImplementation = VK_MAKE_VERSION(0, 1, 0);
+// Global constants //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Global variables //////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// For new features/functionality, increment the minor level and reset patch level to zero.
+// For any changes, at least increment the patch level.
+// When making ANY changes to the version, be sure to also update layersvt/{linux|windows}/VkLayer_device_simulation.json
+const uint32_t kVersionDevsimMajor = 1;
+const uint32_t kVersionDevsimMinor = 1;
+const uint32_t kVersionDevsimPatch = 0;
+const uint32_t kVersionDevsimImplementation = VK_MAKE_VERSION(kVersionDevsimMajor, kVersionDevsimMinor, kVersionDevsimPatch);
 
-std::mutex global_lock;  // Enforce thread-safety for this layer's containers.
+const VkLayerProperties kLayerProperties[] = {{
+    "VK_LAYER_LUNARG_device_simulation",       // layerName
+    VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION),  // specVersion
+    kVersionDevsimImplementation,              // implementationVersion
+    "LunarG device simulation layer"           // description
+}};
+const uint32_t kLayerPropertiesCount = (sizeof(kLayerProperties) / sizeof(kLayerProperties[0]));
+const char *kOurLayerName = kLayerProperties[0].layerName;
 
-uint32_t loader_layer_iface_version = CURRENT_LOADER_LAYER_INTERFACE_VERSION;
+const VkExtensionProperties *kExtensionProperties = nullptr;
+const uint32_t kExtensionPropertiesCount = 0;
 
 // Environment variables defined by this layer ///////////////////////////////////////////////////////////////////////////////////
 
-const char *const kEnvarDevsimFilename = "VK_DEVSIM_FILENAME";          // name of the configuration file to load.
+#if defined(__ANDROID__)
+const char *const kEnvarDevsimFilename = "debug.vulkan.devsim.filepath";        // path of the configuration file to load.
+const char *const kEnvarDevsimDebugEnable = "debug.vulkan.devsim.debugenable";  // a non-zero integer will enable debugging output.
+const char *const kEnvarDevsimExitOnError = "debug.vulkan.devsim.exitonerror";  // a non-zero integer will enable exit-on-error.
+#else
+const char *const kEnvarDevsimFilename = "VK_DEVSIM_FILENAME";          // path of the configuration file to load.
 const char *const kEnvarDevsimDebugEnable = "VK_DEVSIM_DEBUG_ENABLE";   // a non-zero integer will enable debugging output.
 const char *const kEnvarDevsimExitOnError = "VK_DEVSIM_EXIT_ON_ERROR";  // a non-zero integer will enable exit-on-error.
+#endif
 
 // Various small utility functions ///////////////////////////////////////////////////////////////////////////////////////////////
+
+#if defined(__ANDROID__)
+#include <android/log.h>
+const uint32_t MAX_BUFFER_SIZE = 255;
+typedef enum { VK_LOG_NONE = 0, VK_LOG_ERROR, VK_LOG_WARNING, VK_LOG_VERBOSE, VK_LOG_DEBUG } VkLogLevel;
+
+const char *AndroidGetEnv(const char *key) {
+    std::string command("getprop ");
+    command += key;
+
+    std::string android_env;
+    FILE *pipe = popen(command.c_str(), "r");
+    if (pipe != nullptr) {
+        char buffer[MAX_BUFFER_SIZE] = {};
+        while (fgets(buffer, MAX_BUFFER_SIZE, pipe) != NULL) {
+            android_env.append(buffer);
+        }
+        pclose(pipe);
+    }
+
+    // Only if the value is set will we get a string back
+    if (android_env.length() > 0) {
+        __android_log_print(ANDROID_LOG_INFO, "devsim", "Vulkan device simulation layer %s: %s", command.c_str(),
+                            android_env.c_str());
+        android_env.erase(android_env.find_last_not_of(" \n\r\t") + 1);
+        return android_env.c_str();
+    }
+
+    return nullptr;
+}
+#endif
 
 // Retrieve the value of an environment variable.
 std::string GetEnvarValue(const char *name) {
@@ -89,7 +134,8 @@ std::string GetEnvarValue(const char *name) {
         value = buffer.data();
     }
 #elif defined(__ANDROID__)
-#error "TODO Android not implemented yet"
+    const char *v = AndroidGetEnv(name);
+    if (v) value = v;
 #else
     const char *v = getenv(name);
     if (v) value = v;
@@ -98,26 +144,73 @@ std::string GetEnvarValue(const char *name) {
     return value;
 }
 
+#if defined(__ANDROID__)
+void AndroidPrintf(VkLogLevel level, const char *fmt, va_list args) {
+    int requiredLength;
+    va_list argcopy;
+    va_copy(argcopy, args);
+    requiredLength = vsnprintf(NULL, 0, fmt, argcopy) + 1;
+    va_end(argcopy);
+
+    char *message = (char *)malloc(requiredLength);
+    vsnprintf(message, requiredLength, fmt, args);
+    switch (level) {
+        case VK_LOG_DEBUG:
+            __android_log_print(ANDROID_LOG_DEBUG, "devsim", "%s", message);
+            break;
+        case VK_LOG_ERROR:
+            __android_log_print(ANDROID_LOG_ERROR, "devsim", "%s", message);
+            break;
+        default:
+            __android_log_print(ANDROID_LOG_INFO, "devsim", "%s", message);
+            break;
+    }
+    free(message);
+}
+#endif
+
 void DebugPrintf(const char *fmt, ...) {
+#if defined(__ANDROID__)
+    static const int kDebugLevel = atoi(GetEnvarValue(kEnvarDevsimDebugEnable).c_str());
+#else
     static const int kDebugLevel = std::atoi(GetEnvarValue(kEnvarDevsimDebugEnable).c_str());
+#endif
     if (kDebugLevel > 0) {
+#if !defined(__ANDROID__)
         printf("\tDEBUG devsim ");
+#endif
         va_list args;
         va_start(args, fmt);
+#if defined(__ANDROID__)
+        AndroidPrintf(VK_LOG_DEBUG, fmt, args);
+#else
         vprintf(fmt, args);
+#endif
         va_end(args);
     }
 }
 
 void ErrorPrintf(const char *fmt, ...) {
+#if defined(__ANDROID__)
+    static const int kExitLevel = atoi(GetEnvarValue(kEnvarDevsimExitOnError).c_str());
+#else
     static const int kExitLevel = std::atoi(GetEnvarValue(kEnvarDevsimExitOnError).c_str());
     fprintf(stderr, "\tERROR devsim ");
+#endif
     va_list args;
     va_start(args, fmt);
+#if defined(__ANDROID__)
+    AndroidPrintf(VK_LOG_ERROR, fmt, args);
+#else
     vfprintf(stderr, fmt, args);
+#endif
     va_end(args);
     if (kExitLevel > 0) {
+#if defined(__ANDROID__)
+        __android_log_print(ANDROID_LOG_ERROR, "devsim", "devsim exiting on error as requested");
+#else
         fprintf(stderr, "\ndevsim exiting on error as requested\n\n");
+#endif
         exit(1);
     }
 }
@@ -129,12 +222,20 @@ VkResult EnumerateAll(std::vector<T> *vect, std::function<VkResult(uint32_t *, T
     do {
         uint32_t count = 0;
         result = func(&count, nullptr);
-        assert(!result);
+        assert(result == VK_SUCCESS);
         vect->resize(count);
         result = func(&count, vect->data());
     } while (result == VK_INCOMPLETE);
     return result;
 }
+
+// Global variables //////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+std::mutex global_lock;  // Enforce thread-safety for this layer's containers.
+
+uint32_t loader_layer_iface_version = CURRENT_LOADER_LAYER_INTERFACE_VERSION;
+
+typedef std::vector<VkQueueFamilyProperties> ArrayOfVkQueueFamilyProperties;
 
 // PhysicalDeviceData : creates and manages the simulated device configurations //////////////////////////////////////////////////
 
@@ -162,11 +263,17 @@ class PhysicalDeviceData {
 
     VkPhysicalDeviceProperties physical_device_properties_;
     VkPhysicalDeviceFeatures physical_device_features_;
+    VkPhysicalDeviceMemoryProperties physical_device_memory_properties_;
+    ArrayOfVkQueueFamilyProperties arrayof_queue_family_properties_;
 
    private:
     PhysicalDeviceData() = delete;
     PhysicalDeviceData &operator=(const PhysicalDeviceData &) = delete;
-    PhysicalDeviceData(VkPhysicalDevice pd, VkInstance instance) : physical_device_(pd), instance_(instance) {}
+    PhysicalDeviceData(VkPhysicalDevice pd, VkInstance instance) : physical_device_(pd), instance_(instance) {
+        physical_device_properties_ = {};
+        physical_device_features_ = {};
+        physical_device_memory_properties_ = {};
+    }
 
     const VkPhysicalDevice physical_device_;
     const VkInstance instance_;
@@ -177,103 +284,212 @@ class PhysicalDeviceData {
 
 PhysicalDeviceData::Map PhysicalDeviceData::map_;
 
-// Loader for vkjson-formatted JSON files ////////////////////////////////////////////////////////////////////////////////////////
-// https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/tree/master/libs/vkjson
+// Loader for DevSim JSON configuration files ////////////////////////////////////////////////////////////////////////////////////
 
-#ifdef ENABLE_VKJSON_LOADER
-
-class VkjsonLoader {
+class JsonLoader {
    public:
-    VkjsonLoader(PhysicalDeviceData &pdd) : pdd_(pdd) {}
-    VkjsonLoader() = delete;
-    VkjsonLoader(const VkjsonLoader &) = delete;
-    VkjsonLoader &operator=(const VkjsonLoader &) = delete;
+    JsonLoader(PhysicalDeviceData &pdd) : pdd_(pdd) {}
+    JsonLoader() = delete;
+    JsonLoader(const JsonLoader &) = delete;
+    JsonLoader &operator=(const JsonLoader &) = delete;
 
     bool LoadFile(const char *filename);
 
    private:
-    void ApplyOverrides(const Json::Value &value, VkPhysicalDeviceProperties *dest);
-    void ApplyOverrides(const Json::Value &value, VkPhysicalDeviceLimits *dest);
-    void ApplyOverrides(const Json::Value &value, VkPhysicalDeviceSparseProperties *dest);
-    void ApplyOverrides(const Json::Value &value, VkPhysicalDeviceFeatures *dest);
+    enum class SchemaId {
+        kUnknown = 0,
+        kDevsim100,
+    };
 
-    void GetValue(const Json::Value &value, float *dest) {
-        if (!value.isNull()) {
-            *dest = value.asFloat();
+    SchemaId IdentifySchema(const Json::Value &value);
+    void GetValue(const Json::Value &parent, const char *name, VkPhysicalDeviceProperties *dest);
+    void GetValue(const Json::Value &parent, const char *name, VkPhysicalDeviceLimits *dest);
+    void GetValue(const Json::Value &parent, const char *name, VkPhysicalDeviceSparseProperties *dest);
+    void GetValue(const Json::Value &parent, const char *name, VkPhysicalDeviceFeatures *dest);
+    void GetValue(const Json::Value &parent, int index, VkMemoryType *dest);
+    void GetValue(const Json::Value &parent, int index, VkMemoryHeap *dest);
+    void GetValue(const Json::Value &parent, const char *name, VkPhysicalDeviceMemoryProperties *dest);
+    void GetValue(const Json::Value &parent, const char *name, VkExtent3D *dest);
+    void GetValue(const Json::Value &parent, int index, VkQueueFamilyProperties *dest);
+
+    // For use as warn_func in GET_VALUE_WARN().  Return true if warning occurred.
+    static bool WarnIfGreater(const char *name, const uint64_t new_value, const uint64_t old_value) {
+        if (new_value > old_value) {
+            DebugPrintf("WARN \"%s\" JSON value (%" PRIu64 ") is greater than existing value (%" PRIu64 ")\n", name, new_value,
+                        old_value);
+            return true;
         }
+        return false;
     }
 
-    void GetValue(const Json::Value &value, int32_t *dest) {
-        if (!value.isNull()) {
-            *dest = value.asInt();
+    void GetValue(const Json::Value &parent, const char *name, float *dest,
+                  std::function<bool(const char *, float, float)> warn_func = nullptr) {
+        const Json::Value value = parent[name];
+        if (!value.isDouble()) {
+            return;
         }
+        const float new_value = value.asFloat();
+        if (warn_func) {
+            warn_func(name, new_value, *dest);
+        }
+        *dest = new_value;
     }
 
-    void GetValue(const Json::Value &value, uint32_t *dest) {
-        if (value.isBool()) {  // for VkBool32
-            *dest = value.asBool() ? VK_TRUE : VK_FALSE;
-        } else if (!value.isNull()) {
-            *dest = value.asUInt();
+    void GetValue(const Json::Value &parent, const char *name, int32_t *dest,
+                  std::function<bool(const char *, int32_t, int32_t)> warn_func = nullptr) {
+        const Json::Value value = parent[name];
+        if (!value.isInt()) {
+            return;
         }
+        const uint32_t new_value = value.asInt();
+        if (warn_func) {
+            warn_func(name, new_value, *dest);
+        }
+        *dest = new_value;
     }
 
-    void GetValue(const Json::Value &value, uint64_t *dest) {
-        if (!value.isNull()) {
-            // Workaround: JSON spec mandates base-10 integer, but vkjson writes "0x" hex format.
-            *dest = std::strtoull(value.asCString(), nullptr, 0);
+    void GetValue(const Json::Value &parent, const char *name, uint32_t *dest,
+                  std::function<bool(const char *, uint32_t, uint32_t)> warn_func = nullptr) {
+        const Json::Value value = parent[name];
+        if (!value.isUInt()) {
+            return;
         }
+        const uint32_t new_value = value.asUInt();
+        if (warn_func) {
+            warn_func(name, new_value, *dest);
+        }
+        *dest = new_value;
+    }
+
+    void GetValue(const Json::Value &parent, const char *name, uint64_t *dest,
+                  std::function<bool(const char *, uint64_t, uint64_t)> warn_func = nullptr) {
+        const Json::Value value = parent[name];
+        if (!value.isUInt64()) {
+            return;
+        }
+        const uint64_t new_value = value.asUInt64();
+        if (warn_func) {
+            warn_func(name, new_value, *dest);
+        }
+        *dest = new_value;
     }
 
     template <typename T>  // for Vulkan enum types
-    void GetValue(const Json::Value &value, T *dest) {
-        if (!value.isNull()) {
-            *dest = static_cast<T>(value.asInt());
+    void GetValue(const Json::Value &parent, const char *name, T *dest,
+                  std::function<bool(const char *, T, T)> warn_func = nullptr) {
+        const Json::Value value = parent[name];
+        if (!value.isInt()) {
+            return;
         }
+        const T new_value = static_cast<T>(value.asInt());
+        if (warn_func) {
+            warn_func(name, new_value, *dest);
+        }
+        *dest = new_value;
     }
 
-    void GetArray(const Json::Value &value, int count, uint8_t *dest) {
-        if (!value.isNull()) {
-            for (int i = 0; i < count; ++i) {
-                dest[i] = value[i].asUInt();
-            }
+    int GetArray(const Json::Value &parent, const char *name, uint8_t *dest) {
+        const Json::Value value = parent[name];
+        if (value.type() != Json::arrayValue) {
+            return -1;
         }
+        const int count = static_cast<int>(value.size());
+        for (int i = 0; i < count; ++i) {
+            dest[i] = value[i].asUInt();
+        }
+        return count;
     }
 
-    void GetArray(const Json::Value &value, int count, uint32_t *dest) {
-        if (!value.isNull()) {
-            for (int i = 0; i < count; ++i) {
-                dest[i] = value[i].asUInt();
-            }
+    int GetArray(const Json::Value &parent, const char *name, uint32_t *dest) {
+        const Json::Value value = parent[name];
+        if (value.type() != Json::arrayValue) {
+            return -1;
         }
+        const int count = static_cast<int>(value.size());
+        for (int i = 0; i < count; ++i) {
+            dest[i] = value[i].asUInt();
+        }
+        return count;
     }
 
-    void GetArray(const Json::Value &value, int count, float *dest) {
-        if (!value.isNull()) {
-            for (int i = 0; i < count; ++i) {
-                dest[i] = value[i].asFloat();
-            }
+    int GetArray(const Json::Value &parent, const char *name, float *dest) {
+        const Json::Value value = parent[name];
+        if (value.type() != Json::arrayValue) {
+            return -1;
         }
+        const int count = static_cast<int>(value.size());
+        for (int i = 0; i < count; ++i) {
+            dest[i] = value[i].asFloat();
+        }
+        return count;
     }
 
-    void GetArray(const Json::Value &value, int count, char *dest) {
-        if (!value.isNull()) {
-            dest[0] = '\0';
-            strncpy(dest, value.asCString(), count);
-            dest[count - 1] = '\0';
+    int GetArray(const Json::Value &parent, const char *name, char *dest) {
+        const Json::Value value = parent[name];
+        if (!value.isString()) {
+            return -1;
         }
+        const char *new_value = value.asCString();
+        int count = 0;
+        dest[0] = '\0';
+        if (new_value) {
+            count = strlen(new_value);
+            strcpy(dest, new_value);
+        }
+        return count;
+    }
+
+    int GetArray(const Json::Value &parent, const char *name, VkMemoryType *dest) {
+        const Json::Value value = parent[name];
+        if (value.type() != Json::arrayValue) {
+            return -1;
+        }
+        const int count = static_cast<int>(value.size());
+        for (int i = 0; i < count; ++i) {
+            GetValue(value, i, &dest[i]);
+        }
+        return count;
+    }
+
+    int GetArray(const Json::Value &parent, const char *name, VkMemoryHeap *dest) {
+        const Json::Value value = parent[name];
+        if (value.type() != Json::arrayValue) {
+            return -1;
+        }
+        const int count = static_cast<int>(value.size());
+        for (int i = 0; i < count; ++i) {
+            GetValue(value, i, &dest[i]);
+        }
+        return count;
+    }
+
+    int GetArray(const Json::Value &parent, const char *name, ArrayOfVkQueueFamilyProperties *dest) {
+        DebugPrintf("\t\tJsonLoader::GetArray(ArrayOfVkQueueFamilyProperties)\n");
+        const Json::Value value = parent[name];
+        if (value.type() != Json::arrayValue) {
+            return -1;
+        }
+        dest->clear();
+        const int count = static_cast<int>(value.size());
+        for (int i = 0; i < count; ++i) {
+            VkQueueFamilyProperties queue_family_properties = {};
+            GetValue(value, i, &queue_family_properties);
+            dest->push_back(queue_family_properties);
+        }
+        return dest->size();
     }
 
     PhysicalDeviceData &pdd_;
 };
 
-bool VkjsonLoader::LoadFile(const char *filename) {
+bool JsonLoader::LoadFile(const char *filename) {
     std::ifstream json_file(filename);
     if (!json_file) {
-        ErrorPrintf("VkjsonLoader failed to open file \"%s\"\n", filename);
+        ErrorPrintf("JsonLoader failed to open file \"%s\"\n", filename);
         return false;
     }
 
-    DebugPrintf("JsonCpp %s\n", JSONCPP_VERSION_STRING);
+    DebugPrintf("JsonCpp version %s\n", JSONCPP_VERSION_STRING);
     Json::Reader reader;
     Json::Value root = Json::nullValue;
     bool success = reader.parse(json_file, root, false);
@@ -283,47 +499,78 @@ bool VkjsonLoader::LoadFile(const char *filename) {
     }
     json_file.close();
 
-    if (!root.isObject()) {
-        ErrorPrintf("vkjson document root is not an object\n");
+    if (root.type() != Json::objectValue) {
+        DebugPrintf("Json document root is not an object\n");
         return false;
     }
-    DebugPrintf("\t\tVkjsonLoader::LoadFile() OK\n");
+    DebugPrintf("\t\tJsonLoader::LoadFile() OK\n");
 
-    ApplyOverrides(root["properties"], &pdd_.physical_device_properties_);
-    ApplyOverrides(root["features"], &pdd_.physical_device_features_);
+    const Json::Value schema_value = root["$schema"];
+    const SchemaId schema_id = IdentifySchema(schema_value);
+    switch (schema_id) {
+        case SchemaId::kDevsim100:
+            GetValue(root, "VkPhysicalDeviceProperties", &pdd_.physical_device_properties_);
+            GetValue(root, "VkPhysicalDeviceFeatures", &pdd_.physical_device_features_);
+            GetValue(root, "VkPhysicalDeviceMemoryProperties", &pdd_.physical_device_memory_properties_);
+            GetArray(root, "ArrayOfVkQueueFamilyProperties", &pdd_.arrayof_queue_family_properties_);
+            break;
+        case SchemaId::kUnknown:
+        default:
+            return false;
+    }
 
     return true;
 }
 
-// Apply the DRY principle, see https://en.wikipedia.org/wiki/Don%27t_repeat_yourself
-#define GET_VALUE(x) GetValue(value[#x], &dest->x)
-#define GET_ARRAY(x, n) GetArray(value[#x], n, dest->x)
-
-void VkjsonLoader::ApplyOverrides(const Json::Value &value, VkPhysicalDeviceProperties *dest) {
-    DebugPrintf("\t\tVkjsonLoader::ApplyOverrides() VkPhysicalDeviceProperties\n");
-    if (!value.isObject()) {
-        ErrorPrintf("JSON element \"properties\" is not an object\n");
-        return;
+JsonLoader::SchemaId JsonLoader::IdentifySchema(const Json::Value &value) {
+    DebugPrintf("\t\tJsonLoader::IdentifySchema()\n");
+    if (!value.isString()) {
+        ErrorPrintf("JSON element \"$schema\" is not a string\n");
+        return SchemaId::kUnknown;
     }
 
+    SchemaId schema_id = SchemaId::kUnknown;
+    const char *schema_string = value.asCString();
+    if (strcmp(schema_string, "https://schema.khronos.org/vulkan/devsim_1_0_0.json#") == 0) {
+        schema_id = SchemaId::kDevsim100;
+    }
+
+    if (schema_id != SchemaId::kUnknown) {
+        DebugPrintf("Document schema \"%s\" is schema_id %d\n", schema_string, schema_id);
+    } else {
+        ErrorPrintf("Document schema \"%s\" not supported by %s\n", schema_string, kOurLayerName);
+    }
+    return schema_id;
+}
+
+// Apply the DRY principle, see https://en.wikipedia.org/wiki/Don%27t_repeat_yourself
+#define GET_VALUE(name) GetValue(value, #name, &dest->name)
+#define GET_ARRAY(name) GetArray(value, #name, dest->name)
+#define GET_VALUE_WARN(name, warn_func) GetValue(value, #name, &dest->name, warn_func)
+
+void JsonLoader::GetValue(const Json::Value &parent, const char *name, VkPhysicalDeviceProperties *dest) {
+    DebugPrintf("\t\tJsonLoader::GetValue(VkPhysicalDeviceProperties)\n");
+    const Json::Value value = parent[name];
+    if (value.type() != Json::objectValue) {
+        return;
+    }
     GET_VALUE(apiVersion);
     GET_VALUE(driverVersion);
     GET_VALUE(vendorID);
     GET_VALUE(deviceID);
     GET_VALUE(deviceType);
-    GET_ARRAY(deviceName, VK_MAX_PHYSICAL_DEVICE_NAME_SIZE);
-    GET_ARRAY(pipelineCacheUUID, VK_UUID_SIZE);
-    ApplyOverrides(value["limits"], &dest->limits);
-    ApplyOverrides(value["sparseProperties"], &dest->sparseProperties);
+    GET_ARRAY(deviceName);         // size < VK_MAX_PHYSICAL_DEVICE_NAME_SIZE
+    GET_ARRAY(pipelineCacheUUID);  // size == VK_UUID_SIZE
+    GET_VALUE(limits);
+    GET_VALUE(sparseProperties);
 }
 
-void VkjsonLoader::ApplyOverrides(const Json::Value &value, VkPhysicalDeviceLimits *dest) {
-    DebugPrintf("\t\tVkjsonLoader::ApplyOverrides() VkPhysicalDeviceLimits\n");
-    if (!value.isObject()) {
-        ErrorPrintf("JSON element \"limits\" is not an object\n");
+void JsonLoader::GetValue(const Json::Value &parent, const char *name, VkPhysicalDeviceLimits *dest) {
+    DebugPrintf("\t\tJsonLoader::GetValue(VkPhysicalDeviceLimits)\n");
+    const Json::Value value = parent[name];
+    if (value.type() != Json::objectValue) {
         return;
     }
-
     GET_VALUE(maxImageDimension1D);
     GET_VALUE(maxImageDimension2D);
     GET_VALUE(maxImageDimension3D);
@@ -337,22 +584,22 @@ void VkjsonLoader::ApplyOverrides(const Json::Value &value, VkPhysicalDeviceLimi
     GET_VALUE(maxSamplerAllocationCount);
     GET_VALUE(bufferImageGranularity);
     GET_VALUE(sparseAddressSpaceSize);
-    GET_VALUE(maxBoundDescriptorSets);
-    GET_VALUE(maxPerStageDescriptorSamplers);
-    GET_VALUE(maxPerStageDescriptorUniformBuffers);
-    GET_VALUE(maxPerStageDescriptorStorageBuffers);
-    GET_VALUE(maxPerStageDescriptorSampledImages);
-    GET_VALUE(maxPerStageDescriptorStorageImages);
-    GET_VALUE(maxPerStageDescriptorInputAttachments);
-    GET_VALUE(maxPerStageResources);
-    GET_VALUE(maxDescriptorSetSamplers);
-    GET_VALUE(maxDescriptorSetUniformBuffers);
-    GET_VALUE(maxDescriptorSetUniformBuffersDynamic);
-    GET_VALUE(maxDescriptorSetStorageBuffers);
-    GET_VALUE(maxDescriptorSetStorageBuffersDynamic);
-    GET_VALUE(maxDescriptorSetSampledImages);
-    GET_VALUE(maxDescriptorSetStorageImages);
-    GET_VALUE(maxDescriptorSetInputAttachments);
+    GET_VALUE_WARN(maxBoundDescriptorSets, WarnIfGreater);
+    GET_VALUE_WARN(maxPerStageDescriptorSamplers, WarnIfGreater);
+    GET_VALUE_WARN(maxPerStageDescriptorUniformBuffers, WarnIfGreater);
+    GET_VALUE_WARN(maxPerStageDescriptorStorageBuffers, WarnIfGreater);
+    GET_VALUE_WARN(maxPerStageDescriptorSampledImages, WarnIfGreater);
+    GET_VALUE_WARN(maxPerStageDescriptorStorageImages, WarnIfGreater);
+    GET_VALUE_WARN(maxPerStageDescriptorInputAttachments, WarnIfGreater);
+    GET_VALUE_WARN(maxPerStageResources, WarnIfGreater);
+    GET_VALUE_WARN(maxDescriptorSetSamplers, WarnIfGreater);
+    GET_VALUE_WARN(maxDescriptorSetUniformBuffers, WarnIfGreater);
+    GET_VALUE_WARN(maxDescriptorSetUniformBuffersDynamic, WarnIfGreater);
+    GET_VALUE_WARN(maxDescriptorSetStorageBuffers, WarnIfGreater);
+    GET_VALUE_WARN(maxDescriptorSetStorageBuffersDynamic, WarnIfGreater);
+    GET_VALUE_WARN(maxDescriptorSetSampledImages, WarnIfGreater);
+    GET_VALUE_WARN(maxDescriptorSetStorageImages, WarnIfGreater);
+    GET_VALUE_WARN(maxDescriptorSetInputAttachments, WarnIfGreater);
     GET_VALUE(maxVertexInputAttributes);
     GET_VALUE(maxVertexInputBindings);
     GET_VALUE(maxVertexInputAttributeOffset);
@@ -376,9 +623,9 @@ void VkjsonLoader::ApplyOverrides(const Json::Value &value, VkPhysicalDeviceLimi
     GET_VALUE(maxFragmentDualSrcAttachments);
     GET_VALUE(maxFragmentCombinedOutputResources);
     GET_VALUE(maxComputeSharedMemorySize);
-    GET_ARRAY(maxComputeWorkGroupCount, 3);
+    GET_ARRAY(maxComputeWorkGroupCount);  // size == 3
     GET_VALUE(maxComputeWorkGroupInvocations);
-    GET_ARRAY(maxComputeWorkGroupSize, 3);
+    GET_ARRAY(maxComputeWorkGroupSize);  // size == 3
     GET_VALUE(subPixelPrecisionBits);
     GET_VALUE(subTexelPrecisionBits);
     GET_VALUE(mipmapPrecisionBits);
@@ -387,8 +634,8 @@ void VkjsonLoader::ApplyOverrides(const Json::Value &value, VkPhysicalDeviceLimi
     GET_VALUE(maxSamplerLodBias);
     GET_VALUE(maxSamplerAnisotropy);
     GET_VALUE(maxViewports);
-    GET_ARRAY(maxViewportDimensions, 2);
-    GET_ARRAY(viewportBoundsRange, 2);
+    GET_ARRAY(maxViewportDimensions);  // size == 2
+    GET_ARRAY(viewportBoundsRange);    // size == 2
     GET_VALUE(viewportSubPixelBits);
     GET_VALUE(minMemoryMapAlignment);
     GET_VALUE(minTexelBufferOffsetAlignment);
@@ -421,8 +668,8 @@ void VkjsonLoader::ApplyOverrides(const Json::Value &value, VkPhysicalDeviceLimi
     GET_VALUE(maxCullDistances);
     GET_VALUE(maxCombinedClipAndCullDistances);
     GET_VALUE(discreteQueuePriorities);
-    GET_ARRAY(pointSizeRange, 2);
-    GET_ARRAY(lineWidthRange, 2);
+    GET_ARRAY(pointSizeRange);  // size == 2
+    GET_ARRAY(lineWidthRange);  // size == 2
     GET_VALUE(pointSizeGranularity);
     GET_VALUE(lineWidthGranularity);
     GET_VALUE(strictLines);
@@ -432,13 +679,12 @@ void VkjsonLoader::ApplyOverrides(const Json::Value &value, VkPhysicalDeviceLimi
     GET_VALUE(nonCoherentAtomSize);
 }
 
-void VkjsonLoader::ApplyOverrides(const Json::Value &value, VkPhysicalDeviceSparseProperties *dest) {
-    DebugPrintf("\t\tVkjsonLoader::ApplyOverrides() VkPhysicalDeviceSparseProperties\n");
-    if (!value.isObject()) {
-        ErrorPrintf("JSON element \"sparseProperties\" is not an object\n");
+void JsonLoader::GetValue(const Json::Value &parent, const char *name, VkPhysicalDeviceSparseProperties *dest) {
+    DebugPrintf("\t\tJsonLoader::GetValue(VkPhysicalDeviceSparseProperties)\n");
+    const Json::Value value = parent[name];
+    if (value.type() != Json::objectValue) {
         return;
     }
-
     GET_VALUE(residencyStandard2DBlockShape);
     GET_VALUE(residencyStandard2DMultisampleBlockShape);
     GET_VALUE(residencyStandard3DBlockShape);
@@ -446,13 +692,12 @@ void VkjsonLoader::ApplyOverrides(const Json::Value &value, VkPhysicalDeviceSpar
     GET_VALUE(residencyNonResidentStrict);
 }
 
-void VkjsonLoader::ApplyOverrides(const Json::Value &value, VkPhysicalDeviceFeatures *dest) {
-    DebugPrintf("\t\tVkjsonLoader::ApplyOverrides() VkPhysicalDeviceFeatures\n");
-    if (!value.isObject()) {
-        ErrorPrintf("JSON element \"features\" is not an object\n");
+void JsonLoader::GetValue(const Json::Value &parent, const char *name, VkPhysicalDeviceFeatures *dest) {
+    DebugPrintf("\t\tJsonLoader::GetValue(VkPhysicalDeviceFeatures)\n");
+    const Json::Value value = parent[name];
+    if (value.type() != Json::objectValue) {
         return;
     }
-
     GET_VALUE(robustBufferAccess);
     GET_VALUE(fullDrawIndexUint32);
     GET_VALUE(imageCubeArray);
@@ -510,10 +755,73 @@ void VkjsonLoader::ApplyOverrides(const Json::Value &value, VkPhysicalDeviceFeat
     GET_VALUE(inheritedQueries);
 }
 
+void JsonLoader::GetValue(const Json::Value &parent, const char *name, VkExtent3D *dest) {
+    DebugPrintf("\t\tJsonLoader::GetValue(VkExtent3D)\n");
+    const Json::Value value = parent[name];
+    if (value.type() != Json::objectValue) {
+        return;
+    }
+    GET_VALUE(width);
+    GET_VALUE(height);
+    GET_VALUE(depth);
+}
+
+void JsonLoader::GetValue(const Json::Value &parent, int index, VkQueueFamilyProperties *dest) {
+    DebugPrintf("\t\tJsonLoader::GetValue(VkQueueFamilyProperties)\n");
+    const Json::Value value = parent[index];
+    if (value.type() != Json::objectValue) {
+        return;
+    }
+    GET_VALUE(queueFlags);
+    GET_VALUE(queueCount);
+    GET_VALUE(timestampValidBits);
+    GET_VALUE(minImageTransferGranularity);
+}
+
+void JsonLoader::GetValue(const Json::Value &parent, int index, VkMemoryType *dest) {
+    DebugPrintf("\t\tJsonLoader::GetValue(VkMemoryType %d)\n", index);
+    const Json::Value value = parent[index];
+    if (value.type() != Json::objectValue) {
+        return;
+    }
+    GET_VALUE(propertyFlags);
+    GET_VALUE(heapIndex);
+}
+
+void JsonLoader::GetValue(const Json::Value &parent, int index, VkMemoryHeap *dest) {
+    DebugPrintf("\t\tJsonLoader::GetValue(VkMemoryHeap %d)\n", index);
+    const Json::Value value = parent[index];
+    if (value.type() != Json::objectValue) {
+        return;
+    }
+    GET_VALUE_WARN(size, WarnIfGreater);
+    GET_VALUE(flags);
+}
+
+void JsonLoader::GetValue(const Json::Value &parent, const char *name, VkPhysicalDeviceMemoryProperties *dest) {
+    DebugPrintf("\t\tJsonLoader::GetValue(VkPhysicalDeviceMemoryProperties)\n");
+    const Json::Value value = parent[name];
+    if (value.type() != Json::objectValue) {
+        return;
+    }
+    const int heap_count = GET_ARRAY(memoryHeaps);  // size <= VK_MAX_MEMORY_HEAPS
+    if (heap_count >= 0) {
+        dest->memoryHeapCount = heap_count;
+    }
+    const int type_count = GET_ARRAY(memoryTypes);  // size <= VK_MAX_MEMORY_TYPES
+    if (type_count >= 0) {
+        dest->memoryTypeCount = type_count;
+        for (int i = 0; i < type_count; ++i) {
+            if (dest->memoryTypes[i].heapIndex >= dest->memoryHeapCount) {
+                DebugPrintf("WARN \"memoryType[%" PRIu32 "].heapIndex\" (%" PRIu32 ") exceeds memoryHeapCount (%" PRIu32 ")\n", i,
+                            dest->memoryTypes[i].heapIndex, dest->memoryHeapCount);
+            }
+        }
+    }
+}
+
 #undef GET_VALUE
 #undef GET_ARRAY
-
-#endif  //  ENABLE_VKJSON_LOADER
 
 // Layer-specific wrappers for Vulkan functions, accessed via vkGet*ProcAddr() ///////////////////////////////////////////////////
 
@@ -548,7 +856,11 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo *pCreat
         return result;
     }
 
-    // Our layer-specific initialization.
+    // Our layer-specific initialization...
+
+    DebugPrintf("%s version %d.%d.%d\n", kOurLayerName, kVersionDevsimMajor, kVersionDevsimMinor, kVersionDevsimPatch);
+
+    // Get the name of our configuration file.
     std::string filename = GetEnvarValue(kEnvarDevsimFilename);
     DebugPrintf("\t\tenvar %s = \"%s\"\n", kEnvarDevsimFilename, filename.c_str());
     if (filename.empty()) {
@@ -558,8 +870,8 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo *pCreat
     const auto dt = instance_dispatch_table(*pInstance);
 
     std::vector<VkPhysicalDevice> physical_devices;
-    result = EnumerateAll<VkPhysicalDevice>(&physical_devices, [&](uint32_t *count, VkPhysicalDevice *values) {
-        return dt->EnumeratePhysicalDevices(*pInstance, count, values);
+    result = EnumerateAll<VkPhysicalDevice>(&physical_devices, [&](uint32_t *count, VkPhysicalDevice *results) {
+        return dt->EnumeratePhysicalDevices(*pInstance, count, results);
     });
     if (result) {
         return result;
@@ -569,22 +881,22 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo *pCreat
     for (const auto &physical_device : physical_devices) {
         PhysicalDeviceData &pdd = PhysicalDeviceData::Create(physical_device, *pInstance);
 
+        // Initialize PDD members to the actual Vulkan implementation's defaults.
         dt->GetPhysicalDeviceProperties(physical_device, &pdd.physical_device_properties_);
         dt->GetPhysicalDeviceFeatures(physical_device, &pdd.physical_device_features_);
+        dt->GetPhysicalDeviceMemoryProperties(physical_device, &pdd.physical_device_memory_properties_);
+        EnumerateAll<VkQueueFamilyProperties>(&pdd.arrayof_queue_family_properties_,
+                                              [&](uint32_t *count, VkQueueFamilyProperties *results) {
+                                                  dt->GetPhysicalDeviceQueueFamilyProperties(physical_device, count, results);
+                                                  return VK_SUCCESS;
+                                              });
 
-        DebugPrintf("\tBEFORE deviceName \"%s\"\n", pdd.physical_device_properties_.deviceName);
-        DebugPrintf("\tBEFORE deviceID %d\n", pdd.physical_device_properties_.deviceID);
-
-#ifdef ENABLE_VKJSON_LOADER
-        VkjsonLoader vkjson(pdd);
-        vkjson.LoadFile(filename.c_str());
-#endif
-
-        DebugPrintf("\tAFTER deviceName \"%s\"\n", pdd.physical_device_properties_.deviceName);
-        DebugPrintf("\tAFTER deviceID %d\n", pdd.physical_device_properties_.deviceID);
+        // Override PDD members with values from the configuration file.
+        JsonLoader json_loader(pdd);
+        json_loader.LoadFile(filename.c_str());
     }
 
-    DebugPrintf("CreateInstance END instance %p }\n\n", *pInstance);
+    DebugPrintf("CreateInstance END instance %p }\n", *pInstance);
     return result;
 }
 
@@ -640,14 +952,6 @@ VkResult EnumerateProperties(uint32_t src_count, const T *src_props, uint32_t *d
     return (copy_count == src_count) ? VK_SUCCESS : VK_INCOMPLETE;
 }
 
-const VkLayerProperties kLayerProperties[] = {{
-    "VK_LAYER_LUNARG_device_simulation",       // layerName
-    VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION),  // specVersion
-    kVersionDevsimImplementation,              // implementationVersion
-    "LunarG device simulation layer"           // description
-}};
-const uint32_t kLayerPropertiesCount = (sizeof(kLayerProperties) / sizeof(kLayerProperties[0]));
-
 VKAPI_ATTR VkResult VKAPI_CALL EnumerateInstanceLayerProperties(uint32_t *pCount, VkLayerProperties *pProperties) {
     DebugPrintf("EnumerateInstanceLayerProperties\n");
     return EnumerateProperties(kLayerPropertiesCount, kLayerProperties, pCount, pProperties);
@@ -655,13 +959,10 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumerateInstanceLayerProperties(uint32_t *pCount
 
 // Per [LALI], EnumerateDeviceLayerProperties() is deprecated and may be omitted.
 
-const VkExtensionProperties *kExtensionProperties = nullptr;
-const uint32_t kExtensionPropertiesCount = 0;
-
 VKAPI_ATTR VkResult VKAPI_CALL EnumerateInstanceExtensionProperties(const char *pLayerName, uint32_t *pCount,
                                                                     VkExtensionProperties *pProperties) {
     DebugPrintf("EnumerateInstanceExtensionProperties pLayerName \"%s\"\n", pLayerName);
-    if (pLayerName && !strcmp(pLayerName, kLayerProperties->layerName)) {
+    if (pLayerName && !strcmp(pLayerName, kOurLayerName)) {
         return EnumerateProperties(kExtensionPropertiesCount, kExtensionProperties, pCount, pProperties);
     }
     return VK_ERROR_LAYER_NOT_PRESENT;
@@ -673,10 +974,40 @@ VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(VkPhysicalDevi
     std::lock_guard<std::mutex> lock(global_lock);
     const auto dt = instance_dispatch_table(physicalDevice);
 
-    if (pLayerName && !strcmp(pLayerName, kLayerProperties->layerName)) {
+    if (pLayerName && !strcmp(pLayerName, kOurLayerName)) {
         return EnumerateProperties(kExtensionPropertiesCount, kExtensionProperties, pCount, pProperties);
     }
     return dt->EnumerateDeviceExtensionProperties(physicalDevice, pLayerName, pCount, pProperties);
+}
+
+VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceMemoryProperties(VkPhysicalDevice physicalDevice,
+                                                             VkPhysicalDeviceMemoryProperties *pMemoryProperties) {
+    std::lock_guard<std::mutex> lock(global_lock);
+    const auto dt = instance_dispatch_table(physicalDevice);
+
+    PhysicalDeviceData *pdd = PhysicalDeviceData::Find(physicalDevice);
+    DebugPrintf("GetPhysicalDeviceMemoryProperties physicalDevice %p pdd %p\n", physicalDevice, pdd);
+    if (pdd) {
+        *pMemoryProperties = pdd->physical_device_memory_properties_;
+    } else {
+        dt->GetPhysicalDeviceMemoryProperties(physicalDevice, pMemoryProperties);
+    }
+}
+
+VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceQueueFamilyProperties(VkPhysicalDevice physicalDevice,
+                                                                  uint32_t *pQueueFamilyPropertyCount,
+                                                                  VkQueueFamilyProperties *pQueueFamilyProperties) {
+    std::lock_guard<std::mutex> lock(global_lock);
+    const auto dt = instance_dispatch_table(physicalDevice);
+
+    PhysicalDeviceData *pdd = PhysicalDeviceData::Find(physicalDevice);
+    DebugPrintf("GetPhysicalDeviceQueueFamilyProperties physicalDevice %p pdd %p\n", physicalDevice, pdd);
+    if (pdd) {
+        EnumerateProperties(pdd->arrayof_queue_family_properties_.size(), pdd->arrayof_queue_family_properties_.data(),
+                            pQueueFamilyPropertyCount, pQueueFamilyProperties);
+    } else {
+        dt->GetPhysicalDeviceQueueFamilyProperties(physicalDevice, pQueueFamilyPropertyCount, pQueueFamilyProperties);
+    }
 }
 
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetInstanceProcAddr(VkInstance instance, const char *pName) {
@@ -691,6 +1022,8 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetInstanceProcAddr(VkInstance instance
     GET_PROC_ADDR(DestroyInstance);
     GET_PROC_ADDR(GetPhysicalDeviceProperties);
     GET_PROC_ADDR(GetPhysicalDeviceFeatures);
+    GET_PROC_ADDR(GetPhysicalDeviceMemoryProperties);
+    GET_PROC_ADDR(GetPhysicalDeviceQueueFamilyProperties);
 #undef GET_PROC_ADDR
 
     if (!instance) {
@@ -722,6 +1055,11 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstance
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t *pCount,
                                                                                   VkLayerProperties *pProperties) {
     return EnumerateInstanceLayerProperties(pCount, pProperties);
+}
+
+VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char *pLayerName, uint32_t *pCount,
+                                                                                      VkExtensionProperties *pProperties) {
+    return EnumerateInstanceExtensionProperties(pLayerName, pCount, pProperties);
 }
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pVersionStruct) {

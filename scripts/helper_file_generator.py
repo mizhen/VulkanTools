@@ -344,7 +344,7 @@ class HelperFileOutputGenerator(OutputGenerator):
                                                  isconst=True if 'const' in cdecl else False,
                                                  iscount=True if name in lens else False,
                                                  len=self.getLen(member),
-                                                 extstructs=member.attrib.get('validextensionstructs') if name == 'pNext' else None,
+                                                 extstructs=self.registry.validextensionstructs[typeName] if name == 'pNext' else None,
                                                  cdecl=cdecl))
         self.structMembers.append(self.StructMemberData(name=typeName, members=membersInfo, ifdef_protect=self.featureExtraProtect))
     #
@@ -364,6 +364,23 @@ class HelperFileOutputGenerator(OutputGenerator):
         outstring += '}\n'
         return outstring
     #
+    # Tack on a helper which, given an index into a VkPhysicalDeviceFeatures structure, will print the corresponding feature name
+    def DeIndexPhysDevFeatures(self):
+        pdev_members = None
+        for name, members, ifdef in self.structMembers:
+            if name == 'VkPhysicalDeviceFeatures':
+                pdev_members = members
+                break
+        deindex = '\n'
+        deindex += 'static const char * GetPhysDevFeatureString(uint32_t index) {\n'
+        deindex += '    const char * IndexToPhysDevFeatureString[] = {\n'
+        for feature in pdev_members:
+            deindex += '        "%s",\n' % feature.name
+        deindex += '    };\n\n'
+        deindex += '    return IndexToPhysDevFeatureString[index];\n'
+        deindex += '}\n'
+        return deindex
+    #
     # Combine enum string helper header file preamble with body text and return
     def GenerateEnumStringHelperHeader(self):
             enum_string_helper_header = '\n'
@@ -375,12 +392,14 @@ class HelperFileOutputGenerator(OutputGenerator):
             enum_string_helper_header += '#include <vulkan/vulkan.h>\n'
             enum_string_helper_header += '\n'
             enum_string_helper_header += self.enum_output
+            enum_string_helper_header += self.DeIndexPhysDevFeatures()
             return enum_string_helper_header
     #
     # struct_size_header: build function prototypes for header file
     def GenerateStructSizeHeader(self):
         outstring = ''
         outstring += 'size_t get_struct_chain_size(const void* struct_ptr);\n'
+        outstring += 'size_t get_struct_size(const void* struct_ptr);\n'
         for item in self.structMembers:
             lower_case_name = item.name.lower()
             if item.ifdef_protect != None:
@@ -417,13 +436,13 @@ class HelperFileOutputGenerator(OutputGenerator):
     #
     # Build the header of the get_struct_chain_size function
     def GenerateChainSizePreamble(self):
-        preable = '\nsize_t get_struct_chain_size(const void* struct_ptr) {\n'
-        preable += '    // Use VkApplicationInfo as struct until actual type is resolved\n'
-        preable += '    VkApplicationInfo* pNext = (VkApplicationInfo*)struct_ptr;\n'
-        preable += '    size_t struct_size = 0;\n'
-        preable += '    while (pNext) {\n'
-        preable += '        switch (pNext->sType) {\n'
-        return preable
+        preamble = '\nsize_t get_struct_chain_size(const void* struct_ptr) {\n'
+        preamble += '    // Use VkApplicationInfo as struct until actual type is resolved\n'
+        preamble += '    VkApplicationInfo* pNext = (VkApplicationInfo*)struct_ptr;\n'
+        preamble += '    size_t struct_size = 0;\n'
+        preamble += '    while (pNext) {\n'
+        preamble += '        switch (pNext->sType) {\n'
+        return preamble
     #
     # Build the footer of the get_struct_chain_size function
     def GenerateChainSizePostamble(self):
@@ -434,29 +453,49 @@ class HelperFileOutputGenerator(OutputGenerator):
         postamble += '        pNext = (VkApplicationInfo*)pNext->pNext;\n'
         postamble += '    }\n'
         postamble += '    return struct_size;\n'
+        postamble += '}\n'
+        return postamble
+    #
+    # Build the header of the get_struct_size function
+    def GenerateStructSizePreamble(self):
+        preamble = '\nsize_t get_struct_size(const void* struct_ptr) {\n'
+        preamble += '    switch (((VkApplicationInfo*)struct_ptr)->sType) {\n'
+        return preamble
+    #
+    # Build the footer of the get_struct_size function
+    def GenerateStructSizePostamble(self):
+        postamble  = '    default:\n'
+        postamble += '        assert(0);\n'
+        postamble += '        return(0);\n'
+        postamble += '    }\n'
         postamble += '}'
         return postamble
     #
     # struct_size_helper source -- create bodies of struct size helper functions
     def GenerateStructSizeSource(self):
-        # Construct the body of the routine and get_struct_chain_size() simultaneously
-        struct_size_body = ''
+        # Construct the bodies of the struct size functions, get_struct_chain_size(),
+        # and get_struct_size() simultaneously
+        struct_size_funcs = ''
         chain_size  = self.GenerateChainSizePreamble()
+        struct_size  = self.GenerateStructSizePreamble()
         for item in self.structMembers:
-            struct_size_body += '\n'
+            struct_size_funcs += '\n'
             lower_case_name = item.name.lower()
             if item.ifdef_protect != None:
-                struct_size_body += '#ifdef %s\n' % item.ifdef_protect
+                struct_size_funcs += '#ifdef %s\n' % item.ifdef_protect
+                struct_size += '#ifdef %s\n' % item.ifdef_protect
                 chain_size += '#ifdef %s\n' % item.ifdef_protect
             if item.name in self.structTypes:
                 chain_size += '            case %s: {\n' % self.structTypes[item.name].value
                 chain_size += '                struct_size += vk_size_%s((%s*)pNext);\n' % (item.name.lower(), item.name)
                 chain_size += '                break;\n'
                 chain_size += '            }\n'
-            struct_size_body += 'size_t vk_size_%s(const %s* struct_ptr) {\n' % (item.name.lower(), item.name)
-            struct_size_body += '    size_t struct_size = 0;\n'
-            struct_size_body += '    if (struct_ptr) {\n'
-            struct_size_body += '        struct_size = sizeof(%s);\n' % item.name
+                struct_size += '    case %s: \n' % self.structTypes[item.name].value
+                struct_size += '        return vk_size_%s((%s*)struct_ptr);\n' % (item.name.lower(), item.name)
+            struct_size_funcs += 'size_t vk_size_%s(const %s* struct_ptr) { \n' % (item.name.lower(), item.name)
+            struct_size_funcs += '    size_t struct_size = 0;\n'
+            struct_size_funcs += '    if (struct_ptr) {\n'
+            struct_size_funcs += '        struct_size = sizeof(%s);\n' % item.name
             counter_declared = False
             for member in item.members:
                 vulkan_type = next((i for i, v in enumerate(self.structMembers) if v[0] == member.type), None)
@@ -464,38 +503,40 @@ class HelperFileOutputGenerator(OutputGenerator):
                     if vulkan_type is not None:
                         # If this is another Vulkan structure call generated size function
                         if member.len is not None:
-                            struct_size_body, counter_declared = self.DeclareCounter(struct_size_body, counter_declared)
-                            struct_size_body += '        for (i = 0; i < struct_ptr->%s; i++) {\n' % member.len
-                            struct_size_body += '            struct_size += vk_size_%s(&struct_ptr->%s[i]);\n' % (member.type.lower(), member.name)
-                            struct_size_body += '        }\n'
+                            struct_size_funcs, counter_declared = self.DeclareCounter(struct_size_funcs, counter_declared)
+                            struct_size_funcs += '        for (i = 0; i < struct_ptr->%s; i++) {\n' % member.len
+                            struct_size_funcs += '            struct_size += vk_size_%s(&struct_ptr->%s[i]);\n' % (member.type.lower(), member.name)
+                            struct_size_funcs += '        }\n'
                         else:
-                            struct_size_body += '        struct_size += vk_size_%s(struct_ptr->%s);\n' % (member.type.lower(), member.name)
+                            struct_size_funcs += '        struct_size += vk_size_%s(struct_ptr->%s);\n' % (member.type.lower(), member.name)
                     else:
                         if member.type == 'char':
                             # Deal with sizes of character strings
                             if member.len is not None:
-                                struct_size_body, counter_declared = self.DeclareCounter(struct_size_body, counter_declared)
-                                struct_size_body += '        for (i = 0; i < struct_ptr->%s; i++) {\n' % member.len
-                                struct_size_body += '            struct_size += (sizeof(char*) + (sizeof(char) * (1 + strlen(struct_ptr->%s[i]))));\n' % (member.name)
-                                struct_size_body += '        }\n'
+                                struct_size_funcs, counter_declared = self.DeclareCounter(struct_size_funcs, counter_declared)
+                                struct_size_funcs += '        for (i = 0; i < struct_ptr->%s; i++) {\n' % member.len
+                                struct_size_funcs += '            struct_size += (sizeof(char*) + (sizeof(char) * (1 + strlen(struct_ptr->%s[i]))));\n' % (member.name)
+                                struct_size_funcs += '        }\n'
                             else:
-                                struct_size_body += '        struct_size += (struct_ptr->%s != NULL) ? sizeof(char)*(1+strlen(struct_ptr->%s)) : 0;\n' % (member.name, member.name)
+                                struct_size_funcs += '        struct_size += (struct_ptr->%s != NULL) ? sizeof(char)*(1+strlen(struct_ptr->%s)) : 0;\n' % (member.name, member.name)
                         else:
                             if member.len is not None:
                                 # Avoid using 'sizeof(void)', which generates compile-time warnings/errors
                                 checked_type = member.type
                                 if checked_type == 'void':
                                     checked_type = 'void*'
-                                struct_size_body += '        struct_size += (struct_ptr->%s ) * sizeof(%s);\n' % (member.len, checked_type)
-            struct_size_body += '    }\n'
-            struct_size_body += '    return struct_size;\n'
-            struct_size_body += '}\n'
+                                struct_size_funcs += '        struct_size += (struct_ptr->%s ) * sizeof(%s);\n' % (member.len, checked_type)
+            struct_size_funcs += '    }\n'
+            struct_size_funcs += '    return struct_size;\n'
+            struct_size_funcs += '}\n'
             if item.ifdef_protect != None:
-                struct_size_body += '#endif // %s\n' % item.ifdef_protect
+                struct_size_funcs += '#endif // %s\n' % item.ifdef_protect
+                struct_size += '#endif // %s\n' % item.ifdef_protect
                 chain_size += '#endif // %s\n' % item.ifdef_protect
         chain_size += self.GenerateChainSizePostamble()
-        struct_size_body += chain_size;
-        return struct_size_body
+        struct_size += self.GenerateStructSizePostamble()
+        return_value = struct_size_funcs + chain_size + struct_size;
+        return return_value
     #
     # Combine struct size helper source file preamble with body text and return
     def GenerateStructSizeHelperSource(self):
@@ -541,6 +582,7 @@ class HelperFileOutputGenerator(OutputGenerator):
                         safe_struct_header += '%s;\n' % member.cdecl
                 safe_struct_header += '    safe_%s(const %s* in_struct);\n' % (item.name, item.name)
                 safe_struct_header += '    safe_%s(const safe_%s& src);\n' % (item.name, item.name)
+                safe_struct_header += '    safe_%s& operator=(const safe_%s& src);\n' % (item.name, item.name)
                 safe_struct_header += '    safe_%s();\n' % item.name
                 safe_struct_header += '    ~safe_%s();\n' % item.name
                 safe_struct_header += '    void initialize(const %s* in_struct);\n' % item.name
@@ -667,10 +709,7 @@ class HelperFileOutputGenerator(OutputGenerator):
                     done = True
                     break
             if done == False:
-                if object_type == 'kVulkanObjectTypeDebugReportCallbackEXT':
-                    object_types_header += '    VK_DEBUG_REPORT_OBJECT_TYPE_DEBUG_REPORT_EXT, // kVulkanObjectTypeDebugReportCallbackEXT\n'
-                else:
-                    object_types_header += '    VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT; // No Match\n'
+                object_types_header += '    VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, // No Match\n'
         object_types_header += '};\n'
 
         # Output a conversion routine from the layer object definitions to the core object type definitions
@@ -688,7 +727,7 @@ class HelperFileOutputGenerator(OutputGenerator):
                     done = True
                     break
             if done == False:
-                object_types_header += '    VK_OBJECT_TYPE_UNKNOWN; // No Match\n'
+                object_types_header += '    VK_OBJECT_TYPE_UNKNOWN, // No Match\n'
         object_types_header += '};\n'
 
         return object_types_header
@@ -772,7 +811,15 @@ class HelperFileOutputGenerator(OutputGenerator):
                                     '        break;\n'
                                     '        default:\n'
                                     '        break;\n'
+                                    '    }\n',
+                                    'VkShaderModuleCreateInfo' :
+                                    '    if (in_struct->pCode) {\n'
+                                    '        pCode = reinterpret_cast<uint32_t *>(new uint8_t[codeSize]);\n'
+                                    '        memcpy((void *)pCode, (void *)in_struct->pCode, codeSize);\n'
                                     '    }\n'}
+            custom_destruct_txt = {'VkShaderModuleCreateInfo' :
+                                   '    if (pCode)\n'
+                                   '        delete[] reinterpret_cast<const uint8_t *>(pCode);\n' }
 
             for member in item.members:
                 m_type = member.type
@@ -849,6 +896,8 @@ class HelperFileOutputGenerator(OutputGenerator):
                 init_list = init_list[:-1] # hack off final comma
             if item.name in custom_construct_txt:
                 construct_txt = custom_construct_txt[item.name]
+            if item.name in custom_destruct_txt:
+                destruct_txt = custom_destruct_txt[item.name]
             safe_struct_body.append("\n%s::%s(const %s* in_struct) :%s\n{\n%s}" % (ss_name, ss_name, item.name, init_list, construct_txt))
             if '' != default_init_list:
                 default_init_list = " :%s" % (default_init_list[:-1])
@@ -858,7 +907,9 @@ class HelperFileOutputGenerator(OutputGenerator):
             copy_construct_txt = construct_txt.replace(' (in_struct->', ' (src.')     # Exclude 'if' blocks from next line
             copy_construct_txt = copy_construct_txt.replace('(in_struct->', '(*src.') # Pass object to copy constructors
             copy_construct_txt = copy_construct_txt.replace('in_struct->', 'src.')    # Modify remaining struct refs for src object
+            copy_assign_txt = '    if (&src == this) return *this;\n\n' + destruct_txt + '\n' + copy_construct_init + copy_construct_txt + '\n    return *this;'
             safe_struct_body.append("\n%s::%s(const %s& src)\n{\n%s%s}" % (ss_name, ss_name, ss_name, copy_construct_init, copy_construct_txt)) # Copy constructor
+            safe_struct_body.append("\n%s& %s::operator=(const %s& src)\n{\n%s\n}" % (ss_name, ss_name, ss_name, copy_assign_txt)) # Copy assignment operator
             safe_struct_body.append("\n%s::~%s()\n{\n%s}" % (ss_name, ss_name, destruct_txt))
             safe_struct_body.append("\nvoid %s::initialize(const %s* in_struct)\n{\n%s%s}" % (ss_name, item.name, init_func_txt, construct_txt))
             # Copy initializer uses same txt as copy constructor but has a ptr and not a reference

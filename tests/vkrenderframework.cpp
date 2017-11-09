@@ -38,6 +38,7 @@ VkRenderFramework::VkRenderFramework()
       m_commandBuffer(NULL),
       m_renderPass(VK_NULL_HANDLE),
       m_framebuffer(VK_NULL_HANDLE),
+      m_addRenderPassSelfDependency(false),
       m_width(256.0),   // default window width
       m_height(256.0),  // default window height
       m_render_target_fmt(VK_FORMAT_R8G8B8A8_UNORM),
@@ -109,19 +110,19 @@ bool VkRenderFramework::InstanceExtensionSupported(const char *ext_name, uint32_
 };
 
 // Return true if extension name is found and spec value is >= requested spec value
-bool VkRenderFramework::DeviceExtensionSupported(VkPhysicalDevice dev, const char *ext_name, uint32_t spec) {
+bool VkRenderFramework::DeviceExtensionSupported(VkPhysicalDevice dev, const char *layer, const char *ext_name, uint32_t spec) {
     if (!inst) {
         EXPECT_NE((VkInstance)0, inst);  // Complain, not cool without an instance
         return false;
     }
     uint32_t ext_count = 0;
     std::vector<VkExtensionProperties> ext_props;
-    VkResult res = vkEnumerateDeviceExtensionProperties(dev, nullptr, &ext_count, nullptr);
+    VkResult res = vkEnumerateDeviceExtensionProperties(dev, layer, &ext_count, nullptr);
     if (VK_SUCCESS != res) return false;
     if (0 == ext_count) return false;
 
     ext_props.resize(ext_count);
-    res = vkEnumerateDeviceExtensionProperties(dev, nullptr, &ext_count, ext_props.data());
+    res = vkEnumerateDeviceExtensionProperties(dev, layer, &ext_count, ext_props.data());
     if (VK_SUCCESS != res) return false;
 
     for (auto &it : ext_props) {
@@ -133,6 +134,10 @@ bool VkRenderFramework::DeviceExtensionSupported(VkPhysicalDevice dev, const cha
 };
 
 void VkRenderFramework::InitFramework(PFN_vkDebugReportCallbackEXT dbgFunction, void *userData) {
+    if (InstanceLayerSupported("VK_LAYER_LUNARG_device_profile_api")) {
+        m_instance_layer_names.push_back("VK_LAYER_LUNARG_device_profile_api");
+    }
+
     // Assert not already initialized
     ASSERT_EQ((VkInstance)0, inst);
 
@@ -140,7 +145,7 @@ void VkRenderFramework::InitFramework(PFN_vkDebugReportCallbackEXT dbgFunction, 
     for (auto layer = m_instance_layer_names.begin(); layer != m_instance_layer_names.end();) {
         if (!InstanceLayerSupported(*layer)) {
             ADD_FAILURE() << "InitFramework(): Requested layer " << *layer << " was not found. Disabled.";
-            layer = m_instance_extension_names.erase(layer);
+            layer = m_instance_layer_names.erase(layer);
         } else {
             ++layer;
         }
@@ -244,9 +249,20 @@ void VkRenderFramework::GetPhysicalDeviceFeatures(VkPhysicalDeviceFeatures *feat
 void VkRenderFramework::InitState(VkPhysicalDeviceFeatures *features, const VkCommandPoolCreateFlags flags) {
     // Remove any unsupported device extension names from list
     for (auto ext = m_device_extension_names.begin(); ext != m_device_extension_names.end();) {
-        if (!DeviceExtensionSupported(objs[0], *ext)) {
-            ADD_FAILURE() << "InitState(): The requested device extension " << *ext << " was not found. Disabled.";
-            ext = m_device_extension_names.erase(ext);
+        if (!DeviceExtensionSupported(objs[0], nullptr, *ext)) {
+            bool found = false;
+            for (auto layer = m_instance_layer_names.begin(); layer != m_instance_layer_names.end();) {
+                if (!DeviceExtensionSupported(objs[0], *layer, *ext)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                ADD_FAILURE() << "InitState(): The requested device extension " << *ext << " was not found. Disabled.";
+                ext = m_device_extension_names.erase(ext);
+            } else {
+                ++ext;
+            }
         } else {
             ++ext;
         }
@@ -406,6 +422,31 @@ void VkRenderFramework::InitRenderTarget(uint32_t targets, VkImageView *dsBindin
     rp_info.pAttachments = attachments.data();
     rp_info.subpassCount = 1;
     rp_info.pSubpasses = &subpass;
+    VkSubpassDependency subpass_dep = {};
+    if (m_addRenderPassSelfDependency) {
+        // Add a subpass self-dependency to subpass 0 of default renderPass
+        subpass_dep.srcSubpass = 0;
+        subpass_dep.dstSubpass = 0;
+        // Just using all framebuffer-space pipeline stages in order to get a reasonably large
+        //  set of bits that can be used for both src & dst
+        subpass_dep.srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                                   VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        subpass_dep.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                                   VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        // Add all of the gfx mem access bits that correlate to the fb-space pipeline stages
+        subpass_dep.srcAccessMask = VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_SHADER_READ_BIT |
+                                    VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        subpass_dep.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_SHADER_READ_BIT |
+                                    VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        // Must include dep_by_region bit when src & dst both include framebuffer-space stages
+        subpass_dep.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+        rp_info.dependencyCount = 1;
+        rp_info.pDependencies = &subpass_dep;
+    }
 
     vkCreateRenderPass(device(), &rp_info, NULL, &m_renderPass);
 

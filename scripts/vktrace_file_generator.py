@@ -24,80 +24,103 @@ import xml.etree.ElementTree as etree
 from generator import *
 from collections import namedtuple
 
-# TODO: Finish generated file conversion, reenable these extensions
-# THESE FUNCTIONS WILL BE ADDED IN AFTER THE SCRIPT CONVERSION EFFORT IS COMPLETE
-temporary_script_porting_exclusions = ['vkGetPhysicalDeviceFeatures2KHR',
-                                       'vkGetPhysicalDeviceProperties2KHR',
-                                       'vkGetPhysicalDeviceFormatProperties2KHR',
-                                       'vkGetPhysicalDeviceImageFormatProperties2KHR',
-                                       'vkGetPhysicalDeviceQueueFamilyProperties2KHR',
-                                       'vkGetPhysicalDeviceMemoryProperties2KHR',
-                                       'vkGetPhysicalDeviceSparseImageFormatProperties2KHR',
-                                       'vkTrimCommandPoolKHR',
-                                       'vkCmdPushDescriptorSetKHR',
-                                       'vkGetDeviceGroupPeerMemoryFeaturesKHX',
-                                       'vkBindBufferMemory2KHX',
-                                       'vkBindImageMemory2KHX',
-                                       'vkCmdSetDeviceMaskKHX',
-                                       'vkGetDeviceGroupPresentCapabilitiesKHX',
-                                       'vkGetDeviceGroupSurfacePresentModesKHX',
-                                       'vkAcquireNextImage2KHX',
-                                       'vkCmdDispatchBaseKHX',
-                                       'vkGetPhysicalDevicePresentRectanglesKHX',
-                                       'vkCreateViSurfaceNN',
-                                       'vkEnumeratePhysicalDeviceGroupsKHX',
-                                       'vkGetPhysicalDeviceExternalBufferPropertiesKHX',
-                                       'vkGetMemoryWin32HandleKHX',
-                                       'vkGetMemoryWin32HandlePropertiesKHX',
-                                       'vkGetMemoryFdKHX',
-                                       'vkGetMemoryFdPropertiesKHX',
-                                       'vkGetPhysicalDeviceExternalSemaphorePropertiesKHX',
-                                       'vkImportSemaphoreWin32HandleKHX',
-                                       'vkGetSemaphoreWin32HandleKHX',
-                                       'vkImportSemaphoreFdKHX',
-                                       'vkGetSemaphoreFdKHX',
-                                       'vkCmdProcessCommandsNVX',
-                                       'vkCmdReserveSpaceForCommandsNVX',
-                                       'vkCreateIndirectCommandsLayoutNVX',
-                                       'vkDestroyIndirectCommandsLayoutNVX',
-                                       'vkCreateObjectTableNVX',
-                                       'vkDestroyObjectTableNVX',
-                                       'vkRegisterObjectsNVX',
-                                       'vkUnregisterObjectsNVX',
-                                       'vkGetPhysicalDeviceGeneratedCommandsPropertiesNVX',
-                                       'vkCmdSetViewportWScalingNV',
-                                       'vkReleaseDisplayEXT',
-                                       'vkAcquireXlibDisplayEXT',
-                                       'vkGetRandROutputDisplayEXT',
-                                       'vkGetPhysicalDeviceSurfaceCapabilities2EXT',
-                                       'vkDisplayPowerControlEXT',
-                                       'vkRegisterDeviceEventEXT',
-                                       'vkRegisterDisplayEventEXT',
-                                       'vkGetSwapchainCounterEXT',
-                                       'vkGetRefreshCycleDurationGOOGLE',
-                                       'vkGetPastPresentationTimingGOOGLE',
-                                       'vkCmdSetDiscardRectangleEXT',
-                                       'vkSetHdrMetadataEXT',
-                                       'vkCreateIOSSurfaceMVK',
-                                       'vkCreateMacOSSurfaceMVK',
-                                       'vkGetSwapchainStatusKHR',
-                                       'vkGetPhysicalDeviceSurfaceCapabilities2KHR',
-                                       'vkGetPhysicalDeviceSurfaceFormats2KHR',
-                                       ]
+approved_ext = [
+                'VK_AMD_draw_indirect_count',
+                'VK_AMD_gcn_shader',
+                'VK_AMD_gpu_shader_half_float',
+                'VK_AMD_gpu_shader_int16',
+                'VK_AMD_negative_viewport_height',
+                'VK_AMD_rasterization_order',
+                'VK_AMD_shader_ballot',
+                'VK_AMD_shader_explicit_vertex_parameter',
+                'VK_AMD_shader_trinary_minmax',
+                'VK_AMD_texture_gather_bias_lod',
+                'VK_EXT_acquire_xlib_display',
+                'VK_EXT_blend_operation_advanced',
+                'VK_EXT_debug_marker',
+                'VK_EXT_debug_report',
+                'VK_EXT_direct_mode_display',
+                'VK_EXT_discard_rectangles',
+                'VK_EXT_display_control',
+                'VK_EXT_display_surface_counter',
+                'VK_EXT_hdr_metadata',
+                'VK_EXT_shader_subgroup_ballot',
+                'VK_EXT_shader_subgroup_vote',
+                'VK_EXT_swapchain_colorspace',
+                'VK_EXT_validation_flags',
+                'VK_GOOGLE_display_timing',
+                'VK_IMG_filter_cubic',
+                'VK_IMG_format_pvrtc',
+                'VK_KHR_16bit_storage',
+                'VK_KHR_android_surface',
+                'VK_KHR_dedicated_allocation',
+                'VK_KHR_descriptor_update_template',
+                'VK_KHR_display',
+                'VK_KHR_display_swapchain',
+                'VK_KHR_external_fence',
+                'VK_KHR_external_fence_capabilities',
+                #'VK_KHR_external_fence_fd',
+                #'VK_KHR_external_fence_win32',
+                'VK_KHR_external_memory',
+                'VK_KHR_external_memory_capabilities',
+                'VK_KHR_external_memory_fd',
+                #'VK_KHR_external_memory_win32',
+                'VK_KHR_external_semaphore',
+                'VK_KHR_external_semaphore_capabilities',
+                'VK_KHR_external_semaphore_fd',
+                #'VK_KHR_external_semaphore_win32',
+                'VK_KHR_get_memory_requirements2',
+                'VK_KHR_get_physical_device_properties2',
+                'VK_KHR_get_surface_capabilities2',
+                'VK_KHR_incremental_present',
+                'VK_KHR_maintenance1',
+                #'VK_KHR_mir_surface',
+                'VK_KHR_push_descriptor',
+                'VK_KHR_sampler_filter_minmax',
+                'VK_KHR_sampler_mirror_clamp_to_edge',
+                'VK_KHR_shader_draw_parameters',
+                'VK_KHR_shared_presentable_image',
+                'VK_KHR_storage_buffer_storage_class',
+                'VK_KHR_surface',
+                'VK_KHR_swapchain',
+                'VK_KHR_variable_pointers',
+                'VK_KHR_wayland_surface',
+                'VK_KHR_win32_keyed_mutex',
+                'VK_KHR_win32_surface',
+                'VK_KHR_xcb_surface',
+                'VK_KHR_xlib_surface',
+                'VK_KHX_device_group',
+                'VK_KHX_device_group_creation',
+                'VK_KHX_multiview',
+                #'VK_MVK_ios_surface',
+                #'VK_MVK_macos_surface',
+                #'VK_MVK_moltenvk',
+                #'VK_NN_vi_surface',
+                'VK_NV_clip_space_w_scaling',
+                'VK_NV_dedicated_allocation',
+                'VK_NV_external_memory',
+                'VK_NV_external_memory_capabilities',
+                #'VK_NV_external_memory_win32',
+                'VK_NV_fill_rectangle',
+                'VK_NV_fragment_coverage_to_color',
+                'VK_NV_framebuffer_mixed_samples',
+                'VK_NV_geometry_shader_passthrough',
+                'VK_NV_glsl_shader',
+                'VK_NV_sample_mask_override_coverage',
+                'VK_NV_viewport_array2',
+                'VK_NV_viewport_swizzle',
+                'VK_NV_win32_keyed_mutex',
+                'VK_NVX_device_generated_commands',
+                'VK_NVX_multiview_per_view_attributes',
+                ]
 
-api_exclusions = ['CreateWaylandSurfaceKHR',
-                  'CreateMirSurfaceKHR',
-                  'GetPhysicalDeviceWaylandPresentationSupportKHR',
-                  'GetPhysicalDeviceMirPresentationSupportKHR',
-                  'GetPhysicalDeviceDisplayPropertiesKHR',
-                  'GetPhysicalDeviceDisplayPlanePropertiesKHR',
-                  'GetDisplayPlaneSupportedDisplaysKHR',
-                  'GetDisplayModePropertiesKHR',
-                  'CreateDisplayModeKHR',
-                  'GetDisplayPlaneCapabilitiesKHR',
-                  'CreateDisplayPlaneSurfaceKHR',
-                  ]
+api_exclusions = [
+                # VK_KHR_display
+                'GetDisplayPlaneSupportedDisplaysKHR',
 
+                # VK_KHR_display_swapchain
+                'CreateSharedSwapchainsKHR'
+                ]
 #
 # VkTraceFileOutputGeneratorOptions - subclass of GeneratorOptions.
 class VkTraceFileOutputGeneratorOptions(GeneratorOptions):
@@ -164,7 +187,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         self.CmdMemberData = namedtuple('CmdMemberData', ['name', 'members'])
         self.CmdExtraProtect = namedtuple('CmdExtraProtect', ['name', 'extra_protect'])
         self.StructType = namedtuple('StructType', ['name', 'value'])
-        self.CommandParam = namedtuple('CommandParam', ['type', 'name', 'ispointer', 'isstaticarray', 'isconst', 'iscount', 'len', 'cdecl', 'feature_protect'])
+        self.CommandParam = namedtuple('CommandParam', ['type', 'name', 'ispointer', 'isstaticarray', 'isconst', 'iscount', 'len', 'cdecl', 'feature_protect', 'handle'])
         self.StructMemberData = namedtuple('StructMemberData', ['name', 'members', 'ifdef_protect'])
     #
     # Called once at the beginning of each run
@@ -349,6 +372,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
             isconst = True if 'const' in cdecl else False
             ispointer = self.paramIsPointer(member)
             isstaticarray = self.paramIsStaticArray(member)
+            handle = self.registry.tree.find("types/type/[name='" + type + "'][@category='handle']")
             membersInfo.append(self.CommandParam(type=type,
                                                  name=name,
                                                  ispointer=ispointer,
@@ -357,7 +381,8 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                                  iscount=iscount,
                                                  len=len,
                                                  cdecl=cdecl,
-                                                 feature_protect=self.featureExtraProtect))
+                                                 feature_protect=self.featureExtraProtect,
+                                                 handle=handle))
         self.cmdMembers.append(self.CmdMemberData(name=cmdname, members=membersInfo))
         self.cmd_info_data.append(self.CmdInfoData(name=cmdname, cmdinfo=cmdinfo))
         self.cmd_extension_names.append(self.cmd_extension_data(name=cmdname, extension_name=self.current_feature_name))
@@ -383,6 +408,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
             cdecl = self.makeCParamDecl(member, 1)
             # Store pointer/array/string info
             isstaticarray = self.paramIsStaticArray(member)
+            handle = self.registry.tree.find("types/type/[name='" + type + "'][@category='handle']")
             membersInfo.append(self.CommandParam(type=type,
                                                  name=name,
                                                  ispointer=self.paramIsPointer(member),
@@ -391,7 +417,8 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                                  iscount=True if name in lens else False,
                                                  len=self.getLen(member),
                                                  cdecl=cdecl,
-                                                 feature_protect=self.featureExtraProtect))
+                                                 feature_protect=self.featureExtraProtect,
+                                                 handle=handle))
         self.structMembers.append(self.StructMemberData(name=typeName, members=membersInfo, ifdef_protect=self.featureExtraProtect))
     #
     def beginFeature(self, interface, emit):
@@ -490,31 +517,6 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         replay_objmapper_header += '};'
         return replay_objmapper_header
     #
-    # Construct vkreplay func pointer header file
-    def GenerateReplayFuncptrHeader(self):
-        replay_funcptr_header  = '\n'
-        replay_funcptr_header += 'struct vkFuncs {'
-        replay_funcptr_header += '    void init_funcs(void * libHandle);'
-        replay_funcptr_header += '    void *m_libHandle;\n'
-        cmd_member_dict = dict(self.cmdMembers)
-        cmd_info_dict = dict(self.cmd_info_data)
-        cmd_protect_dict = dict(self.cmd_feature_protect)
-        for api in self.cmdMembers:
-            cmdname = api.name
-            cmdinfo = cmd_info_dict[api.name]
-            protect = cmd_protect_dict[cmdname]
-            decl = self.makeCDecls(cmdinfo.elem)[1]
-            typedef = decl.replace('VKAPI_PTR *PFN_', 'VKAPI_PTR *type_')
-            if protect is not None:
-                replay_funcptr_header += '#ifdef %s\n' % protect
-            replay_funcptr_header += '    %s\n' % typedef
-            replay_funcptr_header += '    type_%s real_%s;\n' % (cmdname, cmdname)
-            if protect is not None:
-                replay_funcptr_header += '#endif // %s\n' % protect
-            replay_funcptr_header += '\n'
-        replay_funcptr_header += '};\n'
-        return replay_funcptr_header
-    #
     # Construct vkreplay replay gen source file
     def GenerateReplayGenSource(self):
         cmd_member_dict = dict(self.cmdMembers)
@@ -524,6 +526,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
 
         wsi_platform_manual_funcs = ['CreateWin32SurfaceKHR',
                                      'CreateXcbSurfaceKHR',
+                                     'CreateWaylandSurfaceKHR',
                                      'CreateXlibSurfaceKHR',
                                      'CreateAndroidSurfaceKHR']
         manually_replay_funcs = ['AllocateMemory',
@@ -561,10 +564,13 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                  'GetPhysicalDeviceSurfaceFormatsKHR',
                                  'GetPhysicalDeviceSurfacePresentModesKHR',
                                  'CreateSwapchainKHR',
+                                 'DestroySwapchainKHR',
                                  'GetSwapchainImagesKHR',
                                  'CreateXcbSurfaceKHR',
+                                 'CreateWaylandSurfaceKHR',
                                  'CreateXlibSurfaceKHR',
                                  'GetPhysicalDeviceXcbPresentationSupportKHR',
+                                 'GetPhysicalDeviceWaylandPresentationSupportKHR',
                                  'GetPhysicalDeviceXlibPresentationSupportKHR',
                                  'CreateWin32SurfaceKHR',
                                  'GetPhysicalDeviceWin32PresentationSupportKHR',
@@ -584,10 +590,19 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                  'DestroyDescriptorUpdateTemplateKHR',
                                  'UpdateDescriptorSetWithTemplateKHR',
                                  'CmdPushDescriptorSetWithTemplateKHR',
+                                 'BindBufferMemory',
+                                 # VK_EXT_display_control
+                                 'RegisterDeviceEventEXT',
+                                 'RegisterDisplayEventEXT',
+                                 # VK_NVX_device_generated_commands
+                                 'CreateObjectTableNVX',
+                                 'CmdProcessCommandsNVX',
+                                 'CreateIndirectCommandsLayoutNVX',
                                  ]
         # Map APIs to functions if body is fully custom
         custom_body_dict = {'CreateInstance': self.GenReplayCreateInstance,
                             'GetPhysicalDeviceXcbPresentationSupportKHR': self.GenReplayGetPhysicalDeviceXcbPresentationSupportKHR,
+                            'GetPhysicalDeviceWaylandPresentationSupportKHR': self.GenReplayGetPhysicalDeviceWaylandPresentationSupportKHR,
                             'GetPhysicalDeviceXlibPresentationSupportKHR': self.GenReplayGetPhysicalDeviceXlibPresentationSupportKHR,
                             'GetPhysicalDeviceWin32PresentationSupportKHR': self.GenReplayGetPhysicalDeviceWin32PresentationSupportKHR }
         # Special cases for functions that use do-while loops
@@ -605,21 +620,30 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         replay_gen_source += 'extern "C" {\n'
         replay_gen_source += '#include "vktrace_vk_vk_packets.h"\n'
         replay_gen_source += '#include "vktrace_vk_packet_id.h"\n\n'
-        replay_gen_source += 'void vkFuncs::init_funcs(void * handle) {\n'
+        replay_gen_source += 'void vkReplay::init_funcs(void * handle) {\n'
         replay_gen_source += '    m_libHandle = handle;\n'
 
         for api in self.cmdMembers:
-            # TEMPORARY EXTENSION WORKAROUND
-            if api.name in temporary_script_porting_exclusions:
+            cmdname = api.name[2:]
+            extension = cmd_extension_dict[api.name]
+            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
                 continue
-            cmdname = api.name
-            protect = cmd_protect_dict[cmdname]
+            if cmdname in api_exclusions:
+                continue
+            protect = cmd_protect_dict[api.name]
             if protect is not None:
                 replay_gen_source += '#ifdef %s\n' % protect
+            disp_table = ""
+            cmdtarget = api.members[0].type
+            handle = api.members[0].handle
+            if handle == None or cmdtarget == "VkInstance" or cmdtarget == 'VkPhysicalDevice':
+                disp_table = "m_vkFuncs"
+            else:
+                disp_table = "m_vkDeviceFuncs"
             if 'DebugReport' not in cmdname:
-                replay_gen_source += '    real_%s = (type_%s)(vktrace_platform_get_library_entrypoint(handle, "%s"));\n' % (cmdname, cmdname, cmdname)
+                replay_gen_source += '    %s.%s = (PFN_vk%s)(vktrace_platform_get_library_entrypoint(handle, "vk%s"));\n' % (disp_table, cmdname, cmdname, cmdname)
             else: # These func ptrs get assigned at GetProcAddr time
-                replay_gen_source += '    real_%s = (type_%s)NULL;\n' % (cmdname, cmdname)
+                replay_gen_source += '    %s.%s = (PFN_vk%s)NULL;\n' % (disp_table, cmdname, cmdname)
             if protect is not None:
                 replay_gen_source += '#endif // %s\n' % protect
         replay_gen_source += '}\n\n'
@@ -637,11 +661,11 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         replay_gen_source += '        }\n'
 
         for api in self.cmdMembers:
+            extension = cmd_extension_dict[api.name]
+            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
+                continue
             cmdname = api.name
             vk_cmdname = cmdname
-            # TEMPORARY EXTENSION WORKAROUND
-            if api.name in temporary_script_porting_exclusions:
-                continue
             # Strip off 'vk' from command name
             cmdname = cmdname[2:]
             if cmdname in api_exclusions:
@@ -739,40 +763,52 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                         last_name = p.name
 
                 if cmdname == 'DestroyInstance':
-                    replay_gen_source += '            if (m_vkFuncs.real_vkDestroyDebugReportCallbackEXT != NULL) {\n'
-                    replay_gen_source += '                m_vkFuncs.real_vkDestroyDebugReportCallbackEXT(remappedinstance, m_dbgMsgCallbackObj, pPacket->pAllocator);\n'
+                    replay_gen_source += '            if (m_vkFuncs.DestroyDebugReportCallbackEXT != NULL) {\n'
+                    replay_gen_source += '                m_vkFuncs.DestroyDebugReportCallbackEXT(remappedinstance, m_dbgMsgCallbackObj, pPacket->pAllocator);\n'
                     replay_gen_source += '            }\n'
                 # TODO: need a better way to indicate which extensions should be mapped to which Get*ProcAddr
                 elif cmdname == 'GetInstanceProcAddr':
                     for command in self.cmdMembers:
-                        # TEMPORARY EXTENSION WORKAROUND
-                        if api.name in temporary_script_porting_exclusions:
+                        cmdtarget = command.members[0].type
+                        handle = command.members[0].handle
+                        if handle != None and cmdtarget != "VkInstance" and cmdtarget != 'VkPhysicalDevice':
+                            continue
+                        extension = cmd_extension_dict[command.name]
+                        if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
+                            continue
+                        command_name_novk = command.name[2:]
+                        if command_name_novk in api_exclusions:
                             continue
                         if cmd_extension_dict[command.name] != 'VK_VERSION_1_0' and command.name not in api_exclusions:
                             gipa_params = cmd_member_dict[vk_cmdname]
                             gipa_protect = cmd_protect_dict[command.name]
                             if gipa_protect is not None:
                                 replay_gen_source += '#ifdef %s\n' % gipa_protect
-                            if (gipa_params[0].type == 'VkInstance'):
-                                replay_gen_source += '            if (strcmp(pPacket->pName, "%s") == 0) {\n' % (command.name)
-                                replay_gen_source += '               m_vkFuncs.real_%s = (PFN_%s)vk%s(remappedinstance, pPacket->pName);\n' % (command.name, command.name, cmdname)
-                                replay_gen_source += '            }\n'
+                            replay_gen_source += '            if (strcmp(pPacket->pName, "%s") == 0) {\n' % (command.name)
+                            replay_gen_source += '               m_vkFuncs.%s = (PFN_%s)vk%s(remappedinstance, pPacket->pName);\n' % (command_name_novk, command.name, cmdname)
+                            replay_gen_source += '            }\n'
                             if gipa_protect is not None:
                                 replay_gen_source += '#endif // %s\n' % gipa_protect
                 elif cmdname == 'GetDeviceProcAddr':
                     for command in self.cmdMembers:
-                        # TEMPORARY EXTENSION WORKAROUND
-                        if api.name in temporary_script_porting_exclusions:
+                        cmdtarget = command.members[0].type
+                        handle = command.members[0].handle
+                        if handle == None or cmdtarget == "VkInstance" or cmdtarget == 'VkPhysicalDevice':
+                            continue
+                        extension = cmd_extension_dict[command.name]
+                        if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
+                            continue
+                        command_name_novk = command.name[2:]
+                        if command_name_novk in api_exclusions:
                             continue
                         if cmd_extension_dict[command.name] != 'VK_VERSION_1_0' and command.name not in api_exclusions:
                             gdpa_params = cmd_member_dict[vk_cmdname]
                             gdpa_protect = cmd_protect_dict[command.name]
                             if gdpa_protect is not None:
                                 replay_gen_source += '#ifdef %s\n' % gdpa_protect
-                            if gdpa_params[0].type != 'VkInstance' and gdpa_params[0].type != 'VkPhysicalDevice':
-                                replay_gen_source += '            if (strcmp(pPacket->pName, "%s") == 0) {\n' % (command.name)
-                                replay_gen_source += '               m_vkFuncs.real_%s = (PFN_%s)vk%s(remappeddevice, pPacket->pName);\n' % (command.name, command.name, cmdname)
-                                replay_gen_source += '            }\n'
+                            replay_gen_source += '            if (strcmp(pPacket->pName, "%s") == 0) {\n' % (command.name)
+                            replay_gen_source += '               m_vkDeviceFuncs.%s = (PFN_%s)vk%s(remappeddevice, pPacket->pName);\n' % (command_name_novk, command.name, cmdname)
+                            replay_gen_source += '            }\n'
                             if gdpa_protect is not None:
                                 replay_gen_source += '#endif // %s\n' % gdpa_protect
                 elif cmdname == 'GetPhysicalDeviceMemoryProperties':
@@ -786,7 +822,12 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                         ret_value = False
                     else:
                         rr_string = '            replayResult = '
-                rr_string += 'm_vkFuncs.real_vk%s(' % cmdname
+                cmdtarget = api.members[0].type
+                handle = api.members[0].handle
+                if handle == None or cmdtarget == "VkInstance" or cmdtarget == 'VkPhysicalDevice':
+                    rr_string += 'm_vkFuncs.%s(' % cmdname
+                else:
+                    rr_string += 'm_vkDeviceFuncs.%s(' % cmdname
                 for p in params:
                     if p.name is not '':
                         # For last param of Create funcs, pass address of param
@@ -833,7 +874,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                     replay_gen_source += '            if (replayResult == VK_SUCCESS) {\n'
                     replay_gen_source += '                m_objMapper.rm_from_swapchainkhrs_map(pPacket->swapchain);\n'
                     replay_gen_source += '            }\n'
-                elif 'AcquireNextImageKHR' in cmdname:
+                elif 'AcquireNextImage' in cmdname:
                     replay_gen_source += '            m_objMapper.add_to_pImageIndex_map(*(pPacket->pImageIndex), local_pImageIndex);\n'
                 elif 'DestroyInstance' in cmdname:
                     replay_gen_source += '            if (replayResult == VK_SUCCESS) {\n'
@@ -987,6 +1028,16 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         cb_body.append('            }')
         return "\n".join(cb_body)
 
+    def GenReplayGetPhysicalDeviceWaylandPresentationSupportKHR (self):
+        cb_body = []
+        cb_body.append('            VkBool32 rval = manually_replay_vkGetPhysicalDeviceWaylandPresentationSupportKHR(pPacket);')
+        cb_body.append('            if (rval != pPacket->result) {')
+        cb_body.append('                vktrace_LogError("Return value %d from API call (vkGetPhysicalDeviceWaylandPresentationSupportKHR) does not match return value from trace file %d.",')
+        cb_body.append('                                 rval, pPacket->result);')
+        cb_body.append('                returnValue = vktrace_replay::VKTRACE_REPLAY_BAD_RETURN;')
+        cb_body.append('            }')
+        return "\n".join(cb_body)
+
     def GenReplayGetPhysicalDeviceXlibPresentationSupportKHR (self):
         cb_body = []
         cb_body.append('            VkBool32 rval = manually_replay_vkGetPhysicalDeviceXlibPresentationSupportKHR(pPacket);')
@@ -1048,11 +1099,12 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         trace_pkt_id_hdr += '        case VKTRACE_TPI_VK_vkApiVersion: {\n'
         trace_pkt_id_hdr += '            return "vkApiVersion";\n'
         trace_pkt_id_hdr += '        }\n'
+        cmd_extension_dict = dict(self.cmd_extension_names)
         for api in self.cmdMembers:
-            if api.name[2:] in api_exclusions:
+            extension = cmd_extension_dict[api.name]
+            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
                 continue
-            # TEMPORARY EXTENSION WORKAROUND
-            if api.name in temporary_script_porting_exclusions:
+            if api.name[2:] in api_exclusions:
                 continue
             trace_pkt_id_hdr += '        case VKTRACE_TPI_VK_%s: {\n' % api.name
             trace_pkt_id_hdr += '            return "%s";\n' % api.name
@@ -1074,10 +1126,10 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         trace_pkt_id_hdr += '        }\n'
         cmd_member_dict = dict(self.cmdMembers)
         for api in self.cmdMembers:
-            if api.name[2:] in api_exclusions:
+            extension = cmd_extension_dict[api.name]
+            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
                 continue
-            # TEMPORARY EXTENSION WORKAROUND
-            if api.name in temporary_script_porting_exclusions:
+            if api.name[2:] in api_exclusions:
                 continue
             trace_pkt_id_hdr += '    case VKTRACE_TPI_VK_%s: {\n' % api.name
             func_str = 'vk%s(' % api.name
@@ -1124,11 +1176,12 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         interp_func_body += '        case VKTRACE_TPI_VK_vkApiVersion: {\n'
         interp_func_body += '            return interpret_body_as_vkApiVersion(pHeader)->header;\n'
         interp_func_body += '        }\n'
+        cmd_extension_dict = dict(self.cmd_extension_names)
         for api in self.cmdMembers:
-            if api.name[2:] in api_exclusions:
+            extension = cmd_extension_dict[api.name]
+            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
                 continue
-            # TEMPORARY EXTENSION WORKAROUND
-            if api.name in temporary_script_porting_exclusions:
+            if api.name[2:] in api_exclusions:
                 continue
             interp_func_body += '        case VKTRACE_TPI_VK_%s: {\n' % api.name
             interp_func_body += '            return interpret_body_as_%s(pHeader)->header;\n        }\n' % api.name
@@ -1161,7 +1214,9 @@ class VkTraceFileOutputGenerator(OutputGenerator):
             return ("%p { flags=%s }", "%s, (%s == NULL)?\"0\":(%s->flags == VK_FENCE_CREATE_SIGNALED_BIT)?\"VK_FENCE_CREATE_SIGNALED_BIT\":\"0\"" % (name, name, name), "")
         if "VkBufferCopy" in vk_type:
             return ("%p [0]={srcOffset=%\" PRIu64 \", dstOffset=%\" PRIu64 \", size=%\" PRIu64 \"}", "%s, (%s == NULL)?0:%s->srcOffset, (%s == NULL)?0:%s->dstOffset, (%s == NULL)?0:%s->size" % (name, name, name, name, name, name, name), "")
-        if "VkMemoryRequirements" in vk_type:
+        if "VkMemoryRequirements2" in vk_type:
+            return ("%p {size=%\" PRIu64 \", alignment=%\" PRIu64 \", memoryTypeBits=%0x08X}", "%s, (%s == NULL)?0:%s->memoryRequirements.size, (%s == NULL)?0:%s->memoryRequirements.alignment, (%s == NULL)?0:%s->memoryRequirements.memoryTypeBits" % (name, name, name, name, name, name, name), "")
+        elif "VkMemoryRequirements" in vk_type:
             return ("%p {size=%\" PRIu64 \", alignment=%\" PRIu64 \", memoryTypeBits=%0x08X}", "%s, (%s == NULL)?0:%s->size, (%s == NULL)?0:%s->alignment, (%s == NULL)?0:%s->memoryTypeBits" % (name, name, name, name, name, name, name), "")
         if "VkClearColor" in vk_type:
             return ("%p", "(void*)&%s" % name, deref)
@@ -1205,6 +1260,8 @@ class VkTraceFileOutputGenerator(OutputGenerator):
             return ("%f", name, deref)
         if "bool" in vk_type or 'xcb_randr_crtc_t' in vk_type:
             return ("%u", name, deref)
+        if "RROutput" in vk_type:
+            return ("%u", "(uint32_t)(%s)" % name, "")
         if True in [t in vk_type.lower() for t in ["int", "flags", "mask", "xcb_window_t"]]:
             if param.isstaticarray > 0: # handle array, current hard-coded to 4 (TODO: Make this dynamic)
                 return ("[%i, %i, %i, %i]", "%s[0], %s[1], %s[2], %s[3]" % (name, name, name, name), deref)
@@ -1238,7 +1295,11 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         trace_vk_hdr += '\n'
         cmd_protect_dict = dict(self.cmd_feature_protect)
         cmd_info_dict = dict(self.cmd_info_data)
+        cmd_extension_dict = dict(self.cmd_extension_names)
         for api in self.cmdMembers:
+            extension = cmd_extension_dict[api.name]
+            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
+                continue
             cmdinfo = cmd_info_dict[api.name]
             cdecl = self.makeCDecls(cmdinfo.elem)[0]
             protect = cmd_protect_dict[api.name]
@@ -1391,7 +1452,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         for p in params:
             # First handle custom cases
             # TODO: Look for extension = CORE here?  This is kludgy.
-            if p.name in ['pCreateInfo', 'pSetLayoutInfoList', 'pBeginInfo', 'pAllocateInfo'] and 'khr' not in p.type.lower() and 'lunarg' not in p.type.lower() and 'ext' not in p.type.lower():
+            if (p.name in ['pCreateInfo', 'pSetLayoutInfoList', 'pBeginInfo', 'pAllocateInfo'] and 'khr' not in p.type.lower() and 'lunarg' not in p.type.lower() and 'ext' not in p.type.lower() ) or (p.name in ['pReserveSpaceInfo', 'pFeatures', 'pLimits'] and 'nvx' in p.type.lower()):
                 ps.append('get_struct_chain_size((void*)%s)' % (p.name))
                 skip_list.append(p.name)
             elif p.name in custom_size_dict:
@@ -2187,6 +2248,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                          'vkAllocateDescriptorSets',
                                          'vkBeginCommandBuffer',
                                          'vkCreateDescriptorPool',
+                                         'vkGetPhysicalDeviceProperties',
                                          'vkCreateDevice',
                                          'vkCreateFramebuffer',
                                          'vkCreateImage',
@@ -2226,10 +2288,12 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                          'vkCreateSwapchainKHR',
                                          'vkGetSwapchainImagesKHR',
                                          'vkQueuePresentKHR',
-                                         #TODO add Wayland, Mir
+                                         #TODO add Mir
                                          'vkCreateXcbSurfaceKHR',
+                                         'vkCreateWaylandSurfaceKHR',
                                          'vkCreateXlibSurfaceKHR',
                                          'vkGetPhysicalDeviceXcbPresentationSupportKHR',
+                                         'vkGetPhysicalDeviceWaylandPresentationSupportKHR',
                                          'vkGetPhysicalDeviceXlibPresentationSupportKHR',
                                          'vkCreateWin32SurfaceKHR',
                                          'vkGetPhysicalDeviceWin32PresentationSupportKHR',
@@ -2238,23 +2302,26 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                          'vkDestroyDescriptorUpdateTemplateKHR',
                                          'vkUpdateDescriptorSetWithTemplateKHR',
                                          'vkCmdPushDescriptorSetWithTemplateKHR',
+                                         'vkAcquireXlibDisplayEXT',
+                                         'vkGetRandROutputDisplayEXT',
+                                         'vkCreateObjectTableNVX',
+                                         'vkCmdProcessCommandsNVX',
+                                         'vkCreateIndirectCommandsLayoutNVX',
+                                         # TODO: VK_EXT_display_control
                                          ]
-       
+
         # Validate the manually_written_hooked_funcs list
         protoFuncs = [proto.name for proto in self.cmdMembers]
         wsi_platform_manual_funcs = ['vkCreateWin32SurfaceKHR',
                                      'vkCreateXcbSurfaceKHR',
+                                     'vkCreateWaylandSurfaceKHR',
                                      'vkCreateXlibSurfaceKHR',
                                      'vkCreateAndroidSurfaceKHR',
                                      'vkGetPhysicalDeviceXcbPresentationSupportKHR',
+                                     'vkGetPhysicalDeviceWaylandPresentationSupportKHR',
                                      'vkGetPhysicalDeviceXlibPresentationSupportKHR',
                                      'vkGetPhysicalDeviceWin32PresentationSupportKHR']
-        approved_ext = ['VK_KHR_surface',
-                        'VK_KHR_swapchain',
-                        'VK_KHR_win32_surface',
-                        'VK_KHR_xcb_surface',
-                        'VK_EXT_debug_report',
-                        'VK_KHR_descriptor_update_template']
+
         for func in manually_written_hooked_funcs:
             if (func not in protoFuncs) and (func not in wsi_platform_manual_funcs):
                 sys.exit("Entry '%s' in manually_written_hooked_funcs list is not in the vulkan function prototypes" % func)
@@ -2264,12 +2331,12 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         for proto in self.cmdMembers:
             extension = cmd_extension_dict[proto.name]
             cmdinfo = cmd_info_dict[proto.name]
-            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
+            if extension != 'VK_VERSION_1_0' and extension not in approved_ext or proto.name[2:] in api_exclusions:
                 trace_vk_src += '// TODO: Add support for __HOOKED_%s: Skipping for now.\n' % proto.name
                 continue
             if proto.name in manually_written_hooked_funcs:
                 trace_vk_src += '// __HOOKED_%s is manually written. Look in vktrace_lib_trace.cpp\n' % proto.name
-            elif proto.name not in api_exclusions:
+            else:
                 raw_packet_update_list = [] # Non-ptr elements placed directly into packet
                 ptr_packet_update_list = [] # Ptr elements to be updated into packet
                 return_txt = ''
@@ -2329,9 +2396,9 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                     trace_vk_src += '    }\n'
                 # Call down the layer chain and get return value (if there is one)
                 # Note: this logic doesn't work for CreateInstance or CreateDevice but those are handwritten
-                if extension == 'VK_EXT_debug_marker':
-                    table_txt = 'mdd(%s)->debugMarkerTable' % proto.members[0].name
-                elif proto.members[0].type in ['VkInstance', 'VkPhysicalDevice']:
+                #if extension == 'VK_EXT_debug_marker':
+                #    table_txt = 'mdd(%s)->debugMarkerTable' % proto.members[0].name
+                if proto.members[0].type in ['VkInstance', 'VkPhysicalDevice']:
                     table_txt = 'mid(%s)->instTable' % proto.members[0].name
                 else:
                     table_txt = 'mdd(%s)->devTable' % proto.members[0].name
@@ -2409,143 +2476,6 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         trace_pkt_hdr += '#include "vulkan/vulkan.h"\n'
         trace_pkt_hdr += '#include "vktrace_trace_packet_utils.h"\n'
         trace_pkt_hdr += '\n'
-        trace_pkt_hdr += '//=============================================================================\n'
-        trace_pkt_hdr += 'static void add_VkApplicationInfo_to_packet(vktrace_trace_packet_header*  pHeader, VkApplicationInfo** ppStruct, const VkApplicationInfo *pInStruct) {\n'
-        trace_pkt_hdr += '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)ppStruct, sizeof(VkApplicationInfo), pInStruct);\n'
-        trace_pkt_hdr += '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&((*ppStruct)->pApplicationName), (pInStruct->pApplicationName != NULL) ? ROUNDUP_TO_4(strlen(pInStruct->pApplicationName) + 1) : 0, pInStruct->pApplicationName);\n'
-        trace_pkt_hdr += '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&((*ppStruct)->pEngineName), (pInStruct->pEngineName != NULL) ? ROUNDUP_TO_4(strlen(pInStruct->pEngineName) + 1) : 0, pInStruct->pEngineName);\n'
-        trace_pkt_hdr += '    vktrace_finalize_buffer_address(pHeader, (void**)&((*ppStruct)->pApplicationName));\n'
-        trace_pkt_hdr += '    vktrace_finalize_buffer_address(pHeader, (void**)&((*ppStruct)->pEngineName));\n'
-        trace_pkt_hdr += '    vktrace_finalize_buffer_address(pHeader, (void**)&*ppStruct);\n'
-        trace_pkt_hdr += '};\n\n'
-        trace_pkt_hdr += 'static void add_VkInstanceCreateInfo_to_packet(vktrace_trace_packet_header* pHeader, VkInstanceCreateInfo** ppStruct, VkInstanceCreateInfo *pInStruct) {\n'
-        trace_pkt_hdr += '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)ppStruct, sizeof(VkInstanceCreateInfo), pInStruct);\n'
-        trace_pkt_hdr += '    if (pInStruct->pApplicationInfo) add_VkApplicationInfo_to_packet(pHeader, (VkApplicationInfo**)&((*ppStruct)->pApplicationInfo), pInStruct->pApplicationInfo);\n'
-        trace_pkt_hdr += '    uint32_t i, siz = 0;\n'
-        trace_pkt_hdr += '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&((*ppStruct)->ppEnabledLayerNames), pInStruct->enabledLayerCount * sizeof(char*), pInStruct->ppEnabledLayerNames);\n'
-        trace_pkt_hdr += '    if (pInStruct->enabledLayerCount > 0) {\n'
-        trace_pkt_hdr += '        for (i = 0; i < pInStruct->enabledLayerCount; i++) {\n'
-        trace_pkt_hdr += '            siz = (uint32_t) ROUNDUP_TO_4(1 + strlen(pInStruct->ppEnabledLayerNames[i]));\n'
-        trace_pkt_hdr += '            vktrace_add_buffer_to_trace_packet(pHeader, (void**)(&(*ppStruct)->ppEnabledLayerNames[i]), siz, pInStruct->ppEnabledLayerNames[i]);\n'
-        trace_pkt_hdr += '            vktrace_finalize_buffer_address(pHeader, (void **)&(*ppStruct)->ppEnabledLayerNames[i]);\n'
-        trace_pkt_hdr += '        }\n'
-        trace_pkt_hdr += '    }\n'
-        trace_pkt_hdr += '    vktrace_finalize_buffer_address(pHeader, (void **)&(*ppStruct)->ppEnabledLayerNames);\n'
-        trace_pkt_hdr += '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&((*ppStruct)->ppEnabledExtensionNames), pInStruct->enabledExtensionCount * sizeof(char*), pInStruct->ppEnabledExtensionNames);\n'
-        trace_pkt_hdr += '    if (pInStruct->enabledExtensionCount > 0) {\n'
-        trace_pkt_hdr += '        for (i = 0; i < pInStruct->enabledExtensionCount; i++) {\n'
-        trace_pkt_hdr += '            siz = (uint32_t) ROUNDUP_TO_4(1 + strlen(pInStruct->ppEnabledExtensionNames[i]));\n'
-        trace_pkt_hdr += '            vktrace_add_buffer_to_trace_packet(pHeader, (void**)(&(*ppStruct)->ppEnabledExtensionNames[i]), siz, pInStruct->ppEnabledExtensionNames[i]);\n'
-        trace_pkt_hdr += '            vktrace_finalize_buffer_address(pHeader, (void **)&(*ppStruct)->ppEnabledExtensionNames[i]);\n'
-        trace_pkt_hdr += '        }\n'
-        trace_pkt_hdr += '    }\n'
-        trace_pkt_hdr += '    vktrace_finalize_buffer_address(pHeader, (void **)&(*ppStruct)->ppEnabledExtensionNames);\n'
-        trace_pkt_hdr += '    vktrace_finalize_buffer_address(pHeader, (void**)ppStruct);\n'
-        trace_pkt_hdr += '}\n\n'
-        trace_pkt_hdr += 'static void add_VkDeviceCreateInfo_to_packet(vktrace_trace_packet_header*  pHeader, VkDeviceCreateInfo** ppStruct, const VkDeviceCreateInfo *pInStruct) {\n'
-        trace_pkt_hdr += '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)ppStruct, sizeof(VkDeviceCreateInfo), pInStruct);\n'
-        trace_pkt_hdr += '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(*ppStruct)->pQueueCreateInfos, pInStruct->queueCreateInfoCount*sizeof(VkDeviceQueueCreateInfo), pInStruct->pQueueCreateInfos);\n'
-        trace_pkt_hdr += '    for (uint32_t i = 0; i < pInStruct->queueCreateInfoCount; i++) {\n'
-        trace_pkt_hdr += '        vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(*ppStruct)->pQueueCreateInfos[i].pQueuePriorities,\n'
-        trace_pkt_hdr += '                                   pInStruct->pQueueCreateInfos[i].queueCount*sizeof(float),\n'
-        trace_pkt_hdr += '                                   pInStruct->pQueueCreateInfos[i].pQueuePriorities);\n'
-        trace_pkt_hdr += '        vktrace_finalize_buffer_address(pHeader, (void**)&(*ppStruct)->pQueueCreateInfos[i].pQueuePriorities);\n'
-        trace_pkt_hdr += '    }\n'
-        trace_pkt_hdr += '    vktrace_finalize_buffer_address(pHeader, (void**)&(*ppStruct)->pQueueCreateInfos);\n'
-        trace_pkt_hdr += '    uint32_t i, siz = 0;\n'
-        trace_pkt_hdr += '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&((*ppStruct)->ppEnabledLayerNames), pInStruct->enabledLayerCount * sizeof(char*), pInStruct->ppEnabledLayerNames);\n'
-        trace_pkt_hdr += '    if (pInStruct->enabledLayerCount > 0) {\n'
-        trace_pkt_hdr += '        for (i = 0; i < pInStruct->enabledLayerCount; i++) {\n'
-        trace_pkt_hdr += '            siz = (uint32_t) ROUNDUP_TO_4(1 + strlen(pInStruct->ppEnabledLayerNames[i]));\n'
-        trace_pkt_hdr += '            vktrace_add_buffer_to_trace_packet(pHeader, (void**)(&(*ppStruct)->ppEnabledLayerNames[i]), siz, pInStruct->ppEnabledLayerNames[i]);\n'
-        trace_pkt_hdr += '            vktrace_finalize_buffer_address(pHeader, (void **)&(*ppStruct)->ppEnabledLayerNames[i]);\n'
-        trace_pkt_hdr += '        }\n'
-        trace_pkt_hdr += '    }\n'
-        trace_pkt_hdr += '    vktrace_finalize_buffer_address(pHeader, (void **)&(*ppStruct)->ppEnabledLayerNames);\n'
-        trace_pkt_hdr += '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&((*ppStruct)->ppEnabledExtensionNames), pInStruct->enabledExtensionCount * sizeof(char*), pInStruct->ppEnabledExtensionNames);\n'
-        trace_pkt_hdr += '    if (pInStruct->enabledExtensionCount > 0) {\n'
-        trace_pkt_hdr += '        for (i = 0; i < pInStruct->enabledExtensionCount; i++) {\n'
-        trace_pkt_hdr += '            siz = (uint32_t) ROUNDUP_TO_4(1 + strlen(pInStruct->ppEnabledExtensionNames[i]));\n'
-        trace_pkt_hdr += '            vktrace_add_buffer_to_trace_packet(pHeader, (void**)(&(*ppStruct)->ppEnabledExtensionNames[i]), siz, pInStruct->ppEnabledExtensionNames[i]);\n'
-        trace_pkt_hdr += '            vktrace_finalize_buffer_address(pHeader, (void **)&(*ppStruct)->ppEnabledExtensionNames[i]);\n'
-        trace_pkt_hdr += '        }\n'
-        trace_pkt_hdr += '    }\n'
-        trace_pkt_hdr += '    vktrace_finalize_buffer_address(pHeader, (void **)&(*ppStruct)->ppEnabledExtensionNames);\n'
-        trace_pkt_hdr += '    vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(*ppStruct)->pEnabledFeatures, sizeof(VkPhysicalDeviceFeatures), pInStruct->pEnabledFeatures);\n'
-        trace_pkt_hdr += '    vktrace_finalize_buffer_address(pHeader, (void**)&(*ppStruct)->pEnabledFeatures);\n'
-        trace_pkt_hdr += '    vktrace_finalize_buffer_address(pHeader, (void**)ppStruct);\n'
-        trace_pkt_hdr += '}\n\n'
-        trace_pkt_hdr += '//=============================================================================\n\n'
-        trace_pkt_hdr += 'static VkInstanceCreateInfo* interpret_VkInstanceCreateInfo(vktrace_trace_packet_header*  pHeader, intptr_t ptr_variable) {\n'
-        trace_pkt_hdr += '    VkInstanceCreateInfo* pVkInstanceCreateInfo = (VkInstanceCreateInfo*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)ptr_variable);\n\n'
-        trace_pkt_hdr += '    uint32_t i;\n'
-        trace_pkt_hdr += '    if (pVkInstanceCreateInfo != NULL) {\n'
-        trace_pkt_hdr += '        pVkInstanceCreateInfo->pApplicationInfo = (VkApplicationInfo*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkInstanceCreateInfo->pApplicationInfo);\n'
-        trace_pkt_hdr += '        VkApplicationInfo** ppApplicationInfo = (VkApplicationInfo**) &pVkInstanceCreateInfo->pApplicationInfo;\n'
-        trace_pkt_hdr += '        if (pVkInstanceCreateInfo->pApplicationInfo) {\n'
-        trace_pkt_hdr += '            (*ppApplicationInfo)->pApplicationName = (const char*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkInstanceCreateInfo->pApplicationInfo->pApplicationName);\n'
-        trace_pkt_hdr += '            (*ppApplicationInfo)->pEngineName = (const char*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkInstanceCreateInfo->pApplicationInfo->pEngineName);\n'
-        trace_pkt_hdr += '        }\n'
-        trace_pkt_hdr += '        if (pVkInstanceCreateInfo->enabledLayerCount > 0) {\n'
-        trace_pkt_hdr += '            pVkInstanceCreateInfo->ppEnabledLayerNames = (const char* const*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkInstanceCreateInfo->ppEnabledLayerNames);\n'
-        trace_pkt_hdr += '            for (i = 0; i < pVkInstanceCreateInfo->enabledLayerCount; i++) {\n'
-        trace_pkt_hdr += '                char** ppTmp = (char**)&pVkInstanceCreateInfo->ppEnabledLayerNames[i];\n'
-        trace_pkt_hdr += '                *ppTmp = (char*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkInstanceCreateInfo->ppEnabledLayerNames[i]);\n'
-        trace_pkt_hdr += '            }\n'
-        trace_pkt_hdr += '        }\n'
-        trace_pkt_hdr += '        if (pVkInstanceCreateInfo->enabledExtensionCount > 0) {\n'
-        trace_pkt_hdr += '            pVkInstanceCreateInfo->ppEnabledExtensionNames = (const char* const*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkInstanceCreateInfo->ppEnabledExtensionNames);\n'
-        trace_pkt_hdr += '            for (i = 0; i < pVkInstanceCreateInfo->enabledExtensionCount; i++) {\n'
-        trace_pkt_hdr += '                char** ppTmp = (char**)&pVkInstanceCreateInfo->ppEnabledExtensionNames[i];\n'
-        trace_pkt_hdr += '                *ppTmp = (char*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkInstanceCreateInfo->ppEnabledExtensionNames[i]);\n'
-        trace_pkt_hdr += '            }\n'
-        trace_pkt_hdr += '        }\n'
-        trace_pkt_hdr += '    }\n\n'
-        trace_pkt_hdr += '    return pVkInstanceCreateInfo;\n'
-        trace_pkt_hdr += '}\n\n'
-        trace_pkt_hdr += 'static VkDeviceCreateInfo* interpret_VkDeviceCreateInfo(vktrace_trace_packet_header*  pHeader, intptr_t ptr_variable) {\n'
-        trace_pkt_hdr += '    VkDeviceCreateInfo* pVkDeviceCreateInfo = (VkDeviceCreateInfo*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)ptr_variable);\n\n'
-        trace_pkt_hdr += '    uint32_t i;\n'
-        trace_pkt_hdr += '    if (pVkDeviceCreateInfo != NULL) {\n'
-        trace_pkt_hdr += '        if (pVkDeviceCreateInfo->queueCreateInfoCount > 0) {\n'
-        trace_pkt_hdr += '            pVkDeviceCreateInfo->pQueueCreateInfos = (const VkDeviceQueueCreateInfo *)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkDeviceCreateInfo->pQueueCreateInfos);\n'
-        trace_pkt_hdr += '            for (i = 0; i < pVkDeviceCreateInfo->queueCreateInfoCount; i++) {\n'
-        trace_pkt_hdr += '                float** ppQueuePriority = (float**)&pVkDeviceCreateInfo->pQueueCreateInfos[i].pQueuePriorities;\n'
-        trace_pkt_hdr += '                *ppQueuePriority = (float*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkDeviceCreateInfo->pQueueCreateInfos[i].pQueuePriorities);\n'
-        trace_pkt_hdr += '            }\n'
-        trace_pkt_hdr += '        }\n'
-        trace_pkt_hdr += '        if (pVkDeviceCreateInfo->enabledLayerCount > 0) {\n'
-        trace_pkt_hdr += '            pVkDeviceCreateInfo->ppEnabledLayerNames = (const char* const*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkDeviceCreateInfo->ppEnabledLayerNames);\n'
-        trace_pkt_hdr += '            for (i = 0; i < pVkDeviceCreateInfo->enabledLayerCount; i++) {\n'
-        trace_pkt_hdr += '                char** ppTmp = (char**)&pVkDeviceCreateInfo->ppEnabledLayerNames[i];\n'
-        trace_pkt_hdr += '                *ppTmp = (char*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkDeviceCreateInfo->ppEnabledLayerNames[i]);\n'
-        trace_pkt_hdr += '            }\n'
-        trace_pkt_hdr += '        }\n'
-        trace_pkt_hdr += '        if (pVkDeviceCreateInfo->enabledExtensionCount > 0) {\n'
-        trace_pkt_hdr += '            pVkDeviceCreateInfo->ppEnabledExtensionNames = (const char* const*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkDeviceCreateInfo->ppEnabledExtensionNames);\n'
-        trace_pkt_hdr += '            for (i = 0; i < pVkDeviceCreateInfo->enabledExtensionCount; i++) {\n'
-        trace_pkt_hdr += '                char** ppTmp = (char**)&pVkDeviceCreateInfo->ppEnabledExtensionNames[i];\n'
-        trace_pkt_hdr += '                *ppTmp = (char*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkDeviceCreateInfo->ppEnabledExtensionNames[i]);\n'
-        trace_pkt_hdr += '            }\n'
-        trace_pkt_hdr += '        }\n'
-        trace_pkt_hdr += '        pVkDeviceCreateInfo->pEnabledFeatures = (const VkPhysicalDeviceFeatures*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pVkDeviceCreateInfo->pEnabledFeatures);\n\n'
-        trace_pkt_hdr += '    }\n\n'
-        trace_pkt_hdr += '    return pVkDeviceCreateInfo;\n'
-        trace_pkt_hdr += '}\n\n'
-        trace_pkt_hdr += 'static void interpret_VkPipelineShaderStageCreateInfo(vktrace_trace_packet_header*  pHeader, VkPipelineShaderStageCreateInfo* pShader) {\n'
-        trace_pkt_hdr += '    if (pShader != NULL) {\n'
-        trace_pkt_hdr += '        pShader->pName = (const char*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pShader->pName);\n'
-        trace_pkt_hdr += '        // specialization info\n'
-        trace_pkt_hdr += '        pShader->pSpecializationInfo = (const VkSpecializationInfo*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pShader->pSpecializationInfo);\n'
-        trace_pkt_hdr += '        if (pShader->pSpecializationInfo != NULL) {\n'
-        trace_pkt_hdr += '            VkSpecializationInfo* pInfo = (VkSpecializationInfo*)pShader->pSpecializationInfo;\n'
-        trace_pkt_hdr += '            pInfo->pMapEntries = (const VkSpecializationMapEntry*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pShader->pSpecializationInfo->pMapEntries);\n'
-        trace_pkt_hdr += '            pInfo->pData = (const void*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pShader->pSpecializationInfo->pData);\n'
-        trace_pkt_hdr += '        }\n'
-        trace_pkt_hdr += '    }\n'
-        trace_pkt_hdr += '}\n\n'
-        trace_pkt_hdr += '//=============================================================================\n'
-
 
         # Custom txt for given function and parameter.  First check if param is NULL, then insert txt if not
         # First some common code used by both CmdWaitEvents & CmdPipelineBarrier
@@ -2602,6 +2532,14 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                             'pNonConst->pViewportState = (const VkPipelineViewportStateCreateInfo*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pPacket->pCreateInfos[i].pViewportState);\n',
                             '// Raster State\n',
                             'pNonConst->pRasterizationState = (const VkPipelineRasterizationStateCreateInfo*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pPacket->pCreateInfos[i].pRasterizationState);\n',
+                            'if (pNonConst->pRasterizationState->pNext !=\n',
+                            '    nullptr) {  // pNext point to an extsnsion struct, we need to interpret the pointer\n',
+                            '    // here we use a non-const reference to change the value of\n',
+                            '    // pNonConst->pRasterizationState->pNext\n',
+                            '    void*& pNext = const_cast<void*&>(pNonConst->pRasterizationState->pNext);\n',
+                            '    pNext = vktrace_trace_packet_interpret_buffer_pointer(pHeader,\n',
+                            '                                                          (intptr_t)pPacket->pCreateInfos[i].pRasterizationState->pNext);\n',
+                            '}\n',
                             '// MultiSample State\n',
                             'pNonConst->pMultisampleState = (const VkPipelineMultisampleStateCreateInfo*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pPacket->pCreateInfos[i].pMultisampleState);\n',
                             '// DepthStencil State\n',
@@ -2773,11 +2711,13 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         trace_pkt_hdr += '}\n\n'
         cmd_info_dict = dict(self.cmd_info_data)
         cmd_protect_dict = dict(self.cmd_feature_protect)
+        cmd_extension_dict = dict(self.cmd_extension_names)
         for proto in self.cmdMembers:
+            extension = cmd_extension_dict[proto.name]
+            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
+                continue
             novk_name = proto.name[2:]
             if novk_name not in api_exclusions:
-                if proto.name in temporary_script_porting_exclusions:
-                    continue
                 cmdinfo = cmd_info_dict[proto.name]
                 protect = cmd_protect_dict[proto.name]
                 # TODO: Enable ifdef protections for extension?
@@ -2837,8 +2777,6 @@ class VkTraceFileOutputGenerator(OutputGenerator):
     def OutputDestFile(self):
         if self.vktrace_file_type == 'vkreplay_objmapper_header':
             return self.GenerateReplayObjmapperHeader()
-        elif self.vktrace_file_type == 'vkreplay_funcptr_header':
-            return self.GenerateReplayFuncptrHeader()
         elif self.vktrace_file_type == 'vkreplay_replay_gen_source':
             return self.GenerateReplayGenSource()
         elif self.vktrace_file_type == 'vktrace_packet_id_header':

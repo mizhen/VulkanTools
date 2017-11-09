@@ -71,7 +71,7 @@ COMMON_CODEGEN = """
 
 //============================= Dump Functions ==============================//
 
-@foreach function where('{funcReturn}' != 'void')
+@foreach function where('{funcReturn}' != 'void' and not '{funcName}' in ['vkGetDeviceProcAddr', 'vkGetInstanceProcAddr'])
 inline void dump_{funcName}(ApiDumpInstance& dump_inst, {funcReturn} result, {funcTypedParams})
 {{
     loader_platform_thread_lock_mutex(dump_inst.outputMutex());
@@ -560,7 +560,7 @@ std::ostream& dump_text_{unName}(const {unName}& object, const ApiDumpSettings& 
 
 //========================= Function Implementations ========================//
 
-@foreach function where('{funcReturn}' != 'void')
+@foreach function where('{funcReturn}' != 'void' and not '{funcName}' in ['vkGetDeviceProcAddr', 'vkGetInstanceProcAddr'])
 std::ostream& dump_text_{funcName}(ApiDumpInstance& dump_inst, {funcReturn} result, {funcTypedParams})
 {{
     const ApiDumpSettings& settings(dump_inst.settings());
@@ -886,7 +886,7 @@ std::ostream& dump_html_{unName}(const {unName}& object, const ApiDumpSettings& 
 
 uint64_t next_frame = 0;
 
-@foreach function where('{funcReturn}' != 'void')
+@foreach function where('{funcReturn}' != 'void' and not '{funcName}' in ['vkGetDeviceProcAddr', 'vkGetInstanceProcAddr'])
 std::ostream& dump_html_{funcName}(ApiDumpInstance& dump_inst, {funcReturn} result, {funcTypedParams})
 {{
     const ApiDumpSettings& settings(dump_inst.settings());
@@ -1417,10 +1417,18 @@ class VulkanVariable:
         self.childType = None                       # Type, dereferenced to the non-pointer type (None if it isn't a pointer)
         self.arrayLength = None                     # Length of the array, or None if it isn't an array
 
-        typeMatch = re.search('.+(?=' + self.name + ')', ''.join(rootNode.itertext()))
+        # Get the text of the variable type and name, but not the comment
+        self.text = ''
+        for node in rootNode.itertext():
+            comment = rootNode.find('comment')
+            if comment != None and comment.text == node:
+                continue
+            self.text += node
+
+        typeMatch = re.search('.+?(?=' + self.name + ')', self.text)
         self.type = typeMatch.string[typeMatch.start():typeMatch.end()]
         self.type = ' '.join(self.type.split())
-        bracketMatch = re.search('(?<=\\[)[a-zA-Z0-9_]+(?=\\])', ''.join(rootNode.itertext()))
+        bracketMatch = re.search('(?<=\\[)[a-zA-Z0-9_]+(?=\\])', self.text)
         if bracketMatch != None:
             matchText = bracketMatch.string[bracketMatch.start():bracketMatch.end()]
             self.childType = self.type
@@ -1458,7 +1466,7 @@ class VulkanVariable:
             if sections[-1][0] == 'p' and sections[0][1].isupper():
                 self.arrayLength = '*' + self.arrayLength
 
-        self.pointerLevels = len(re.findall('\\*|\\[', ''.join(rootNode.itertext())))
+        self.pointerLevels = len(re.findall('\\*|\\[', self.text))
         if self.typeID == 'char' and self.pointerLevels > 0:
             self.baseType += '*'
             self.pointerLevels -= 1
@@ -1642,7 +1650,6 @@ class VulkanFunction:
 
         def __init__(self, rootNode, constants, parentName):
             VulkanVariable.__init__(self, rootNode, constants, parentName)
-            self.text = ''.join(rootNode.itertext())
 
         def values(self):
             return {
