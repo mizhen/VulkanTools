@@ -1,388 +1,424 @@
 # Build Instructions
-This project fully supports Linux today.<br/>
-Support for Windows is for the layers, tests and the VkTrace trace/replay tools.<br/>
-Support for Android is TBD.
+This document contains the instructions for building this repository on Linux and Windows.
+
+This repository does not contain a Vulkan-capable driver.
+Before proceeding, it is strongly recommended that you obtain a Vulkan driver from your graphics hardware vendor
+and install it.
+
+## Contributing
+
+If you intend to contribute, the preferred work flow is for you to develop your contribution
+in a fork of this repo in your GitHub account and then submit a pull request.
+Please see the [CONTRIBUTING](CONTRIBUTING.md) file in this repository for more details.
 
 ## Git the Bits
 
-Make sure you have access to the LunarG Github repository.  Once you do, the
-preferred work flow is to clone the repo, create a branch, push branch to github and then
-issue a merge request to integrate that work back into the repo.
-
-## Dependencies
-  - You must have a Vulkan-LoaderAndValidationLayers (Vulkan-LoaderAndValidationLayers) repository from Khronos,
-    and a glslang, LunarGlass repository that are file system peers to VulkanTools. You'll do this in 'Cloning
-	the Repository(ies)', after installing other build requirements below.
-
-## Linux System Requirements
-Ubuntu 14.04.3 LTS, 14.10, 15.04 and 15.10 have been used with the sample driver.
-
-These packages are used for building and running the samples.
+To create your local git repository:
 ```
-sudo apt-get install git subversion cmake libgl1-mesa-dev freeglut3-dev libglm-dev libmagickwand-dev qt5-default libpciaccess-dev libpthread-stubs0-dev libudev-dev bison graphviz libpng-dev
-sudo apt-get build-dep mesa
-```
-
-The sample driver uses DRI3 for its window system interface.
-That requires extra configuration of Ubuntu systems.
-
-### Ubuntu 14.04.3 LTS support of DRI 3
-
-Ubuntu 14.04.3 LTS does not ship a xserver-xorg-video-intel package with supported DRI 3 on intel graphics.
-The xserver-xorg-video-intel package can be built from source with DRI 3 enabled.
-Use the following commands to enable DRI3 on ubuntu 14.04.3 LTS.
-
-- Install packages used to build:
-```
-sudo apt-get update
-sudo apt-get dist-upgrade
-sudo apt-get install devscripts
-sudo apt-get build-dep xserver-xorg-video-intel-lts-vivid
-```
-
-- Get the source code for xserver-xorg-video-intel-lts-vivid
-```
-mkdir xserver-xorg-video-intel-lts-vivid_source
-cd xserver-xorg-video-intel-lts-vivid_source
-apt-get source xserver-xorg-video-intel-lts-vivid
-cd xserver-xorg-video-intel-lts-vivid-2.99.917
-debian/rules patch
-quilt new 'enable-DRI3'
-quilt edit configure.ac
-```
-
-- Use the editor to make these changes.
-```
---- a/configure.ac
-+++ b/configure.ac
-@@ -340,9 +340,9 @@
- 	      [DRI2=yes])
- AC_ARG_ENABLE(dri3,
- 	      AS_HELP_STRING([--enable-dri3],
--			     [Enable DRI3 support [[default=no]]]),
-+			     [Enable DRI3 support [[default=yes]]]),
- 	      [DRI3=$enableval],
--	      [DRI3=no])
-+	      [DRI3=yes])
- AC_ARG_ENABLE(xvmc, AS_HELP_STRING([--disable-xvmc],
-                                   [Disable XvMC support [[default=yes]]]),
-```
-- Build and install xserver-xorg-video-intel-lts-vivid
-```
-quilt refresh
-debian/rules clean
-debuild -us -uc
-sudo dpkg -i ../xserver-xorg-video-intel-lts-vivid_2.99.917-1~exp1ubuntu2.2~trusty1_amd64.deb
-```
-- Prevent updates from replacing this version of the package.
-```
-sudo bash -c 'echo xserver-xorg-video-intel-lts-vivid hold | dpkg --set-selections'
-```
-- save your work then restart the X server with the next command.
-```
-sudo service lightdm restart
-```
-- After logging in again, check for success with this command and look for DRI3.
-```
-xdpyinfo | grep DRI
-```
-
-### Ubuntu 14.10 support of DRI 3
-
-Warning: Recent versions of 14.10 have **REMOVED** DRI 3.
-Version: 2:2.99.914-1~exp1ubuntu4.1 is known to work.
-To see status of this package:
-```
-dpkg -s xserver-xorg-video-intel
-```
-
-Note:
-Version 2:2.99.914-1~exp1ubuntu4.2 does not work anymore.
-To install the working driver from launchpadlibrarian.net:
-- Remove the current driver:
-```
-sudo apt-get purge xserver-xorg-video-intel
-```
-- Download the old driver:
-```
-wget http://launchpadlibrarian.net/189418339/xserver-xorg-video-intel_2.99.914-1%7Eexp1ubuntu4.1_amd64.deb
-```
-- Install the driver:
-```
-sudo dpkg -i xserver-xorg-video-intel_2.99.914-1~exp1ubuntu4.1_amd64.deb
-```
-- Pin the package to prevent updates
-```
-sudo bash -c "echo $'Package: xserver-xorg-video-intel\nPin: version 2:2.99.914-1~exp1ubuntu4.1\nPin-Priority: 1001' > /etc/apt/preferences.d/xserver-xorg-video-intel"
-```
-
-- Either restart Ubuntu or just X11.
-
-
-### Ubuntu 15.04 support of DRI 3
-
-Ubuntu 15.04 has never shipped a xserver-xorg-video-intel package with supported DRI 3 on intel graphics.
-The xserver-xorg-video-intel package can be built from source with DRI 3 enabled.
-Use the following commands to enable DRI3 on ubuntu 15.04.
-
-- Install packages used to build:
-```
-sudo apt-get update
-sudo apt-get dist-upgrade
-sudo apt-get install devscripts
-sudo apt-get build-dep xserver-xorg-video-intel
-```
-
-- Get the source code for xserver-xorg-video-intel
-```
-mkdir xserver-xorg-video-intel_source
-cd xserver-xorg-video-intel_source
-apt-get source xserver-xorg-video-intel
-cd xserver-xorg-video-intel-2.99.917
-debian/rules patch
-quilt new 'enable-DRI3'
-quilt edit configure.ac
-```
-
-- Use the editor to make these changes.
-```
---- a/configure.ac
-+++ b/configure.ac
-@@ -340,9 +340,9 @@
- 	      [DRI2=yes])
- AC_ARG_ENABLE(dri3,
- 	      AS_HELP_STRING([--enable-dri3],
--			     [Enable DRI3 support [[default=no]]]),
-+			     [Enable DRI3 support [[default=yes]]]),
- 	      [DRI3=$enableval],
--	      [DRI3=no])
-+	      [DRI3=yes])
- AC_ARG_ENABLE(xvmc, AS_HELP_STRING([--disable-xvmc],
-                                   [Disable XvMC support [[default=yes]]]),
-```
-- Build and install xserver-xorg-video-intel
-```
-quilt refresh
-debian/rules clean
-debuild -us -uc
-sudo dpkg -i ../xserver-xorg-video-intel_2.99.917-1~exp1ubuntu2.2_amd64.deb
-```
-- Prevent updates from replacing this version of the package.
-```
-sudo bash -c 'echo xserver-xorg-video-intel hold | dpkg --set-selections'
-```
-- save your work then restart the X server with the next command.
-```
-sudo service lightdm restart
-```
-- After logging in again, check for success with this command and look for DRI3.
-```
-xdpyinfo | grep DRI
-```
-### Ubuntu 15.10 support of DRI 3
-
-Ubuntu 15.10 has never shipped a xserver-xorg-video-intel package with supported DRI 3 on intel graphics.
-The xserver-xorg-video-intel package can be built from source with DRI 3 enabled.
-Use the following commands to enable DRI3 on ubuntu 15.10.
-
-- Install packages used to build:
-```
-sudo apt-get update
-sudo apt-get dist-upgrade
-sudo apt-get install devscripts
-sudo apt-get build-dep xserver-xorg-video-intel
-```
-
-- Get the source code for xserver-xorg-video-intel
-```
-mkdir xserver-xorg-video-intel_source
-cd xserver-xorg-video-intel_source
-apt-get source xserver-xorg-video-intel
-cd xserver-xorg-video-intel-2.99.917+git20150808
-debian/rules patch
-quilt new 'enable-DRI3'
-quilt edit configure.ac
-```
-
-- Use the editor to make these changes.
-```
-Index: xserver-xorg-video-intel-2.99.917+git20150808/configure.ac
-===================================================================
---- xserver-xorg-video-intel-2.99.917+git20150808.orig/configure.ac
-+++ xserver-xorg-video-intel-2.99.917+git20150808/configure.ac
-@@ -356,7 +356,7 @@ AC_ARG_WITH(default-dri,
-            AS_HELP_STRING([--with-default-dri],
-                           [Select the default maximum DRI level [default 2]]),
-              [DRI_DEFAULT=$withval],
--             [DRI_DEFAULT=2])
-+             [DRI_DEFAULT=3])
- if test "x$DRI_DEFAULT" = "x0"; then
-        AC_DEFINE(DEFAULT_DRI_LEVEL, 0,[Default DRI level])
- else
-```
-- Build and install xserver-xorg-video-intel
-```
-quilt refresh
-debian/rules clean
-debuild -us -uc
-sudo dpkg -i ../xserver-xorg-video-intel_2.99.917+git20150808-0ubuntu4_amd64.deb
-```
-- Prevent updates from replacing this version of the package.
-```
-sudo bash -c 'echo xserver-xorg-video-intel hold | dpkg --set-selections'
-```
-- save your work then restart the X server with the next command.
-```
-sudo service lightdm restart
-```
-- After logging in again, check for success with this command and look for DRI3.
-```
-xdpyinfo | grep DRI
-```
-
-
-## Clone the repository(ies)
-
-To create your local git repository of VulkanTools:
-(It is recommended to use an "MSBuild Command Prompt for VS2012" or for another version of Visual Studio)
-```
-mkdir YOUR_DEV_PARENT_DIRECTORY  # this will hold several repositories
-cd YOUR_DEV_PARENT_DIRECTORY
-
-mkdir YOUR_DEV_DIRECTORY     # it is called VulkanTools on Github but can be anything
-git clone -o LunarG git@github.com:LunarG/VulkanTools.git <YOUR_DEV_DIRECTORY>
-# Or substitute the URL from your forked repo for git@github.com:LunarG/VulkanTools.git above.
-
-# You need the Vulkan-LoaderAndValidationLayers repo as a sibling
-cd YOUR_DEV_PARENT_DIRECTORY
-git clone -o khronos git@gitlab.khronos.org:vulkan/LoaderAndValidationLayers.git .
-# Or substitute the URL from your forked repo for git@gitlab.khronos.org:vulkan/LoaderAndValidationLayers.git above.
-cd LoaderAndValidationLayers
-# this will fetch glslang and spirv-tools as sibling repositories
-export KHRONOS_ACCOUNT_NAME= <subversion login name for svn checkout of SPIR-V>
-./update_external_sources.sh   # linux
-./update_external_sources.bat  # windows
-# this will fetch LunarGLASS as sibling repository
-cd YOUR_DEV_DIRECTORY 
-./update_external_sources.sh  # linux
+git clone https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers
 ```
 
 ## Linux Build
 
-The sample driver uses cmake and should work with the usual cmake options and utilities.
-The standard build process builds the icd, vktrace and all the tests.
+The build process uses CMake to generate makefiles for this project.
+The build generates the loader, layers, and tests.
 
-Example debug build:
-NOTE: The loader repository (Vulkan-LoaderAndValidationLayers) must be a sibling directory of VulkanTools.
-The loader repository should be built first prior to this repository. Follow
-the directions in BUILD.md in the loader repository.
+This repo has been built and tested on the two most recent Ubuntu LTS versions.
+It should be straightforward to use it on other Linux distros.
+
+These packages are needed to build this repository:
 ```
-cd YOUR_DEV_DIRECTORY  # cd to the root of the VulkanTools git repository
+sudo apt-get install git cmake build-essential bison libx11-xcb-dev libxkbcommon-dev libmirclient-dev libwayland-dev libxrandr-dev
+```
+
+Example debug build (Note that the update\_external\_sources script used below builds external tools into predefined locations. See **Loader and Validation Layer Dependencies** for more information and other options):
+```
+cd Vulkan-LoaderAndValidationLayers  # cd to the root of the cloned git repository
+./update_external_sources.sh
 cmake -H. -Bdbuild -DCMAKE_BUILD_TYPE=Debug
 cd dbuild
 make
 ```
 
-## Linux Test
+If you have installed a Vulkan driver obtained from your graphics hardware vendor, the install process should
+have configured the driver so that the Vulkan loader can find and load it.
 
-The test executables can be found in the dbuild/tests directory. The tests use the Google
-gtest infrastructure. Tests available so far:
-- vkbase: Test basic entry points
-- vk_blit_tests: Test VK Blits (copy, clear, and resolve)
-- vk_image_tests: Test VK image related calls needed by render_test
-- vk_render_tests: Render a single triangle with VK. Triangle will be in a .ppm in
-the current directory at the end of the test.
+If you want to use the loader and layers that you have just built:
+```
+export LD_LIBRARY_PATH=<path to your repository root>/dbuild/loader
+export VK_LAYER_PATH=<path to your repository root>/dbuild/layers
+```
+You can run the `vulkaninfo` application to see which driver, loader and layers are being used.
+
+The `LoaderAndLayerInterface` document in the `loader` folder in this repository is a specification that
+describes both how ICDs and layers should be properly
+packaged, and how developers can point to ICDs and layers within their builds.
+
+### WSI Support Build Options
+By default, the Vulkan Loader and Validation Layers are built with support for all 4 Vulkan-defined WSI display systems, Xcb, Xlib, Wayland, and Mir.  It is recommended to build these modules with support for these
+display systems to maximize their usability across Linux platforms.
+If it is necessary to build these modules without support for one of the display systems, the appropriate CMake option of the form BUILD_WSI_xxx_SUPPORT can be set to OFF.   See the top-level CMakeLists.txt file for more info.
+
+### Linux Install to System Directories
+
+Installing the files resulting from your build to the systems directories is optional since
+environment variables can usually be used instead to locate the binaries.
+There are also risks with interfering with binaries installed by packages.
+If you are certain that you would like to install your binaries to system directories,
+you can proceed with these instructions.
+
+Assuming that you've built the code as described above and the current directory is still `dbuild`,
+you can execute:
+
+```
+sudo make install
+```
+
+This command installs files to:
+
+* `/usr/local/include/vulkan`:  Vulkan include files
+* `/usr/local/lib`:  Vulkan loader and layers shared objects
+* `/usr/local/bin`:  vulkaninfo application
+* `/usr/local/etc/vulkan/explicit_layer.d`:  Layer JSON files
+
+You may need to run `ldconfig` in order to refresh the system loader search cache on some Linux systems.
+
+The list of installed files appears in the build directory in a file named `install_manifest.txt`.
+You can easily remove the installed files with:
+
+```
+cat install_manifest.txt | sudo xargs rm
+```
+
+You can further customize the installation location by setting additional CMake variables
+to override their defaults.
+For example, if you would like to install to `/tmp/build` instead of `/usr/local`, specify:
+
+```
+-DCMAKE_INSTALL_PREFIX=/tmp/build
+-DDEST_DIR=/tmp/build
+```
+
+on your CMake command line and run `make install` as before.
+The install step places the files in `/tmp/build`.
+
+Using the `CMAKE_INSTALL_PREFIX` to customize the install location also modifies the
+loader search paths to include searching for layers in the specified install location.
+In this example, setting `CMAKE_INSTALL_PREFIX` to `/tmp/build` causes the loader to
+search `/tmp/build/etc/vulkan/explicit_layer.d` and `/tmp/build/share/vulkan/explicit_layer.d`
+for the layer JSON files.
+The loader also searches the "standard" system locations of `/etc/vulkan/explicit_layer.d`
+and `/usr/share/vulkan/explicit_layer.d` after searching the two locations under `/tmp/build`.
+
+You can further customize the installation directories by using the CMake variables
+`CMAKE_INSTALL_SYSCONFDIR` to rename the `etc` directory and `CMAKE_INSTALL_DATADIR`
+to rename the `share` directory.
+
+See the CMake documentation for more details on using these variables
+to further customize your installation.
+
+Also see the `LoaderAndLayerInterface` document in the `loader` folder in this repository for more
+information about loader operation.
+
+Note that some executables in this repository (e.g., `cube`) use the "rpath" linker directive
+to load the Vulkan loader from the build directory, `dbuild` in this example.
+This means that even after installing the loader to the system directories, these executables
+still use the loader from the build directory.
+
+### Linux 32-bit support
+
+Usage of this repository's contents in 32-bit Linux environments is not officially supported.
+However, since this repository is supported on 32-bit Windows, these modules should generally
+work on 32-bit Linux.
+
+Here are some notes for building 32-bit targets on a 64-bit Ubuntu "reference" platform:
+
+If not already installed, install the following 32-bit development libraries:
+
+`gcc-multilib g++-multilib libx11-dev:i386`
+
+This list may vary depending on your distro and which windowing systems you are building for.
+
+Set up your environment for building 32-bit targets:
+
+```
+export ASFLAGS=--32
+export CFLAGS=-m32
+export CXXFLAGS=-m32
+export PKG_CONFIG_LIBDIR=/usr/lib/i386-linux-gnu
+```
+
+Again, your PKG_CONFIG configuration may be different, depending on your distro.
+
+If the libraries in the `external` directory have already been built
+for 64-bit targets,
+delete or "clean" this directory and rebuild it with
+the above settings using the `update_external_sources` shell script.
+This is required because the libraries in `external` must be built for
+32-bit in order to be usable by the rest of the components in the repository.
+
+Finally, rebuild the repository using `cmake` and `make`, as explained above.
+
+## Validation Test
+
+The test executables can be found in the dbuild/tests directory.
+Some of the tests that are available:
+- vk\_layer\_validation\_tests: Test Vulkan layers.
 
 There are also a few shell and Python scripts that run test collections (eg,
 `run_all_tests.sh`).
 
-## Linux Render Nodes
+## Linux Demos
 
-The render tests depend on access to DRM render nodes.
-To make that available, a couple of config files need to be created to set a module option
-and make accessible device files.
-The system will need to be rebooted with these files in place to complete initialization.
-These commands will create the config files.
+Some demos that can be found in the dbuild/demos directory are:
+- vulkaninfo: report GPU properties
+- cube: a textured spinning cube
+- smoke/smoke: A "smoke" test using a more complex Vulkan demo
 
-```
-sudo tee /etc/modprobe.d/drm.conf << EOF
-# Enable render nodes
-options drm rnodes=1
-EOF
-# this will add the rnodes=1 option into the boot environment
-sudo update-initramfs -k all -u
-```
-```
-sudo tee /etc/udev/rules.d/drm.rules << EOF
-# Add permissions to render nodes
-SUBSYSTEM=="drm", ACTION=="add", DEVPATH=="/devices/*/renderD*", MODE="020666"
-EOF
-```
+You can select which WSI subsystem is used to build the demos using a cmake option called DEMOS_WSI_SELECTION.
+Supported options are XCB (default), XLIB, WAYLAND, and MIR.  Note that you must build using the corresponding BUILD_WSI_*_SUPPORT enabled at the base repo level (all SUPPORT options are ON by default).
+For instance, creating a build that will use Xlib to build the demos, your cmake command line might look like:
+
+cmake -H. -Bbuild -DCMAKE_BUILD_TYPE=Debug -DDEMOS_WSI_SELECTION=XLIB
 
 ## Windows System Requirements
 
 Windows 7+ with additional required software packages:
 
 - Microsoft Visual Studio 2013 Professional.  Note: it is possible that lesser/older versions may work, but that has not been tested.
-- CMake (from http://www.cmake.org/download/).  Notes:
-  - In order to build the VkTrace tools, you need at least version 3.0.
+- [CMake](http://www.cmake.org/download/).  Notes:
   - Tell the installer to "Add CMake to the system PATH" environment variable.
-- Python 3 (from https://www.python.org/downloads).  Notes:
+- [Python 3](https://www.python.org/downloads).  Notes:
   - Select to install the optional sub-package to add Python to the system PATH environment variable.
+  - Ensure the pip module is installed (it should be by default)
   - Need python3.3 or later to get the Windows py.exe launcher that is used to get python3 rather than python2 if both are installed on Windows
-- Git (from http://git-scm.com/download/win).
-  - Note: If you use Cygwin, you can normally use Cygwin's "git.exe".  However, in order to use the "update_external_sources.bat" script, you must have this version.
+  - 32 bit python works
+- [Git](http://git-scm.com/download/win).
+  - Note: If you use Cygwin, you can normally use Cygwin's "git.exe", and "update\_external\_sources.sh --no-build" does support Cygwin's git.  However, in order to use the "update\_external\_sources.bat" script, you must have this version.
   - Tell the installer to allow it to be used for "Developer Prompt" as well as "Git Bash".
   - Tell the installer to treat line endings "as is" (i.e. both DOS and Unix-style line endings).
-- Image Magick is used by the tests to compare images (from http://www.imagemagick.org/script/binary-releases.php)
   - Install each a 32-bit and a 64-bit version, as the 64-bit installer does not install the 32-bit libraries and tools.
-    - Here are some helpful links (warning they may go out of date with a newer ImageMagick).
-      - 64-bit: http://www.imagemagick.org/download/binaries/ImageMagick-6.9.3-2-Q16-x64-dll.exe
-      - 32-bit: http://www.imagemagick.org/download/binaries/ImageMagick-6.9.3-2-Q16-x86-dll.exe
-  - For each of the installs, be sure to check box to "Install development headers and libraries"
-- glslang is required for tests.
-  - You can download and configure it (in a peer directory) here: https://github.com/KhronosGroup/glslang/blob/master/README.md
+- glslang is required for demos and tests.
+  - [You can download and configure it (in a peer directory) here](https://github.com/KhronosGroup/glslang/blob/master/README.md)
   - A windows batch file has been included that will pull and build the correct version.  Run it from Developer Command Prompt for VS2013 like so:
-    - update_external_sources.bat --build-glslang
+    - update\_external\_sources.bat --build-glslang (Note: see **Loader and Validation Layer Dependencies** below for other options)
 
-Optional software packages:
+## Windows Build - MSVC
 
-- Cygwin (from https://www.cygwin.com/).  Notes:
+Before building on Windows, you may want to modify the customize section in loader/loader.rc to so as to
+set the version numbers and build description for your build. Doing so will set the information displayed
+for the Properties->Details tab of the loader vulkan-1.dll file that is built.
+
+Build all Windows targets after installing required software and cloning the Loader and Validation Layer repo as described above by completing the following steps in a "Developer Command Prompt for VS2013" window (Note that the update\_external\_sources script used below builds external tools into predefined locations. See **Loader and Validation Layer Dependencies** for more information and other options):
+```
+cd Vulkan-LoaderAndValidationLayers  # cd to the root of the cloned git repository
+update_external_sources.bat
+build_windows_targets.bat
+```
+
+At this point, you can use Windows Explorer to launch Visual Studio by double-clicking on the "VULKAN.sln" file in the \build folder.  Once Visual Studio comes up, you can select "Debug" or "Release" from a drop-down list.  You can start a build with either the menu (Build->Build Solution), or a keyboard shortcut (Ctrl+Shift+B).  As part of the build process, Python scripts will create additional Visual Studio files and projects, along with additional source files.  All of these auto-generated files are under the "build" folder.
+
+Vulkan programs must be able to find and use the vulkan-1.dll library. Make sure it is either installed in the C:\Windows\System32 folder, or the PATH environment variable includes the folder that it is located in.
+
+To run Vulkan programs you must tell the icd loader where to find the libraries.
+This is described in a `LoaderAndLayerInterface` document in the `loader` folder in this repository.
+This specification describes both how ICDs and layers should be properly
+packaged, and how developers can point to ICDs and layers within their builds.
+
+### Using Cygwin Git
+
+If you are using Cygwin git instead of win32-native git, you can use the *sh* script to sync using Cygwin's git (but not also build), then use the *bat* script to build (but not also sync).
+
+In a cygwin shell do this:
+```
+./update_external_sources.sh --no-build
+```
+
+Then in a Visual Studio Developer Command Prompt shell do this:
+```
+update_external_sources.bat --no-sync
+```
+
+## Android Build
+Install the required tools for Linux and Windows covered above, then add the following.
+### Android Studio
+- Install [Android Studio 2.3](https://developer.android.com/studio/index.html) or later.
+- From the "Welcome to Android Studio" splash screen, add the following components using Configure > SDK Manager:
+  - SDK Platforms > Android 6.0 and newer
+  - SDK Tools > Android SDK Build-Tools
+  - SDK Tools > Android SDK Platform-Tools
+  - SDK Tools > Android SDK Tools
+  - SDK Tools > Android NDK
+
+#### Add Android specifics to environment
+
+On Linux:
+```
+export ANDROID_SDK_HOME=$HOME/Android/sdk
+export ANDROID_NDK_HOME=$HOME/Android/sdk/ndk-bundle
+export PATH=$ANDROID_SDK_HOME:$PATH
+export PATH=$ANDROID_NDK_HOME:$PATH
+export PATH=$ANDROID_SDK_HOME/build-tools/23.0.3:$PATH
+```
+On Windows:
+```
+set ANDROID_SDK_HOME=%LOCALAPPDATA%\Android\sdk
+set ANDROID_NDK_HOME=%LOCALAPPDATA%\Android\sdk\ndk-bundle
+set PATH=%LOCALAPPDATA%\Android\sdk\ndk-bundle;%PATH%
+```
+On OSX:
+```
+export ANDROID_SDK_HOME=$HOME/Library/Android/sdk
+export ANDROID_NDK_HOME=$HOME/Library/Android/sdk/ndk-bundle
+export PATH=$ANDROID_NDK_PATH:$PATH
+export PATH=$ANDROID_SDK_HOME/build-tools/23.0.3:$PATH
+```
+Note: If jarsigner is missing from your platform, you can find it in the Android Studio install.
+### Additional OSX System Requirements
+Tested on OSX version 10.12.4
+
+ Setup Homebrew and components
+- Follow instructions on [brew.sh](http://brew.sh) to get homebrew installed.
+```
+/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+```
+- Ensure Homebrew is at the beginning of your PATH:
+```
+export PATH=/usr/local/bin:$PATH
+```
+- Add packages with the following (may need refinement)
+```
+brew install cmake python python3 git
+```
+### Build steps for Android
+
+There are two options for building the Android layers. One using the SPIRV tools
+provided as part of the Android NDK or build using upstream sources.
+To build with SPIRV tools from the NDK, remove the build-android/third_party directory created
+by running update_external_sources_android.sh, (or never run update_external_sources_android.sh).
+Use the following script to build everything in the repo for Android, including validation layers, tests, demos, and APK packaging:
+This script does retrieve and use the upstream SPRIV tools.
+```
+cd build-android
+./build_all.sh
+```
+Resulting validation layer binaries will be in build-android/libs.
+Test and demo APKs can be installed on production devices with:
+```
+./install_all.sh -s <serial number>
+```
+Note that there are no equivalent scripts on Windows yet, that work needs to be completed.
+The following per platform commands can be used for layer only builds:
+#### Linux and OSX
+Follow the setup steps for Linux or OSX above, then from your terminal:
+```
+cd build-android
+./update_external_sources_android.sh
+./android-generate.sh
+ndk-build -j $(sysctl -n hw.ncpu)
+```
+#### Windows
+Follow the setup steps for Windows above, then from Developer Command Prompt for VS2013:
+```
+cd build-android
+update_external_sources_android.bat
+android-generate.bat
+ndk-build
+```
+#### Android tests
+Use the following steps to build, install, and run the layer validation tests for Android:
+```
+cd build-android
+./build_all.sh
+adb install -r bin/VulkanLayerValidationTests.apk
+adb shell am start com.example.VulkanLayerValidationTests/android.app.NativeActivity
+```
+Alternatively, you can use the test_APK script to install and run the layer validation tests:
+```
+test_APK.sh -s <serial number> -p <plaform name> -f <gtest_filter>
+```
+#### Android demos
+Use the following steps to build, install, and run Cube and Smoke for Android:
+```
+cd build-android
+./build_all.sh
+adb install -r ../demos/android/cube/bin/cube.apk
+adb shell am start com.example.Cube/android.app.NativeActivity
+```
+To build, install, and run Cube with validation layers, first build layers using steps above, then run:
+```
+cd build-android
+./build_all.sh
+adb install -r ../demos/android/cube-with-layers/bin/cube-with-layers.apk
+adb shell am start com.example.CubeWithLayers/android.app.NativeActivity
+adb shell am start -a android.intent.action.MAIN -c android-intent.category.LAUNCH -n com.example.CubeWithLayers/android.app.NativeActivity --es args "--validate"
+```
+vkjson_info for Android is built as an executable for devices with root access.
+
+To use, simply push it to the device and run it:
+```
+./build_all.sh
+adb push obj/local/<abi>/vkjson_info /data/tmp/
+adb shell /data/tmp/vkjson_info
+```
+The resulting json file will be found in:
+```
+/sdcard/Android/<device_name>.json
+```
+To build, install, and run the Smoke demo for Android, run the following, and any
+prompts that come back from the script:
+```
+./update_external_sources.sh --glslang
+cd demos/smoke/android
+export ANDROID_SDK_HOME=<path to Android/Sdk>
+export ANDROID_NDK_HOME=<path to Android/Sdk/ndk-bundle>
+./build-and-install
+adb shell am start -a android.intent.action.MAIN -c android-intent.category.LAUNCH -n com.example.Smoke/android.app.NativeActivity --es args "--validate"
+```
+
+## Ninja Builds - All Platforms
+The [Qt Creator IDE](https://qt.io/download-open-source/#section-2) can open a root CMakeList.txt as a project directly, and it provides tools within Creator to configure and generate Vulkan SDK build files for one to many targets concurrently, resolving configuration issues as needed. Alternatively, when invoking CMake use the -G Codeblocks Ninja option to generate Ninja build files to be used as project files for QtCreator
+
+- Follow the steps defined elsewhere for the OS using the update\_external\_sources script or as shown in **Loader and Validation Layer Dependencies** below
+- Open, configure, and build the gslang and spirv-tools CMakeList.txt files
+- Then do the same with the Vulkan-LoaderAndValidationLayers CMakeList.txt file.
+- In order to debug with QtCreator, a [Microsoft WDK: eg WDK 10](http://go.microsoft.com/fwlink/p/?LinkId=526733) is required. Note that installing the WDK breaks the MSVC vcvarsall.bat build scripts provided by MSVC, requiring that the LIB, INCLUDE, and PATH env variables be set to the WDK paths by some other means
+
+## Loader and Validation Layer Dependencies
+gslang and SPIRV-Tools repos are required to build and run Loader and Validation Layer components. They are not git sub-modules of Vulkan-LoaderAndValidationLayers but Vulkan-LoaderAndValidationLayers is linked to specific revisions of gslang and spirv-tools. These can be automatically cloned and built to predefined locations with the update\_external\_sources scripts. If a custom configuration is required, do the following steps:
+
+1) clone the repos:
+
+    git clone https://github.com/KhronosGroup/glslang.git
+    git clone https://github.com/KhronosGroup/SPIRV-Tools.git
+
+
+2) checkout the correct version of each tree based on the contents of the glslang\_revision and spirv-tools\_revision files at the root of the Vulkan-LoaderAndValidationLayers tree (do the same anytime that Vulkan-LoaderAndValidationLayers is updated from remote)
+
+_on windows_
+
+    git checkout < [path to Vulkan-LoaderAndValidationLayers]\glslang_revision [in glslang repo]
+	git checkout < [path to Vulkan-LoaderAndValidationLayers]\spirv-tools_revision[in spriv-tools repo]
+
+*non windows*
+
+    git checkout `cat [path to Vulkan-LoaderAndValidationLayers]\glslang_revision` [in glslang repo]
+	git checkout `cat [path to Vulkan-LoaderAndValidationLayers]\spirv-tools_revision` [in spriv-tools repo]
+
+3) Configure the gslang and spirv-tools source trees with cmake and build them with your IDE of choice
+
+4) Enable the CUSTOM\_GSLANG\_BIN\_PATH and CUSTOM\_SPIRV\_TOOLS\_BIN\_PATH options in the Vulkan-LoaderAndValidationLayers cmake configuration and point the GSLANG\_BINARY\_PATH and SPIRV\_TOOLS\_BINARY\_PATH variables to the correct location
+
+5) If building on Windows with MSVC, set DISABLE\_BUILDTGT\_DIR\_DECORATION to _On_. If building on Windows, but without MSVC set DISABLE\_BUILD\_PATH\_DECORATION to _On_
+
+## Optional software packages:
+
+- [Cygwin for windows](https://www.cygwin.com/).  Notes:
   - Cygwin provides some Linux-like tools, which are valuable for obtaining the source code, and running CMake.
     Especially valuable are the BASH shell and git packages.
   - If you don't want to use Cygwin, there are other shells and environments that can be used.
     You can also use a Git package that doesn't come from Cygwin.
 
-## Windows Build
+- [Ninja on all platforms](https://github.com/ninja-build/ninja/releases). [The Ninja-build project](ninja-build.org). [Ninja Users Manual](ninja-build.org/manual.html) 
 
-Cygwin is used in order to obtain a local copy of the Git repository, and to run the CMake command that creates Visual Studio files.  Visual Studio is used to build the software, and will re-run CMake as appropriate.
-
-Example debug x64 build (e.g. in a "Developer Command Prompt for VS2013" window):
-NOTE: The loader repository (Vulkan-LoaderAndValidationLayers) must be a sibling directory of VulkanTools.
-The loader repository should be built first prior to this repository. Follow
-the directions in BUILD.md in the loader repository.
-```
-cd VulkanTools  # cd to the root of the VulkanTools git repository
-cmake -H. -Bbuild -G "Visual Studio 12 Win64"
-```
-
-At this point, you can use Windows Explorer to launch Visual Studio by double-clicking on the "VULKANTOOLS.sln" file in the \build folder.  Once Visual Studio comes up, you can select "Debug" or "Release" from a drop-down list.  You can start a build with either the menu (Build->Build Solution), or a keyboard shortcut (Ctrl+Shift+B).  As part of the build process, Python scripts will create additional Visual Studio files and projects, along with additional source files.  All of these auto-generated files are under the "build" folder.
-
-Vulkan programs must be able to find and use the Vulkan-1.dll libary. Make sure it is either installed in the C:\Windows\System32 folder, or the PATH environment variable includes the folder that it is located in.
-
-### Windows 64-bit Installation Notes
-If you plan on creating a Windows Install file (done in the windowsRuntimeInstaller sub-directory) you will need to build for both 32-bit and 64-bit Windows since both versions of EXEs and DLLs exist simultaneously on Windows 64.
-
-To do this, simply create and build the release versions of each target:
-```
-cd VulkanTools  # cd to the root of the Vulkan git repository
-mkdir build
-cd build
-cmake -G "Visual Studio 12 Win64" ..
-msbuild ALL_BUILD.vcxproj /p:Platform=x64 /p:Configuration=Release
-mkdir build32
-cd build32
-cmake -G "Visual Studio 12" ..
-msbuild ALL_BUILD.vcxproj /p:Platform=x86 /p:Configuration=Release
-```
-
+- [QtCreator as IDE for CMake builds on all platforms](https://qt.io/download-open-source/#section-2)

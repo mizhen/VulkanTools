@@ -481,7 +481,10 @@ int vkreplay_main(int argc, char** argv, vktrace_window_handle window = 0) {
     }
 
     // read portability table if it exists
-    if (pFileHeader->portability_table_valid) pFileHeader->portability_table_valid = readPortabilityTable();
+    // note: the branch has error with cross-platform playback handling, so
+    //      we disable it in the merge result to make the same platform
+    //      playback not affected by this problem.
+    if (pFileHeader->portability_table_valid) pFileHeader->portability_table_valid = false;
     if (!pFileHeader->portability_table_valid)
         vktrace_LogAlways("Trace file does not appear to contain portability table. Will not attempt to map memoryType indices.");
 
