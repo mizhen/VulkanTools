@@ -112,6 +112,8 @@ approved_ext = [
                 'VK_NV_win32_keyed_mutex',
                 'VK_NVX_device_generated_commands',
                 'VK_NVX_multiview_per_view_attributes',
+                'VK_EXT_sample_locations',
+                'VK_KHR_sampler_ycbcr_conversion',
                 ]
 
 api_exclusions = [
@@ -557,9 +559,13 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                  'FlushMappedMemoryRanges',
                                  'InvalidateMappedMemoryRanges',
                                  'GetPhysicalDeviceProperties',
+                                 'GetPhysicalDeviceProperties2KHR',
                                  'GetPhysicalDeviceMemoryProperties',
+                                 'GetPhysicalDeviceMemoryProperties2KHR',
                                  'GetPhysicalDeviceQueueFamilyProperties',
+                                 'GetPhysicalDeviceQueueFamilyProperties2KHR',
                                  'GetPhysicalDeviceSparseImageFormatProperties',
+                                 'GetPhysicalDeviceSparseImageFormatProperties2KHR',
                                  'GetPhysicalDeviceSurfaceSupportKHR',
                                  'GetPhysicalDeviceSurfaceCapabilitiesKHR',
                                  'GetPhysicalDeviceSurfaceFormatsKHR',
@@ -1786,6 +1792,16 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         elif 'vkBindImageMemory' == proto.name:
             trim_instructions.append("        trim::ObjectInfo* pInfo = trim::get_Image_objectInfo(image);")
             trim_instructions.append("        if (pInfo != NULL) {")
+            trim_instructions.append("            if (pInfo->ObjectInfo.Image.memorySize == 0) {")
+            trim_instructions.append("                // trim get image memory size through target title call")
+            trim_instructions.append("                // vkGetImageMemoryRequirements for the image, but so")
+            trim_instructions.append("                // far the title doesn't call vkGetImageMemoryRequirements,")
+            trim_instructions.append("                // so here we call it for the image.")
+            trim_instructions.append("                VkMemoryRequirements MemoryRequirements;")
+            trim_instructions.append("                mdd(device)->devTable.GetImageMemoryRequirements(device,image,&MemoryRequirements);")
+            trim_instructions.append("                pInfo->ObjectInfo.Image.memorySize = MemoryRequirements.size;")
+            trim_instructions.append("            }")
+            trim_instructions.append("")
             trim_instructions.append("            pInfo->ObjectInfo.Image.pBindImageMemoryPacket = trim::copy_packet(pHeader);")
             trim_instructions.append("            pInfo->ObjectInfo.Image.memory = memory;")
             trim_instructions.append("            pInfo->ObjectInfo.Image.memoryOffset = memoryOffset;")
@@ -2243,6 +2259,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                          'vkBeginCommandBuffer',
                                          'vkCreateDescriptorPool',
                                          'vkGetPhysicalDeviceProperties',
+                                         'vkGetPhysicalDeviceProperties2KHR',
                                          'vkCreateDevice',
                                          'vkCreateFramebuffer',
                                          'vkCreateImage',
@@ -2272,6 +2289,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                          'vkEnumerateInstanceLayerProperties',
                                          'vkEnumerateDeviceLayerProperties',
                                          'vkGetPhysicalDeviceQueueFamilyProperties',
+                                         'vkGetPhysicalDeviceQueueFamilyProperties2KHR',
                                          'vkGetQueryPoolResults',
                                          'vkMapMemory',
                                          'vkUnmapMemory',
