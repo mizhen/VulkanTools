@@ -25,8 +25,8 @@
 typedef struct vkreplayer_settings {
     char* pTraceFilePath;
     unsigned int numLoops;
-    int loopStartFrame;
-    int loopEndFrame;
+    unsigned int loopStartFrame;
+    unsigned int loopEndFrame;
     const char* screenshotList;
     const char* pngScreenshotList;
     const char* screenshotColorFormat;
@@ -34,7 +34,7 @@ typedef struct vkreplayer_settings {
 } vkreplayer_settings;
 
 #include <vector>
-extern std::vector<size_t> portabilityTable;
+extern std::vector<uint64_t> portabilityTable;
 extern FileLike* traceFile;
 
 #endif  // VKREPLAY__MAIN_H

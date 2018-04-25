@@ -48,10 +48,11 @@ void vktraceviewer_QTraceFileLoader::loadTraceFile(const QString& filename) {
             bOpened = false;
         } else {
             // Make sure trace file version is supported
-            if (m_traceFileInfo.pHeader->trace_file_version < VKTRACE_TRACE_FILE_VERSION_MINIMUM_COMPATIBLE) {
+            if (m_traceFileInfo.pHeader->trace_file_version < VKTRACE_TRACE_FILE_VERSION_MINIMUM_COMPATIBLE ||
+                m_traceFileInfo.pHeader->trace_file_version > VKTRACE_TRACE_FILE_VERSION) {
                 emit OutputMessage(VKTRACE_LOG_ERROR,
-                                   QString("Trace file version %1 is older than minimum compatible version (%2).\nYou'll need to "
-                                           "make a new trace file, or use an older replayer.")
+                                   QString("Trace file version %1 is not compatible with this viewer (%2).\nYou'll need to "
+                                           "the appropriate viewer.")
                                        .arg(m_traceFileInfo.pHeader->trace_file_version)
                                        .arg(VKTRACE_TRACE_FILE_VERSION_MINIMUM_COMPATIBLE));
                 bOpened = false;
@@ -141,7 +142,7 @@ bool vktraceviewer_QTraceFileLoader::load_controllers(vktraceviewer_trace_file_i
         return false;
     }
 
-    for (int i = 0; i < pTraceFileInfo->pHeader->tracer_count; i++) {
+    for (uint64_t i = 0; i < pTraceFileInfo->pHeader->tracer_count; i++) {
         uint8_t tracerId = pTraceFileInfo->pHeader->tracer_id_array[i].id;
 
         const VKTRACE_TRACER_REPLAYER_INFO* pReplayerInfo = &(gs_tracerReplayerInfo[tracerId]);

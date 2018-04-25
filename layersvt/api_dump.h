@@ -16,6 +16,7 @@
  * limitations under the License.
  *
  * Author: Lenny Komow <lenny@lunarg.com>
+ * Author: Shannon McPherson <shannon@lunarg.com>
  */
 
 #pragma once
@@ -436,6 +437,8 @@ class ApiDumpInstance {
     }
 
     static inline ApiDumpInstance &current() { return current_instance; }
+
+    std::unordered_map<uint64_t, std::string> object_name_map;
 
    private:
     static ApiDumpInstance current_instance;

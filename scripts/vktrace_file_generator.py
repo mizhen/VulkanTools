@@ -23,6 +23,7 @@ import os,re,sys
 import xml.etree.ElementTree as etree
 from generator import *
 from collections import namedtuple
+from common_codegen import *
 
 approved_ext = [
                 'VK_AMD_draw_indirect_count',
@@ -53,29 +54,33 @@ approved_ext = [
                 'VK_IMG_format_pvrtc',
                 'VK_KHR_16bit_storage',
                 'VK_KHR_android_surface',
+                'VK_KHR_bind_memory2',
                 'VK_KHR_dedicated_allocation',
                 'VK_KHR_descriptor_update_template',
                 'VK_KHR_display',
                 'VK_KHR_display_swapchain',
                 'VK_KHR_external_fence',
                 'VK_KHR_external_fence_capabilities',
-                #'VK_KHR_external_fence_fd',
-                #'VK_KHR_external_fence_win32',
+                'VK_KHR_external_fence_fd',
+                'VK_KHR_external_fence_win32',
                 'VK_KHR_external_memory',
                 'VK_KHR_external_memory_capabilities',
                 'VK_KHR_external_memory_fd',
-                #'VK_KHR_external_memory_win32',
+                'VK_KHR_external_memory_win32',
                 'VK_KHR_external_semaphore',
                 'VK_KHR_external_semaphore_capabilities',
                 'VK_KHR_external_semaphore_fd',
-                #'VK_KHR_external_semaphore_win32',
+                'VK_KHR_external_semaphore_win32',
                 'VK_KHR_get_memory_requirements2',
                 'VK_KHR_get_physical_device_properties2',
                 'VK_KHR_get_surface_capabilities2',
+                'VK_KHR_image_format_list',
                 'VK_KHR_incremental_present',
                 'VK_KHR_maintenance1',
+                'VK_KHR_maintenance2',
                 #'VK_KHR_mir_surface',
                 'VK_KHR_push_descriptor',
+                'VK_KHR_relaxed_block_layout',
                 'VK_KHR_sampler_filter_minmax',
                 'VK_KHR_sampler_mirror_clamp_to_edge',
                 'VK_KHR_shader_draw_parameters',
@@ -92,6 +97,20 @@ approved_ext = [
                 'VK_KHX_device_group',
                 'VK_KHX_device_group_creation',
                 'VK_KHX_multiview',
+                'VK_EXT_depth_range_unrestricted',
+                'VK_EXT_external_memory_dma_buf',
+                'VK_EXT_external_memory_host',
+                'VK_EXT_global_priority',
+                'VK_EXT_post_depth_coverage',
+                'VK_EXT_queue_family_foreign',
+                'VK_EXT_sampler_filter_minmax',
+                'VK_EXT_shader_stencil_export',
+                'VK_EXT_shader_viewport_index_layer',
+                'VK_EXT_validation_cache',
+                'VK_AMD_mixed_attachment_samples',
+                'VK_AMD_shader_fragment_mask',
+                'VK_AMD_shader_image_load_store_lod',
+                'VK_AMD_shader_info',
                 #'VK_MVK_ios_surface',
                 #'VK_MVK_macos_surface',
                 #'VK_MVK_moltenvk',
@@ -100,7 +119,7 @@ approved_ext = [
                 'VK_NV_dedicated_allocation',
                 'VK_NV_external_memory',
                 'VK_NV_external_memory_capabilities',
-                #'VK_NV_external_memory_win32',
+                'VK_NV_external_memory_win32',
                 'VK_NV_fill_rectangle',
                 'VK_NV_fragment_coverage_to_color',
                 'VK_NV_framebuffer_mixed_samples',
@@ -114,15 +133,33 @@ approved_ext = [
                 'VK_NVX_multiview_per_view_attributes',
                 'VK_EXT_sample_locations',
                 'VK_KHR_sampler_ycbcr_conversion',
+                'VK_KHR_get_display_properties2',
+                'VK_KHR_memory2',
+                'VK_KHR_protected_memory',
+                'VK_KHX_subgroup',
                 ]
 
 api_exclusions = [
-                # VK_KHR_display
-                'GetDisplayPlaneSupportedDisplaysKHR',
-
-                # VK_KHR_display_swapchain
-                'CreateSharedSwapchainsKHR'
+                'EnumerateInstanceVersion'
                 ]
+
+# Helper functions
+
+def isSupportedCmd(cmd, cmd_extension_dict):
+    extension = cmd_extension_dict[cmd.name]
+    if 'VK_VERSION_1_' not in extension and extension not in approved_ext:
+        return False
+
+    cmdname = cmd.name[2:]
+    if cmdname in api_exclusions:
+        return False
+    return True
+
+def isInstanceCmd(cmd):
+    cmdtarget = cmd.members[0].type
+    handle = cmd.members[0].handle
+    return handle == None or cmdtarget == "VkInstance" or cmdtarget == 'VkPhysicalDevice'
+
 #
 # VkTraceFileOutputGeneratorOptions - subclass of GeneratorOptions.
 class VkTraceFileOutputGeneratorOptions(GeneratorOptions):
@@ -136,32 +173,31 @@ class VkTraceFileOutputGeneratorOptions(GeneratorOptions):
                  defaultExtensions = None,
                  addExtensions = None,
                  removeExtensions = None,
+                 emitExtensions = None,
                  sortProcedure = regSortFeatures,
                  prefixText = "",
                  genFuncPointers = True,
                  protectFile = True,
                  protectFeature = True,
-                 protectProto = None,
-                 protectProtoStr = None,
                  apicall = '',
                  apientry = '',
                  apientryp = '',
                  alignFuncParam = 0,
+                 expandEnumerants = True,
                  library_name = '',
                  vktrace_file_type = ''):
         GeneratorOptions.__init__(self, filename, directory, apiname, profile,
                                   versions, emitversions, defaultExtensions,
-                                  addExtensions, removeExtensions, sortProcedure)
+                                  addExtensions, removeExtensions, emitExtensions, sortProcedure)
         self.prefixText       = prefixText
         self.genFuncPointers  = genFuncPointers
         self.protectFile      = protectFile
         self.protectFeature   = protectFeature
-        self.protectProto     = protectProto
-        self.protectProtoStr  = protectProtoStr
         self.apicall          = apicall
         self.apientry         = apientry
         self.apientryp        = apientryp
         self.alignFuncParam   = alignFuncParam
+        self.expandEnumerants = expandEnumerants,
         self.library_name     = library_name
         self.vktrace_file_type = vktrace_file_type
 #
@@ -245,8 +281,8 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         OutputGenerator.endFile(self)
     #
     # Called for each type -- if the type is a struct/union, grab the metadata
-    def genType(self, typeinfo, name):
-        OutputGenerator.genType(self, typeinfo, name)
+    def genType(self, typeinfo, name, alias):
+        OutputGenerator.genType(self, typeinfo, name, alias)
         typeElem = typeinfo.elem
         # If the type is a struct type, traverse the imbedded <member> tags generating a structure.
         # Otherwise, emit the tag text.
@@ -255,7 +291,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
             self.object_types.append(name)
         elif (category == 'struct' or category == 'union'):
             self.structNames.append(name)
-            self.genStruct(typeinfo, name)
+            self.genStruct(typeinfo, name, alias) # TODO: This is bad. Might confuse parent class
     #
     # Check if the parameter passed in is a pointer
     def paramIsPointer(self, param):
@@ -329,7 +365,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
             result = str(result).replace('::', '->')
         return result
     #
-    # Check if a structure is or contains a dispatchable (dispatchable = True) or 
+    # Check if a structure is or contains a dispatchable (dispatchable = True) or
     # non-dispatchable (dispatchable = False) handle
     def TypeContainsObjectHandle(self, handle_type, dispatchable):
         if dispatchable:
@@ -350,9 +386,11 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         return False
     #
     # Capture command parameter info needed
-    def genCmd(self, cmdinfo, cmdname):
+    def genCmd(self, cmdinfo, cmdname, alias):
+        if "GetPhysicalDeviceSurfacePresentModes" in cmdname:
+           stop="here"
         # Add struct-member type information to command parameter information
-        OutputGenerator.genCmd(self, cmdinfo, cmdname)
+        OutputGenerator.genCmd(self, cmdinfo, cmdname, alias)
         members = cmdinfo.elem.findall('.//param')
         # Iterate over members once to get length parameters for arrays
         lens = set()
@@ -392,8 +430,8 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         self.cmd_feature_protect.append(self.CmdExtraProtect(name=cmdname, extra_protect=self.featureExtraProtect))
     #
     # Generate local ready-access data describing Vulkan structures and unions from the XML metadata
-    def genStruct(self, typeinfo, typeName):
-        OutputGenerator.genStruct(self, typeinfo, typeName)
+    def genStruct(self, typeinfo, typeName, alias):
+        OutputGenerator.genStruct(self, typeinfo, typeName, alias)
         members = typeinfo.elem.findall('.//member')
         # Iterate over members once to get length parameters for arrays
         lens = set()
@@ -427,6 +465,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
     def beginFeature(self, interface, emit):
         # Start processing in superclass
         OutputGenerator.beginFeature(self, interface, emit)
+        self.featureExtraProtect = GetFeatureProtect(interface)
         self.current_feature_name = self.featureName
     #
     # Enum_string_header: Create a routine to convert an enumerated value into a string
@@ -592,12 +631,19 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                  'DestroyDebugReportCallbackEXT',
                                  'AllocateCommandBuffers',
                                  'GetImageMemoryRequirements',
+                                 'GetImageMemoryRequirements2KHR',
                                  'GetBufferMemoryRequirements',
+                                 'GetBufferMemoryRequirements2KHR',
                                  'CreateDescriptorUpdateTemplateKHR',
+                                 'CreateDescriptorUpdateTemplate',
                                  'DestroyDescriptorUpdateTemplateKHR',
+                                 'DestroyDescriptorUpdateTemplate',
                                  'UpdateDescriptorSetWithTemplateKHR',
+                                 'UpdateDescriptorSetWithTemplate',
+                                 'CmdPushDescriptorSetKHR',
                                  'CmdPushDescriptorSetWithTemplateKHR',
                                  'BindBufferMemory',
+                                 'BindImageMemory',
                                  # VK_EXT_display_control
                                  'RegisterDeviceEventEXT',
                                  'RegisterDisplayEventEXT',
@@ -605,6 +651,10 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                  'CreateObjectTableNVX',
                                  'CmdProcessCommandsNVX',
                                  'CreateIndirectCommandsLayoutNVX',
+                                 'BindBufferMemory2KHR',
+                                 'BindImageMemory2KHR',
+                                 'GetDisplayPlaneSupportedDisplaysKHR',
+                                 'EnumerateDeviceExtensionProperties'
                                  ]
         # Map APIs to functions if body is fully custom
         custom_body_dict = {'CreateInstance': self.GenReplayCreateInstance,
@@ -632,18 +682,16 @@ class VkTraceFileOutputGenerator(OutputGenerator):
 
         for api in self.cmdMembers:
             cmdname = api.name[2:]
-            extension = cmd_extension_dict[api.name]
-            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
-                continue
-            if cmdname in api_exclusions:
+            if not isSupportedCmd(api, cmd_extension_dict):
+                continue;
+            temp_exclude = ['CreateInstance', 'EnumerateInstanceExtensionProperties', 'EnumerateInstanceLayerProperties', 'EnumerateInstanceVersion']
+            if cmdname in temp_exclude: # TODO verify this needs to be here
                 continue
             protect = cmd_protect_dict[api.name]
             if protect is not None:
                 replay_gen_source += '#ifdef %s\n' % protect
             disp_table = ""
-            cmdtarget = api.members[0].type
-            handle = api.members[0].handle
-            if handle == None or cmdtarget == "VkInstance" or cmdtarget == 'VkPhysicalDevice':
+            if isInstanceCmd(api):
                 disp_table = "m_vkFuncs"
             else:
                 disp_table = "m_vkDeviceFuncs"
@@ -658,25 +706,18 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         replay_gen_source += '    vktrace_replay::VKTRACE_REPLAY_RESULT returnValue = vktrace_replay::VKTRACE_REPLAY_SUCCESS;\n'
         replay_gen_source += '    VkResult replayResult = VK_ERROR_VALIDATION_FAILED_EXT;\n'
         replay_gen_source += '    switch (packet->packet_id) {\n'
-        replay_gen_source += '        case VKTRACE_TPI_VK_vkApiVersion: {\n'
-        replay_gen_source += '            packet_vkApiVersion* pPacket = (packet_vkApiVersion*)(packet->pBody);\n'
-        replay_gen_source += '            if (VK_VERSION_MAJOR(pPacket->version) != 1 || VK_VERSION_MINOR (pPacket->version) != 0) {\n'
-        replay_gen_source += '                vktrace_LogError("Trace file is from Vulkan version 0x%x (%u.%u.%u), but the vktrace plugin only supports version 0x%x (%u.%u.%u).", pPacket->version, (pPacket->version & 0xFFC00000) >> 22, (pPacket->version & 0x003FF000) >> 12, (pPacket->version & 0x00000FFF), VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION), ((VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION)) & 0xFFC00000) >> 22, ((VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION)) & 0x003FF000) >> 12, ((VK_MAKE_VERSION(1, 0, VK_HEADER_VERSION)) & 0x00000FFF));\n'
-        replay_gen_source += '                returnValue = vktrace_replay::VKTRACE_REPLAY_ERROR;\n'
-        replay_gen_source += '            }\n'
+        replay_gen_source += '        case VKTRACE_TPI_VK_vkApiVersion:\n'
+        replay_gen_source += '            // Ignore api version packets\n'
         replay_gen_source += '            break;\n'
-        replay_gen_source += '        }\n'
 
         for api in self.cmdMembers:
-            extension = cmd_extension_dict[api.name]
-            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
+            if not isSupportedCmd(api, cmd_extension_dict):
                 continue
-            cmdname = api.name
-            vk_cmdname = cmdname
+
+            vk_cmdname = api.name
             # Strip off 'vk' from command name
-            cmdname = cmdname[2:]
-            if cmdname in api_exclusions:
-                continue
+            cmdname = api.name[2:]
+
             cmdinfo = cmd_info_dict[vk_cmdname]
             protect = cmd_protect_dict[vk_cmdname]
             if protect is not None:
@@ -776,17 +817,15 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                 # TODO: need a better way to indicate which extensions should be mapped to which Get*ProcAddr
                 elif cmdname == 'GetInstanceProcAddr':
                     for command in self.cmdMembers:
-                        cmdtarget = command.members[0].type
-                        handle = command.members[0].handle
-                        if handle != None and cmdtarget != "VkInstance" and cmdtarget != 'VkPhysicalDevice':
+                        if not isInstanceCmd(command):
                             continue
                         extension = cmd_extension_dict[command.name]
-                        if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
+                        if 'VK_VERSION_' not in extension and extension not in approved_ext:
                             continue
                         command_name_novk = command.name[2:]
                         if command_name_novk in api_exclusions:
                             continue
-                        if cmd_extension_dict[command.name] != 'VK_VERSION_1_0' and command.name not in api_exclusions:
+                        if 'VK_VERSION_' not in cmd_extension_dict[command.name] and command.name not in api_exclusions:
                             gipa_params = cmd_member_dict[vk_cmdname]
                             gipa_protect = cmd_protect_dict[command.name]
                             if gipa_protect is not None:
@@ -798,17 +837,15 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                 replay_gen_source += '#endif // %s\n' % gipa_protect
                 elif cmdname == 'GetDeviceProcAddr':
                     for command in self.cmdMembers:
-                        cmdtarget = command.members[0].type
-                        handle = command.members[0].handle
-                        if handle == None or cmdtarget == "VkInstance" or cmdtarget == 'VkPhysicalDevice':
+                        if isInstanceCmd(command):
                             continue
                         extension = cmd_extension_dict[command.name]
-                        if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
+                        if 'VK_VERSION_' not in extension and extension not in approved_ext:
                             continue
                         command_name_novk = command.name[2:]
                         if command_name_novk in api_exclusions:
                             continue
-                        if cmd_extension_dict[command.name] != 'VK_VERSION_1_0' and command.name not in api_exclusions:
+                        if 'VK_VERSION_' not in cmd_extension_dict[command.name] and command.name not in api_exclusions:
                             gdpa_params = cmd_member_dict[vk_cmdname]
                             gdpa_protect = cmd_protect_dict[command.name]
                             if gdpa_protect is not None:
@@ -829,9 +866,9 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                         ret_value = False
                     else:
                         rr_string = '            replayResult = '
-                cmdtarget = api.members[0].type
-                handle = api.members[0].handle
-                if handle == None or cmdtarget == "VkInstance" or cmdtarget == 'VkPhysicalDevice':
+                if cmdname == "EnumerateInstanceExtensionProperties" or cmdname == "EnumerateInstanceLayerProperties" or cmdname == "EnumerateInstanceVersion":
+                    rr_string += 'vk%s(' % cmdname # TODO figure out if we need this case
+                elif isInstanceCmd(api):
                     rr_string += 'm_vkFuncs.%s(' % cmdname
                 else:
                     rr_string += 'm_vkDeviceFuncs.%s(' % cmdname
@@ -863,32 +900,23 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                 # Insert the real_*(..) call
                 replay_gen_source += '%s\n' % rr_string
                 # Handle return values or anything that needs to happen after the real_*(..) call
-                get_ext_layers_proto = ['EnumerateInstanceExtensionProperties', 'EnumerateDeviceExtensionProperties','EnumerateInstanceLayerProperties', 'EnumerateDeviceLayerProperties']
                 if 'DestroyDevice' in cmdname:
-                    replay_gen_source += '            if (replayResult == VK_SUCCESS) {\n'
-                    replay_gen_source += '                m_pCBDump = NULL;\n'
-                    replay_gen_source += '                m_pDSDump = NULL;\n'
+                    replay_gen_source += '            m_pCBDump = NULL;\n'
+                    replay_gen_source += '            m_pDSDump = NULL;\n'
                     #TODO138 : disabling snapshot
-                    #replay_gen_source += '                m_pVktraceSnapshotPrint = NULL;\n'
-                    replay_gen_source += '                m_objMapper.rm_from_devices_map(pPacket->device);\n'
-                    replay_gen_source += '                m_display->m_initedVK = false;\n'
-                    replay_gen_source += '            }\n'
-                elif cmdname in get_ext_layers_proto:
-                    replay_gen_source += '            if (replayResult == VK_ERROR_LAYER_NOT_PRESENT || replayResult == VK_INCOMPLETE) {\n'
-                    replay_gen_source += '                replayResult = VK_SUCCESS;\n'
-                    replay_gen_source += '            }\n'
+                    #replay_gen_source += '            m_pVktraceSnapshotPrint = NULL;\n'
+                    replay_gen_source += '            m_objMapper.rm_from_devices_map(pPacket->device);\n'
+                    replay_gen_source += '            m_display->m_initedVK = false;\n'
                 elif 'DestroySwapchainKHR' in cmdname:
-                    replay_gen_source += '            if (replayResult == VK_SUCCESS) {\n'
-                    replay_gen_source += '                m_objMapper.rm_from_swapchainkhrs_map(pPacket->swapchain);\n'
-                    replay_gen_source += '            }\n'
+                    replay_gen_source += '            m_objMapper.rm_from_swapchainkhrs_map(pPacket->swapchain);\n'
                 elif 'AcquireNextImage' in cmdname:
-                    replay_gen_source += '            m_objMapper.add_to_pImageIndex_map(*(pPacket->pImageIndex), local_pImageIndex);\n'
-                elif 'DestroyInstance' in cmdname:
                     replay_gen_source += '            if (replayResult == VK_SUCCESS) {\n'
-                    replay_gen_source += '                // TODO need to handle multiple instances and only clearing maps within an instance.\n'
-                    replay_gen_source += '                // TODO this only works with a single instance used at any given time.\n'
-                    replay_gen_source += '                m_objMapper.clear_all_map_handles();\n'
+                    replay_gen_source += '                m_objMapper.add_to_pImageIndex_map(*(pPacket->pImageIndex), local_pImageIndex);\n'
                     replay_gen_source += '            }\n'
+                elif 'DestroyInstance' in cmdname:
+                    replay_gen_source += '            // TODO need to handle multiple instances and only clearing maps within an instance.\n'
+                    replay_gen_source += '            // TODO this only works with a single instance used at any given time.\n'
+                    replay_gen_source += '            m_objMapper.clear_all_map_handles();\n'
                 elif 'MergePipelineCaches' in cmdname:
                     replay_gen_source += '            delete[] remappedpSrcCaches;\n'
                 elif 'FreeCommandBuffers' in cmdname:
@@ -1108,10 +1136,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         trace_pkt_id_hdr += '        }\n'
         cmd_extension_dict = dict(self.cmd_extension_names)
         for api in self.cmdMembers:
-            extension = cmd_extension_dict[api.name]
-            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
-                continue
-            if api.name[2:] in api_exclusions:
+            if not isSupportedCmd(api, cmd_extension_dict):
                 continue
             trace_pkt_id_hdr += '        case VKTRACE_TPI_VK_%s: {\n' % api.name
             trace_pkt_id_hdr += '            return "%s";\n' % api.name
@@ -1134,12 +1159,12 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         cmd_member_dict = dict(self.cmdMembers)
         for api in self.cmdMembers:
             extension = cmd_extension_dict[api.name]
-            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
+            if 'VK_VERSION_' not in extension and extension not in approved_ext:
                 continue
             if api.name[2:] in api_exclusions:
                 continue
             trace_pkt_id_hdr += '    case VKTRACE_TPI_VK_%s: {\n' % api.name
-            func_str = 'vk%s(' % api.name
+            func_str = '%s(' % api.name
             print_vals = ''
             create_func = True if True in [create_txt in api.name for create_txt in ['Create', 'Allocate', 'MapMemory', 'GetSwapchainImages']] else False
             params = cmd_member_dict[api.name]
@@ -1186,7 +1211,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         cmd_extension_dict = dict(self.cmd_extension_names)
         for api in self.cmdMembers:
             extension = cmd_extension_dict[api.name]
-            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
+            if 'VK_VERSION_' not in extension and extension not in approved_ext:
                 continue
             if api.name[2:] in api_exclusions:
                 continue
@@ -1225,6 +1250,8 @@ class VkTraceFileOutputGenerator(OutputGenerator):
             return ("%p {size=%\" PRIu64 \", alignment=%\" PRIu64 \", memoryTypeBits=%0x08X}", "%s, (%s == NULL)?0:%s->memoryRequirements.size, (%s == NULL)?0:%s->memoryRequirements.alignment, (%s == NULL)?0:%s->memoryRequirements.memoryTypeBits" % (name, name, name, name, name, name, name), "")
         elif "VkMemoryRequirements" in vk_type:
             return ("%p {size=%\" PRIu64 \", alignment=%\" PRIu64 \", memoryTypeBits=%0x08X}", "%s, (%s == NULL)?0:%s->size, (%s == NULL)?0:%s->alignment, (%s == NULL)?0:%s->memoryTypeBits" % (name, name, name, name, name, name, name), "")
+        if "VkFenceGet" in vk_type:
+            return ("%p {fence=%\" PRIx64 \", handleType=%\" PRIx64 \"}", "%s, (%s == NULL)?0:(uint64_t)%s->fence, (%s == NULL)?0:(uint64_t)%s->handleType" % (name, name, name, name, name), "")
         if "VkClearColor" in vk_type:
             return ("%p", "(void*)&%s" % name, deref)
         if "_type" in vk_type.lower(): # TODO : This should be generic ENUM check
@@ -1251,9 +1278,9 @@ class VkTraceFileOutputGenerator(OutputGenerator):
             return ("%\" PRIu64 \"", "(uint64_t)%s" % name, deref)
         if "VkBool32" in vk_type:
             if param.ispointer:
-                return ("%s",  "(*%s == VK_TRUE) ? \"VK_TRUE\" : \"VK_FALSE\"" % (name), "*")
+                return ("%s",  "(%s && *%s == VK_TRUE) ? \"VK_TRUE\" : \"VK_FALSE\"" % (name, name), "*")
             return ("%s", "(%s == VK_TRUE) ? \"VK_TRUE\" : \"VK_FALSE\"" %(name), deref)
-        if "VkFence" in vk_type:
+        if "VkFence" == vk_type:
             if param.ispointer:
                 return ("%p {%\" PRIx64 \"}", "(void*)%s, (%s == NULL) ? 0 : (uint64_t)*(%s)" % (name, name, name), "*")
             return ("%p", "(void*)%s" %(name), deref)
@@ -1269,6 +1296,8 @@ class VkTraceFileOutputGenerator(OutputGenerator):
             return ("%u", name, deref)
         if "RROutput" in vk_type:
             return ("%u", "(uint32_t)(%s)" % name, "")
+        if "PointerProperties" in vk_type and "int" != vk_type:
+            return ("%p", "(void*)(%s)" % name, deref)
         if True in [t in vk_type.lower() for t in ["int", "flags", "mask", "xcb_window_t"]]:
             if param.isstaticarray > 0: # handle array, current hard-coded to 4 (TODO: Make this dynamic)
                 return ("[%i, %i, %i, %i]", "%s[0], %s[1], %s[2], %s[3]" % (name, name, name, name), deref)
@@ -1305,7 +1334,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         cmd_extension_dict = dict(self.cmd_extension_names)
         for api in self.cmdMembers:
             extension = cmd_extension_dict[api.name]
-            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
+            if 'VK_VERSION_' not in extension and extension not in approved_ext:
                 continue
             cmdinfo = cmd_info_dict[api.name]
             cdecl = self.makeCDecls(cmdinfo.elem)[0]
@@ -1428,7 +1457,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                     # TODO : This is custom hack to account for 2 pData items with dataSize param for sizing
                     if 'pData' == p.name and 'dataSize' == params[params.index(p)-1].name:
                         pp_dict['add_txt'] = pp_dict['add_txt'].replace('_dataSize', 'dataSize')
-                elif 'void' in p.type and (p.name == 'pData' or p.name == 'pValues'):
+                elif 'void' in p.type and (p.name == 'pData' or p.name == 'pValues' or p.name == 'pHostPointer'):
                     pp_dict['add_txt'] = '//TODO FIXME vktrace_add_buffer_to_trace_packet(pHeader, (void**)&(pPacket->%s), sizeof(%s), %s)' % (p.name, p.type.strip('*').replace('const ', ''), p.name)
                     pp_dict['finalize_txt'] = '//TODO FIXME vktrace_finalize_buffer_address(pHeader, (void**)&(pPacket->%s))' % (p.name)
                 else:
@@ -1445,7 +1474,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         skip_list = [] # store params that are already accounted for so we don't count them twice
         # Dict of specific params with unique custom sizes
         # TODO: Now using bitfields for all stages, need pSetBindPoints to accommodate that.
-        custom_size_dict = {'VkSwapchainCreateInfoKHR' : 'vk_size_vkswapchaincreateinfokhr(pCreateInfo)',
+        custom_size_dict = {'VkSwapchainCreateInfoKHR' : 'vk_size_vkswapchaincreateinfokhr',
                             }
         for p in params:
             # First handle custom cases
@@ -1456,10 +1485,10 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                 ps.append('get_struct_chain_size((void*)%s)' % (p.name))
                 skip_list.append(p.name)
             elif p.name in custom_size_dict:
-                ps.append(custom_size_dict[p.name])
+                ps.append('%s(%s)' % (custom_size_dict[p.name], p.name))
                 skip_list.append(p.name)
             if p.type in custom_size_dict:
-                ps.append(custom_size_dict[p.type])
+                ps.append('%s(%s)' % (custom_size_dict[p.type], p.name))
                 skip_list.append(p.name)
             # Skip any params already handled
             if p.name in skip_list:
@@ -1468,7 +1497,10 @@ class VkTraceFileOutputGenerator(OutputGenerator):
             if p.len:
                 if p.ispointer:
                     if p.type == 'void':
-                        ps.append('%s' % p.len)
+                        if p.len[0] == 'p':
+                            ps.append('(*%s)' % p.len)
+                        else:
+                            ps.append('%s' % p.len)
                     else:
                         if p.len[0] == 'p':
                             ps.append('(*%s) * sizeof(%s)' % (p.len, p.type))
@@ -2240,7 +2272,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         trace_vk_src += '#elif defined(PLATFORM_LINUX)\n'
         trace_vk_src += '    return;\n}\n'
         trace_vk_src += '#endif\n'
-        trace_vk_src += ''
+        trace_vk_src += '\n'
 
         # Generate functions used to trace API calls and store the input and result data into a packet
         # Here's the general flow of code insertion w/ option items flagged w/ "?"
@@ -2252,7 +2284,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         # Assign packet values
         # FINISH packet
         # return result if needed
-       
+
         manually_written_hooked_funcs = ['vkAllocateCommandBuffers',
                                          'vkAllocateMemory',
                                          'vkAllocateDescriptorSets',
@@ -2311,8 +2343,12 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                          'vkGetPhysicalDeviceWin32PresentationSupportKHR',
                                          'vkCreateAndroidSurfaceKHR',
                                          'vkCreateDescriptorUpdateTemplateKHR',
+                                         'vkCreateDescriptorUpdateTemplate',
                                          'vkDestroyDescriptorUpdateTemplateKHR',
+                                         'vkDestroyDescriptorUpdateTemplate',
                                          'vkUpdateDescriptorSetWithTemplateKHR',
+                                         'vkUpdateDescriptorSetWithTemplate',
+                                         'vkCmdPushDescriptorSetKHR',
                                          'vkCmdPushDescriptorSetWithTemplateKHR',
                                          'vkAcquireXlibDisplayEXT',
                                          'vkGetRandROutputDisplayEXT',
@@ -2339,44 +2375,56 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                 sys.exit("Entry '%s' in manually_written_hooked_funcs list is not in the vulkan function prototypes" % func)
         # Process each of the entrypoint prototypes
         cmd_extension_dict = dict(self.cmd_extension_names)
+        cmd_protect_dict = dict(self.cmd_feature_protect)
         cmd_info_dict = dict(self.cmd_info_data)
+        cmd_protect_dict = dict(self.cmd_feature_protect)
         for proto in self.cmdMembers:
             extension = cmd_extension_dict[proto.name]
             cmdinfo = cmd_info_dict[proto.name]
-            if extension != 'VK_VERSION_1_0' and extension not in approved_ext or proto.name[2:] in api_exclusions:
+            if 'VK_VERSION_' not in extension and extension not in approved_ext or proto.name[2:] in api_exclusions:
                 trace_vk_src += '// TODO: Add support for __HOOKED_%s: Skipping for now.\n' % proto.name
                 continue
+
             if proto.name in manually_written_hooked_funcs:
-                trace_vk_src += '// __HOOKED_%s is manually written. Look in vktrace_lib_trace.cpp\n' % proto.name
+                trace_vk_src += '// __HOOKED_%s is manually written. Look in vktrace_lib_trace.cpp. Stub for proc mapping function.\n' % proto.name
+
+            protect = cmd_protect_dict[proto.name]
+            if protect is not None:
+                trace_vk_src += '#ifdef %s\n' % protect
+
+            resulttype = cmdinfo.elem.find('proto/type')
+            resulttype = resulttype.text if not None else ''
+            raw_packet_update_list = [] # Non-ptr elements placed directly into packet
+            ptr_packet_update_list = [] # Ptr elements to be updated into packet
+            return_txt = ''
+            packet_size = []
+            in_data_size = False # Flag when we need to capture local input size variable for in/out size
+            trace_vk_src += 'VKTRACER_EXPORT VKAPI_ATTR %s VKAPI_CALL __HOOKED_%s(\n' % (resulttype, proto.name)
+            for p in proto.members: # TODO : For all of the ptr types, check them for NULL and return 0 if NULL
+                if p.name == '':
+                    continue
+                trace_vk_src += '%s,\n' % p.cdecl
+                if p.ispointer and p.name not in ['pSysMem', 'pReserved']:
+                    if 'pDataSize' in p.name:
+                        in_data_size = True;
+                elif 'pfnMsgCallback' == p.name:
+                    raw_packet_update_list.append('    PFN_vkDebugReportCallbackEXT* pNonConstCallback = (PFN_vkDebugReportCallbackEXT*)&pPacket->pfnMsgCallback;')
+                    raw_packet_update_list.append('    *pNonConstCallback = pfnMsgCallback;')
+                elif p.isstaticarray:
+                    raw_packet_update_list.append('    memcpy((void *) pPacket->%s, %s, sizeof(pPacket->%s));' % (p.name, p.name, p.name))
+                else:
+                    raw_packet_update_list.append('    pPacket->%s = %s;' % (p.name, p.name))
+            trace_vk_src = trace_vk_src[:-2] + ')'
+
+            if proto.name in manually_written_hooked_funcs:
+                # Just declare function for manually written entrypoints. Declaration needed for proc mapping
+                trace_vk_src += ';\n';
             else:
-                raw_packet_update_list = [] # Non-ptr elements placed directly into packet
-                ptr_packet_update_list = [] # Ptr elements to be updated into packet
-                return_txt = ''
-                packet_size = []
-                in_data_size = False # Flag when we need to capture local input size variable for in/out size
-                resulttype = cmdinfo.elem.find('proto/type')
-                resulttype = resulttype.text if not None else ''
-                trace_vk_src += 'VKTRACER_EXPORT VKAPI_ATTR %s VKAPI_CALL __HOOKED_%s(\n' % (resulttype, proto.name)
-                for p in proto.members: # TODO : For all of the ptr types, check them for NULL and return 0 if NULL
-                    if p.name == '':
-                        continue
-                    trace_vk_src += '%s,\n' % p.cdecl
-                    if p.ispointer and p.name not in ['pSysMem', 'pReserved']:
-                        if 'pDataSize' in p.name:
-                            in_data_size = True;
-                    elif 'pfnMsgCallback' == p.name:
-                        raw_packet_update_list.append('    PFN_vkDebugReportCallbackEXT* pNonConstCallback = (PFN_vkDebugReportCallbackEXT*)&pPacket->pfnMsgCallback;')
-                        raw_packet_update_list.append('    *pNonConstCallback = pfnMsgCallback;')
-                    elif p.isstaticarray:
-                        raw_packet_update_list.append('    memcpy((void *) pPacket->%s, %s, sizeof(pPacket->%s));' % (p.name, p.name, p.name))
-                    else:
-                        raw_packet_update_list.append('    pPacket->%s = %s;' % (p.name, p.name))
-                trace_vk_src = trace_vk_src[:-2] + ')\n'
                 # Get list of packet size modifiers due to ptr params
                 packet_size = self.GetPacketSize(proto.members)
                 ptr_packet_update_list = self.GetPacketPtrParamList(proto.members)
                 # End of function declaration portion, begin function body
-                trace_vk_src += '{\n'
+                trace_vk_src += ' {\n'
                 if 'void' not in resulttype or '*' in resulttype:
                     trace_vk_src += '    %s result;\n' % resulttype
                     return_txt = 'result = '
@@ -2454,6 +2502,10 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                         trace_vk_src += '    vktrace_add_pnext_structs_to_trace_packet(pHeader, (void *)pPacket->pFeatures, (void *)pFeatures);\n'
                     if ('(pPacket->pSurfaceInfo)' in pp_dict['add_txt'] and ('2KHR' in pp_dict['add_txt'])):
                         trace_vk_src += '    vktrace_add_pnext_structs_to_trace_packet(pHeader, (void *)pPacket->pSurfaceInfo, (void *)pSurfaceInfo);\n'
+                    if ('(pPacket->pInfo)' in pp_dict['add_txt'] and ('2KHR' in pp_dict['add_txt'])):
+                        trace_vk_src += '    vktrace_add_pnext_structs_to_trace_packet(pHeader, (void *)pPacket->pInfo, (void *)pInfo);\n'
+                    if ('(pPacket->pMemoryRequirements)' in pp_dict['add_txt'] and ('2KHR' in pp_dict['add_txt'])):
+                        trace_vk_src += '    vktrace_add_pnext_structs_to_trace_packet(pHeader, (void *)pPacket->pMemoryRequirements, (void *)pMemoryRequirements);\n'
                 if 'void' not in resulttype or '*' in resulttype:
                     trace_vk_src += '    pPacket->result = result;\n'
                 for pp_dict in ptr_packet_update_list:
@@ -2462,7 +2514,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                 trace_vk_src += '    if (!g_trimEnabled) {\n'
                 # All buffers should be finalized by now, and the trace packet can be finished (which sends it over the socket)
                 trace_vk_src += '        FINISH_TRACE_PACKET();\n'
-       
+
                 # Else half of g_trimEnabled conditional
                 # Since packet wasn't sent to trace file, it either needs to be associated with an object, or deleted.
                 trace_vk_src += '    } else {\n'
@@ -2481,17 +2533,58 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                     trace_vk_src += '            vktrace_delete_trace_packet(&pHeader);\n'
                     trace_vk_src += '        }\n'
                 trace_vk_src += '    }\n'
-       
+
                 # Clean up instance or device data if needed
                 if proto.name == "vkDestroyInstance":
                     trace_vk_src += '    g_instanceDataMap.erase(key);\n'
                 elif proto.name == "vkDestroyDevice":
                     trace_vk_src += '    g_deviceDataMap.erase(key);\n'
-       
+
                 # Return result if needed
                 if 'void' not in resulttype or '*' in resulttype:
                     trace_vk_src += '    return result;\n'
                 trace_vk_src += '}\n'
+
+            # Close off protect preprocessor if necessary
+            if protect is not None:
+                trace_vk_src += '#endif // %s\n' % protect
+
+        # Add name to intercept proc mapping functions
+        trace_vk_src += 'PFN_vkVoidFunction layer_intercept_instance_proc(const char* name) {\n'
+        trace_vk_src += '    if (!name || name[0] != \'v\' || name[1] != \'k\') return NULL;\n'
+        trace_vk_src += '    name += 2;\n'
+
+        for cmd in self.cmdMembers:
+            cmdname = cmd.name[2:]
+            if not isSupportedCmd(cmd, cmd_extension_dict) or not isInstanceCmd(cmd):
+                continue
+            protect = cmd_protect_dict[cmd.name]
+            if protect is not None:
+                trace_vk_src += '#ifdef %s\n' % protect
+            trace_vk_src += '   if (!strcmp(name, "%s")) return (PFN_vkVoidFunction)__HOOKED_vk%s;\n' % (cmdname, cmdname)
+            if protect is not None:
+                trace_vk_src += '#endif // %s\n' % protect
+
+        trace_vk_src += '    return NULL;\n'
+        trace_vk_src += '}\n\n'
+
+        trace_vk_src += 'PFN_vkVoidFunction layer_intercept_proc(const char* name) {\n'
+        trace_vk_src += '    if (!name || name[0] != \'v\' || name[1] != \'k\') return NULL;\n'
+        trace_vk_src += '    name += 2;\n'
+
+        for cmd in self.cmdMembers:
+            cmdname = cmd.name[2:]
+            if not isSupportedCmd(cmd, cmd_extension_dict) or isInstanceCmd(cmd):
+                continue
+            protect = cmd_protect_dict[cmd.name]
+            if protect is not None:
+                trace_vk_src += '#ifdef %s\n' % protect
+            trace_vk_src += '   if (!strcmp(name, "%s")) return (PFN_vkVoidFunction)__HOOKED_vk%s;\n' % (cmdname, cmdname)
+            if protect is not None:
+                trace_vk_src += '#endif // %s\n' % protect
+
+        trace_vk_src += '    return NULL;\n'
+        trace_vk_src += '}\n\n'
 
         return trace_vk_src
     #
@@ -2597,6 +2690,33 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                                                                                [ 'uint32_t i;\n',
                                                                                  'for (i = 0; i < pPacket->descriptorWriteCount; i++) {\n',
                                                                                  '    vktrace_interpret_pnext_pointers(pPacket->header, (void *)&pPacket->pDescriptorWrites[i]);\n',
+                                                                                 '    switch (pPacket->pDescriptorWrites[i].descriptorType) {\n',
+                                                                                 '    case VK_DESCRIPTOR_TYPE_SAMPLER:\n',
+                                                                                 '    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:\n',
+                                                                                 '    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:\n',
+                                                                                 '    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:\n',
+                                                                                 '    case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: {\n',
+                                                                                 '            VkDescriptorImageInfo** ppImageInfo = (VkDescriptorImageInfo**)&pPacket->pDescriptorWrites[i].pImageInfo;\n',
+                                                                                 '            *ppImageInfo = (VkDescriptorImageInfo*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pPacket->pDescriptorWrites[i].pImageInfo);\n',
+                                                                                 '        }',
+                                                                                 '        break;',
+                                                                                 '    case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:\n',
+                                                                                 '    case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER: {\n',
+                                                                                 '            VkBufferView** ppTexelBufferView = (VkBufferView**)&pPacket->pDescriptorWrites[i].pTexelBufferView;\n',
+                                                                                 '            *ppTexelBufferView = (VkBufferView*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pPacket->pDescriptorWrites[i].pTexelBufferView);\n',
+                                                                                 '        }',
+                                                                                 '        break;',
+                                                                                 '    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:\n',
+                                                                                 '    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:\n',
+                                                                                 '    case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:\n',
+                                                                                 '    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: {\n',
+                                                                                 '            VkDescriptorBufferInfo** ppBufferInfo = (VkDescriptorBufferInfo**)&pPacket->pDescriptorWrites[i].pBufferInfo;\n',
+                                                                                 '            *ppBufferInfo = (VkDescriptorBufferInfo*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pPacket->pDescriptorWrites[i].pBufferInfo);\n',
+                                                                                 '        }\n',
+                                                                                 '        break;\n',
+                                                                                 '    default:\n',
+                                                                                 '        break;\n',
+                                                                                 '    }\n',
                                                                                  '}'
                                                                                ]},
                              'UpdateDescriptorSets' : {'param': 'pDescriptorWrites', 'txt':
@@ -2692,7 +2812,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         cmd_extension_dict = dict(self.cmd_extension_names)
         for proto in self.cmdMembers:
             extension = cmd_extension_dict[proto.name]
-            if extension != 'VK_VERSION_1_0' and extension not in approved_ext:
+            if 'VK_VERSION_' not in extension and extension not in approved_ext:
                 continue
             novk_name = proto.name[2:]
             if novk_name not in api_exclusions:
