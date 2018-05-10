@@ -140,6 +140,10 @@ static const uint32_t  INVALID_BINDING_INDEX = UINT32_MAX;
 // disabled.
 #define VKTRACE_PAGEGUARD_ENABLE_LAZY_COPY_ENV "VKTRACE_PAGEGUARD_ENABLE_LAZY_COPY"
 
+// VKTRACE_IMAGE_SIZE_DIFFERENCE_PERCENTAGE specify the image
+// size difference percentage range between capture and playback
+#define VKTRACE_IMAGE_SIZE_DIFFERENCE_PERCENTAGE "VKTRACE_IMEGE_SIZE_DIFFERENCE_PERCENTAGE"
+
 // VKTRACE_TRIM_TRIGGER env var is set by the vktrace program to
 // communicate the --TraceTrigger command line argument to the
 // trace layer.

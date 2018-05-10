@@ -46,11 +46,11 @@
 
 using namespace std;
 
-#include "vk_layer_platform.h"
 #include "vk_dispatch_table_helper.h"
 #include "vk_layer_config.h"
 #include "vk_layer_table.h"
 #include "vk_layer_extension_utils.h"
+#include "vk_layer_utils.h"
 
 #ifndef WIN32
 typedef uint64_t UINT_PTR, *PUINT_PTR;
@@ -815,7 +815,7 @@ VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkGetSwapchainImagesKHR(
 static void parse_screenshot_env()
 {
 
-    const char *_vk_screenshot = loader_getenv("_VK_PNG_SCREENSHOT");
+    const char *_vk_screenshot = getenv("_VK_PNG_SCREENSHOT");
     if (_vk_screenshot && *_vk_screenshot)
     {
         int startFrame = 0;
@@ -865,7 +865,6 @@ static void parse_screenshot_env()
             }
         }
     }
-    loader_free_getenv(_vk_screenshot);
 }
 
 // Called to present the pending Vulkan swapchain images.

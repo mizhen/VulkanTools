@@ -90,6 +90,8 @@ enum enum_key_state {
 // return if hotkey triggered;
 bool is_hotkey_trim_triggered();
 
+bool getImageMemorySizeDifferenceRatio(uint32_t& percentage);
+
 // Use this to snapshot the global state tracker at the start of the trim
 // frames.
 void snapshot_state_tracker();

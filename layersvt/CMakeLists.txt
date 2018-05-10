@@ -206,7 +206,7 @@ add_vk_layer(screenshot screenshot.cpp screenshot_parsing.h screenshot_parsing.c
 add_vk_layer(device_simulation device_simulation.cpp ${V_LVL_ROOT_DIR}/layers/vk_layer_table.cpp ${JSONCPP_SOURCE_DIR}/jsoncpp.cpp)
 add_vk_layer(api_dump api_dump.cpp ${V_LVL_ROOT_DIR}/layers/vk_layer_table.cpp)
 # AMD added
-add_vk_layer(png_screenshot png_screenshot.cpp ../layers/vk_layer_table.cpp)
+add_vk_layer(png_screenshot png_screenshot.cpp ${V_LVL_ROOT_DIR}/layers/vk_layer_table.cpp)
 target_link_Libraries(VkLayer_png_screenshot ${LIBPNG})
 target_link_Libraries(VkLayer_png_screenshot ${ZLIB})
 

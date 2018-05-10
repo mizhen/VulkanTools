@@ -106,6 +106,23 @@ static std::unordered_map<const void *, VkAllocationCallbacks> s_trimAllocatorMa
 //=========================================================================
 static std::unordered_map<VkDevice, VkCommandBuffer> s_deviceToCommandBufferMap;
 
+bool getImageMemorySizeDifferenceRatio(uint32_t& percentage)
+{
+    bool ImageMemorySizeDifferenceRatioValid = false;
+    const char* env_size_difference = vktrace_get_global_var(VKTRACE_IMAGE_SIZE_DIFFERENCE_PERCENTAGE);
+    if (env_size_difference) {
+        uint32_t difference_percentage;
+        if (sscanf(env_size_difference, "%" PRIx32, &difference_percentage) == 1) {
+            if (difference_percentage <= 100)
+            {
+                ImageMemorySizeDifferenceRatioValid = true;
+                percentage = difference_percentage;
+            }
+        }
+    }
+    return ImageMemorySizeDifferenceRatioValid;
+}
+
 //=========================================================================
 // Start trimming
 //=========================================================================

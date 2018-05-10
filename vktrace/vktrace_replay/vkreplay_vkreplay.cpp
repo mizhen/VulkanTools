@@ -2896,8 +2896,11 @@ void vkReplay::manually_replay_vkGetImageMemoryRequirements(packet_vkGetImageMem
         vktrace_LogError("Error detected in GetImageMemoryRequirements() due to invalid remapped VkImage.");
         return;
     }
-
+    VkMemoryRequirements MemoryRequirements_capture = *(pPacket->pMemoryRequirements);
     m_vkDeviceFuncs.GetImageMemoryRequirements(remappedDevice, remappedImage, pPacket->pMemoryRequirements);
+    if(MemoryRequirements_capture.size != pPacket->pMemoryRequirements->size) {
+        vktrace_LogWarning("the returned size is different from GetImageMemoryRequirements() on capture (%d) and playback (%d) runtime.", MemoryRequirements_capture.size, pPacket->pMemoryRequirements->size);
+    }
     replayGetImageMemoryRequirements[remappedImage] = *(pPacket->pMemoryRequirements);
     return;
 }
@@ -2940,7 +2943,11 @@ void vkReplay::manually_replay_vkGetBufferMemoryRequirements(packet_vkGetBufferM
         return;
     }
 
+    VkMemoryRequirements MemoryRequirements_capture = *(pPacket->pMemoryRequirements);
     m_vkDeviceFuncs.GetBufferMemoryRequirements(remappedDevice, remappedBuffer, pPacket->pMemoryRequirements);
+    if (MemoryRequirements_capture.size != pPacket->pMemoryRequirements->size) {
+        vktrace_LogWarning("the returned size is different from vkGetBufferMemoryRequirements() on capture (%d) and playback (%d) runtime.", MemoryRequirements_capture.size, pPacket->pMemoryRequirements->size);
+    }
     replayGetBufferMemoryRequirements[remappedBuffer] = *(pPacket->pMemoryRequirements);
     return;
 }
