@@ -704,7 +704,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
         replay_gen_source += '}\n\n'
         replay_gen_source += 'vktrace_replay::VKTRACE_REPLAY_RESULT vkReplay::replay(vktrace_trace_packet_header *packet) { \n'
         replay_gen_source += '    vktrace_replay::VKTRACE_REPLAY_RESULT returnValue = vktrace_replay::VKTRACE_REPLAY_SUCCESS;\n'
-        replay_gen_source += '    VkResult replayResult = VK_ERROR_VALIDATION_FAILED_EXT;\n'
+        replay_gen_source += '    VkResult replayResult = VK_SUCCESS;\n'
         replay_gen_source += '    switch (packet->packet_id) {\n'
         replay_gen_source += '        case VKTRACE_TPI_VK_vkApiVersion:\n'
         replay_gen_source += '            // Ignore api version packets\n'
@@ -859,6 +859,8 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                     replay_gen_source += '            VkPhysicalDeviceMemoryProperties memProperties = *(pPacket->pMemoryProperties);\n'
                 elif cmdname == 'GetImageMemoryRequirements':
                     replay_gen_source += '            VkMemoryRequirements memReqs = *(pPacket->pMemoryRequirements);\n'
+                elif 'SparseMemoryRequirements2' in cmdname:
+                    replay_gen_source += '            vktrace_interpret_pnext_pointers(pPacket->header, (void *)pPacket->pInfo);\n'
                 # Build the call to the "real_" entrypoint
                 rr_string = '            '
                 if ret_value:
@@ -1480,7 +1482,8 @@ class VkTraceFileOutputGenerator(OutputGenerator):
             # First handle custom cases
             if ((p.name in ['pCreateInfo', 'pBeginInfo', 'pAllocateInfo','pReserveSpaceInfo','pLimits','pExternalBufferInfo','pExternalBufferProperties','pGetFdInfo','pMemoryFdProperties','pExternalSemaphoreProperties','pExternalSemaphoreInfo','pImportSemaphoreFdInfo','pExternalFenceInfo','pExternalFenceProperties','pSurfaceInfo', 'pTagInfo','pNameInfo','pMarkerInfo','pDeviceGroupPresentCapabilities','pAcquireInfo','pPhysicalDeviceGroupProperties','pDisplayPowerInfo','pDeviceEventInfo','pDisplayEventInfo','pMetadata','pRenderPassBegin','pPresentInfo'])
                 or (p.name in ['pFeatures'] and 'nvx' in p.type.lower())
-                or (p.name in ['pFeatures', 'pProperties', 'pFormatProperties','pImageFormatInfo','pImageFormatProperties','pQueueFamilyProperties','pMemoryProperties','pFormatInfo','pSurfaceFormats','pMemoryRequirements','pInfo','pSparseMemoryRequirements','pSurfaceCapabilities'] and '2khr' in p.type.lower())
+                or (p.name in ['pInfo'] and 'void' not in p.type.lower())
+                or (p.name in ['pFeatures', 'pProperties', 'pFormatProperties','pImageFormatInfo','pImageFormatProperties','pQueueFamilyProperties','pMemoryProperties','pFormatInfo','pSurfaceFormats','pMemoryRequirements','pSparseMemoryRequirements','pSurfaceCapabilities'] and '2khr' in p.type.lower())
                 or (p.name in ['pSurfaceCapabilities'] and '2ext' in p.type.lower())):
                 ps.append('get_struct_chain_size((void*)%s)' % (p.name))
                 skip_list.append(p.name)
@@ -1837,7 +1840,7 @@ class VkTraceFileOutputGenerator(OutputGenerator):
             trim_instructions.append("            pInfo->ObjectInfo.Image.pBindImageMemoryPacket = trim::copy_packet(pHeader);")
             trim_instructions.append("            pInfo->ObjectInfo.Image.memory = memory;")
             trim_instructions.append("            pInfo->ObjectInfo.Image.memoryOffset = memoryOffset;")
-            trim_instructions.append("            pInfo->ObjectInfo.Image.needsStagingBuffer = trim::IsMemoryDeviceOnly(memory);")
+            trim_instructions.append("            pInfo->ObjectInfo.Image.needsStagingBuffer = pInfo->ObjectInfo.Image.needsStagingBuffer || trim::IsMemoryDeviceOnly(memory);")
             trim_instructions.append("        }")
             trim_instructions.append('        if (g_trimIsInTrim) {')
             trim_instructions.append('            trim::write_packet(pHeader);')
@@ -2547,6 +2550,8 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                         trace_vk_src += '    vktrace_add_pnext_structs_to_trace_packet(pHeader, (void *)pPacket->pSurfaceInfo, (void *)pSurfaceInfo);\n'
                     if ('(pPacket->pInfo)' in pp_dict['add_txt'] and ('2KHR' in pp_dict['add_txt'])):
                         trace_vk_src += '    vktrace_add_pnext_structs_to_trace_packet(pHeader, (void *)pPacket->pInfo, (void *)pInfo);\n'
+                    elif ('(pPacket->pInfo)' in pp_dict['add_txt'] and ('RequirementsInfo2' in pp_dict['add_txt'])):
+                        trace_vk_src += '    vktrace_add_pnext_structs_to_trace_packet(pHeader, (void *)pPacket->pInfo, (void *)pInfo);\n'
                     if ('(pPacket->pMemoryRequirements)' in pp_dict['add_txt'] and ('2KHR' in pp_dict['add_txt'])):
                         trace_vk_src += '    vktrace_add_pnext_structs_to_trace_packet(pHeader, (void *)pPacket->pMemoryRequirements, (void *)pMemoryRequirements);\n'
                 if 'void' not in resulttype or '*' in resulttype:
@@ -2688,7 +2693,6 @@ class VkTraceFileOutputGenerator(OutputGenerator):
                             'pNonConst->pViewportState = (const VkPipelineViewportStateCreateInfo*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pPacket->pCreateInfos[i].pViewportState);\n',
                             '// Raster State\n',
                             'pNonConst->pRasterizationState = (const VkPipelineRasterizationStateCreateInfo*)vktrace_trace_packet_interpret_buffer_pointer(pHeader, (intptr_t)pPacket->pCreateInfos[i].pRasterizationState);\n',
-                            'vktrace_interpret_pnext_pointers(pHeader, (void *)pNonConst->pRasterizationState);\n',
 
 
                             '// MultiSample State\n',

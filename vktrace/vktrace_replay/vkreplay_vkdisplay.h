@@ -73,6 +73,7 @@ class vkDisplay : public vktrace_replay::ReplayDisplayImp {
 #if defined(ANDROID)
     VkIcdSurfaceAndroid m_surface;
     ANativeWindow* m_window;
+    struct android_app* m_android_app;
 #else
 #if defined VKREPLAY_USE_WSI_XCB
     VkIcdSurfaceXcb m_surface;

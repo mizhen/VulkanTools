@@ -1,7 +1,7 @@
 /**************************************************************************
  *
- * Copyright 2015-2016 Valve Corporation
- * Copyright (C) 2015-2016 LunarG, Inc.
+ * Copyright 2015-2018 Valve Corporation
+ * Copyright (C) 2015-2018 LunarG, Inc.
  * All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +29,7 @@
 #include <sstream>
 #include <android/log.h>
 #include <android_native_app_glue.h>
+#include "vkreplay_vkdisplay.h"
 #endif
 #include "vktrace_common.h"
 #include "vktrace_tracelog.h"
@@ -40,7 +41,7 @@
 #include "vkreplay_window.h"
 #include "screenshot_parsing.h"
 
-vkreplayer_settings replaySettings = {NULL, 1, UINT_MAX, UINT_MAX, NULL, NULL, NULL};
+vkreplayer_settings replaySettings = {NULL, 1, UINT_MAX, UINT_MAX, true, NULL, NULL, NULL};
 
 vktrace_SettingInfo g_settings_info[] = {
     {"o",
@@ -78,6 +79,13 @@ vktrace_SettingInfo g_settings_info[] = {
      {&replaySettings.loopEndFrame},
      TRUE,
      "The end frame number of the loop range."},
+    {"c",
+     "CompatibilityMode",
+     VKTRACE_SETTING_BOOL,
+     {&replaySettings.compatibilityMode},
+     {&replaySettings.compatibilityMode},
+     TRUE,
+     "Use compatibiltiy mode, i.e. convert memory indices to replay device indices, default is TRUE."},
     {"s",
      "Screenshot",
      VKTRACE_SETTING_STRING,
@@ -662,7 +670,20 @@ std::vector<std::string> get_args(android_app& app, const char* intent_extra_dat
     return args;
 }
 
-static int32_t processInput(struct android_app* app, AInputEvent* event) { return 0; }
+static int32_t processInput(struct android_app* app, AInputEvent* event) {
+    if ((app->userData != nullptr) && (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION)) {
+        vkDisplay* display = reinterpret_cast<vkDisplay*>(app->userData);
+
+        // TODO: Distinguish between tap and swipe actions; swipe to advance to next frame when paused.
+        int32_t action = AMotionEvent_getAction(event);
+        if (action == AMOTION_EVENT_ACTION_UP) {
+            display->set_pause_status(!display->get_pause_status());
+            return 1;
+        }
+    }
+
+    return 0;
+}
 
 static void processCommand(struct android_app* app, int32_t cmd) {
     switch (cmd) {
@@ -686,6 +707,9 @@ static void processCommand(struct android_app* app, int32_t cmd) {
 // Start with carbon copy of main() and convert it to support Android, then diff them and move common code to helpers.
 void android_main(struct android_app* app) {
     const char* appTag = "vkreplay";
+
+    // This will be set by the vkDisplay object.
+    app->userData = nullptr;
 
     int vulkanSupport = InitVulkan();
     if (vulkanSupport == 0) {
@@ -730,7 +754,7 @@ void android_main(struct android_app* app) {
             // sleep(10);
 
             // Call into common code
-            int err = vkreplay_main(argc, argv, app->window);
+            int err = vkreplay_main(argc, argv, app);
             __android_log_print(ANDROID_LOG_DEBUG, appTag, "vkreplay_main returned %i", err);
 
             ANativeActivity_finish(app->activity);

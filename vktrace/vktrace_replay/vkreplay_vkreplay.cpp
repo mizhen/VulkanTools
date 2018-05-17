@@ -1,7 +1,7 @@
 /*
  *
- * Copyright (C) 2015-2016 Valve Corporation
- * Copyright (C) 2015-2016 LunarG, Inc.
+ * Copyright (C) 2015-2018 Valve Corporation
+ * Copyright (C) 2015-2018 LunarG, Inc.
  * All Rights Reserved
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -270,6 +270,12 @@ VkResult vkReplay::manually_replay_vkCreateInstance(packet_vkCreateInstance *pPa
             layer_init_instance_dispatch_table(inst, &m_vkFuncs, m_vkFuncs.GetInstanceProcAddr);
             // Not handled by codegen
             m_vkFuncs.CreateDevice = (PFN_vkCreateDevice)m_vkFuncs.GetInstanceProcAddr(inst, "vkCreateDevice");
+        } else if (replayResult == VK_ERROR_EXTENSION_NOT_PRESENT) {
+            vktrace_LogVerbose("vkCreateInstance failed with VK_ERROR_EXTENSION_NOT_PRESENT");
+            vktrace_LogVerbose("List of requested extensions:");
+            for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
+                vktrace_LogVerbose("   %s", pCreateInfo->ppEnabledExtensionNames[i]);
+            }
         }
     }
     return replayResult;
@@ -439,6 +445,12 @@ VkResult vkReplay::manually_replay_vkCreateDevice(packet_vkCreateDevice *pPacket
 
             // Build device dispatch table
             layer_init_device_dispatch_table(device, &m_vkDeviceFuncs, m_vkDeviceFuncs.GetDeviceProcAddr);
+        } else if (replayResult == VK_ERROR_EXTENSION_NOT_PRESENT) {
+            vktrace_LogVerbose("vkCreateDevice failed with VK_ERROR_EXTENSION_NOT_PRESENT");
+            vktrace_LogVerbose("List of requested extensions:");
+            for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
+                vktrace_LogVerbose("   %s", pCreateInfo->ppEnabledExtensionNames[i]);
+            }
         }
     }
     return replayResult;
@@ -1697,7 +1709,7 @@ void vkReplay::manually_replay_vkCmdPipelineBarrier(packet_vkCmdPipelineBarrier 
         if (getQueueFamilyIdx(traceDevice, replayDevice, pPacket->pBufferMemoryBarriers[idx].srcQueueFamilyIndex, &srcReplayIdx) &&
             getQueueFamilyIdx(traceDevice, replayDevice, pPacket->pBufferMemoryBarriers[idx].dstQueueFamilyIndex, &dstReplayIdx)) {
             *((uint32_t *)&pPacket->pBufferMemoryBarriers[idx].srcQueueFamilyIndex) = srcReplayIdx;
-            *((uint32_t *)&pPacket->pBufferMemoryBarriers[idx].srcQueueFamilyIndex) = dstReplayIdx;
+            *((uint32_t *)&pPacket->pBufferMemoryBarriers[idx].dstQueueFamilyIndex) = dstReplayIdx;
         } else {
             vktrace_LogError("vkCmdPipelineBarrier failed, bad srcQueueFamilyIndex");
             VKTRACE_DELETE(saveBuf);
@@ -1721,7 +1733,7 @@ void vkReplay::manually_replay_vkCmdPipelineBarrier(packet_vkCmdPipelineBarrier 
         if (getQueueFamilyIdx(traceDevice, replayDevice, pPacket->pImageMemoryBarriers[idx].srcQueueFamilyIndex, &srcReplayIdx) &&
             getQueueFamilyIdx(traceDevice, replayDevice, pPacket->pImageMemoryBarriers[idx].dstQueueFamilyIndex, &dstReplayIdx)) {
             *((uint32_t *)&pPacket->pImageMemoryBarriers[idx].srcQueueFamilyIndex) = srcReplayIdx;
-            *((uint32_t *)&pPacket->pImageMemoryBarriers[idx].srcQueueFamilyIndex) = dstReplayIdx;
+            *((uint32_t *)&pPacket->pImageMemoryBarriers[idx].dstQueueFamilyIndex) = dstReplayIdx;
         } else {
             vktrace_LogError("vkPipelineBarrier failed, bad srcQueueFamilyIndex");
             VKTRACE_DELETE(saveBuf);
@@ -1997,8 +2009,9 @@ bool vkReplay::modifyMemoryTypeIndexInAllocateMemoryPacket(VkDevice remappedDevi
     VkImage bindMemImage = VK_NULL_HANDLE;
     bool doDestroyImage = false;
 
-    // Should only be here if we have a valid portability table and the replay platform does not match the trace platform
-    assert(m_pFileHeader->portability_table_valid && m_platformMatch == 0);
+    // Should only be here if we are in compatibility mode, have a valid portability table,  and the replay platform
+    // does not match the trace platform
+    assert(g_pReplaySettings->compatibilityMode && m_pFileHeader->portability_table_valid && m_platformMatch == 0);
 
     // Save current file position so we can restore it
     saveFilePos = vktrace_FileLike_GetCurrentPosition(traceFile);
@@ -2273,7 +2286,7 @@ VkResult vkReplay::manually_replay_vkAllocateMemory(packet_vkAllocateMemory *pPa
 
     // Map memory type index from trace platform to memory type index on replay platform
     bool doAllocate = true;
-    if (m_pFileHeader->portability_table_valid && !m_platformMatch)
+    if (g_pReplaySettings->compatibilityMode && m_pFileHeader->portability_table_valid && !m_platformMatch)
         doAllocate = modifyMemoryTypeIndexInAllocateMemoryPacket(remappedDevice, pPacket);
 
     if (doAllocate)
@@ -2510,6 +2523,7 @@ void vkReplay::manually_replay_vkGetPhysicalDeviceProperties2KHR(packet_vkGetPhy
         vktrace_LogError("Error detected in GetPhysicalDeviceProperties2KHR() due to invalid remapped VkPhysicalDevice.");
         return;
     }
+    vktrace_interpret_pnext_pointers(pPacket->header, (void *)pPacket->pProperties);
     // No need to remap pProperties
     m_vkFuncs.GetPhysicalDeviceProperties2KHR(remappedphysicalDevice, pPacket->pProperties);
     m_replay_gpu =
@@ -2821,7 +2835,7 @@ VkResult vkReplay::manually_replay_vkBindBufferMemory(packet_vkBindBufferMemory 
         return VK_ERROR_VALIDATION_FAILED_EXT;
     }
 
-    if (m_pFileHeader->portability_table_valid && m_platformMatch != 1) {
+    if (g_pReplaySettings->compatibilityMode && m_pFileHeader->portability_table_valid && m_platformMatch != 1) {
         uint64_t memOffsetTemp;
         if (replayGetBufferMemoryRequirements.find(remappedbuffer) == replayGetBufferMemoryRequirements.end()) {
             // vkBindBufferMemory is being called on a buffer for which vkGetBufferMemoryRequirements
@@ -2861,7 +2875,7 @@ VkResult vkReplay::manually_replay_vkBindImageMemory(packet_vkBindImageMemory *p
         return VK_ERROR_VALIDATION_FAILED_EXT;
     }
 
-    if (m_pFileHeader->portability_table_valid && m_platformMatch != 1) {
+    if (g_pReplaySettings->compatibilityMode && m_pFileHeader->portability_table_valid && m_platformMatch != 1) {
         size_t memOffsetTemp;
         if (replayGetImageMemoryRequirements.find(remappedimage) == replayGetImageMemoryRequirements.end()) {
             // vkBindImageMemory is being called on a image for which vkGetImageMemoryRequirements
@@ -2924,7 +2938,7 @@ void vkReplay::manually_replay_vkGetImageMemoryRequirements2KHR(packet_vkGetImag
 
         ((VkImageMemoryRequirementsInfo2KHR *)pPacket->pInfo)->image = remappedimage;
     }
-
+    vktrace_interpret_pnext_pointers(pPacket->header, (void *)pPacket->pInfo);
     m_vkDeviceFuncs.GetImageMemoryRequirements2KHR(remappeddevice, pPacket->pInfo, pPacket->pMemoryRequirements);
 
     replayGetImageMemoryRequirements[remappedimage] = pPacket->pMemoryRequirements->memoryRequirements;
@@ -2966,6 +2980,7 @@ void vkReplay::manually_replay_vkGetBufferMemoryRequirements2KHR(packet_vkGetBuf
     }
     *((VkBuffer *)(&pPacket->pInfo->buffer)) = remappedBuffer;
 
+    vktrace_interpret_pnext_pointers(pPacket->header, (void *)pPacket->pInfo);
     m_vkDeviceFuncs.GetBufferMemoryRequirements2KHR(remappedDevice, pPacket->pInfo, pPacket->pMemoryRequirements);
     replayGetBufferMemoryRequirements[pPacket->pInfo->buffer] = pPacket->pMemoryRequirements->memoryRequirements;
     return;
@@ -3172,6 +3187,35 @@ VkResult vkReplay::manually_replay_vkCreateSwapchainKHR(packet_vkCreateSwapchain
     }
     free(surfFormats);
 
+    // If the present mode is not FIFO and the present mode requested is not supported by the
+    // replay device, then change the present mode to FIFO
+    if (pPacket->pCreateInfo->presentMode != VK_PRESENT_MODE_FIFO_KHR &&
+        replayPhysicalDevices.find(remappeddevice) != replayPhysicalDevices.end()) {
+        // Call GetPhysicalDeviceSurfacePresentModesKHR to get the list of supported present modes
+        uint32_t presentModeCount;
+        VkPresentModeKHR *pPresentModes;
+        VkResult result;
+        uint32_t i;
+        result = m_vkFuncs.GetPhysicalDeviceSurfacePresentModesKHR(replayPhysicalDevices[remappeddevice],
+                                                                   pPacket->pCreateInfo->surface, &presentModeCount, NULL);
+        if (result == VK_SUCCESS) {
+            pPresentModes = VKTRACE_NEW_ARRAY(VkPresentModeKHR, presentModeCount);
+            result = m_vkFuncs.GetPhysicalDeviceSurfacePresentModesKHR(
+                replayPhysicalDevices[remappeddevice], pPacket->pCreateInfo->surface, &presentModeCount, pPresentModes);
+            if (result == VK_SUCCESS && presentModeCount) {
+                for (i = 0; i < presentModeCount; i++) {
+                    if (pPacket->pCreateInfo->presentMode == pPresentModes[i])
+                        // Found matching present mode
+                        break;
+                }
+                if (i == presentModeCount)
+                    // Didn't find a matching present mode, so use FIFO instead.
+                    *((VkPresentModeKHR *)(&pPacket->pCreateInfo->presentMode)) = VK_PRESENT_MODE_FIFO_KHR;
+            }
+            VKTRACE_DELETE(pPresentModes);
+        }
+    }
+
     replayResult = m_vkDeviceFuncs.CreateSwapchainKHR(remappeddevice, pPacket->pCreateInfo, pPacket->pAllocator, &local_pSwapchain);
     if (replayResult == VK_SUCCESS) {
         m_objMapper.add_to_swapchainkhrs_map(*(pPacket->pSwapchain), local_pSwapchain);
@@ -3217,7 +3261,7 @@ VkResult vkReplay::manually_replay_vkGetSwapchainImagesKHR(packet_vkGetSwapchain
     VkSwapchainKHR remappedswapchain;
     remappedswapchain = m_objMapper.remap_swapchainkhrs(pPacket->swapchain);
     if (remappedswapchain == VK_NULL_HANDLE && pPacket->swapchain != VK_NULL_HANDLE) {
-        vktrace_LogError("Skipping vkCreateSwapchainKHR() due to invalid remapped VkSwapchainKHR.");
+        vktrace_LogError("Skipping vkGetSwapchainImagesKHR() due to invalid remapped VkSwapchainKHR.");
         return VK_ERROR_VALIDATION_FAILED_EXT;
     }
 
@@ -4105,15 +4149,8 @@ void vkReplay::manually_replay_vkCmdPushDescriptorSetKHR(packet_vkCmdPushDescrip
 
     if (pPacket->pDescriptorWrites != NULL) {
         for (uint32_t i = 0; i < pPacket->descriptorWriteCount && !errorBadRemap; i++) {
-            VkDescriptorSet dstSet = m_objMapper.remap_descriptorsets(pPacket->pDescriptorWrites[i].dstSet);
-            if (dstSet == VK_NULL_HANDLE) {
-                vktrace_LogError("Skipping vkCmdPushDescriptorSet() due to invalid remapped write VkDescriptorSet.");
-                errorBadRemap = true;
-                break;
-            }
-
             pRemappedWrites[i] = pPacket->pDescriptorWrites[i];
-            pRemappedWrites[i].dstSet = dstSet;
+            pRemappedWrites[i].dstSet = 0;  // Ignored
             pRemappedWrites[i].pBufferInfo = nullptr;
             pRemappedWrites[i].pImageInfo = nullptr;
             pRemappedWrites[i].pTexelBufferView = nullptr;
@@ -4422,7 +4459,7 @@ VkResult vkReplay::manually_replay_vkBindBufferMemory2KHR(packet_vkBindBufferMem
         }
         *((VkBuffer *)&pPacket->pBindInfos[i].buffer) = remappedBuffer;
         *((VkDeviceMemory *)&pPacket->pBindInfos[i].memory) = m_objMapper.remap_devicememorys(pPacket->pBindInfos[i].memory);
-        if (m_pFileHeader->portability_table_valid && m_platformMatch != 1) {
+        if (g_pReplaySettings->compatibilityMode && m_pFileHeader->portability_table_valid && m_platformMatch != 1) {
             uint64_t memOffsetTemp;
             if (replayGetBufferMemoryRequirements.find(remappedBuffer) == replayGetBufferMemoryRequirements.end()) {
                 // vkBindBufferMemory2KHR is being called with a buffer for which vkGetBufferMemoryRequirements
@@ -4462,7 +4499,7 @@ VkResult vkReplay::manually_replay_vkBindImageMemory2KHR(packet_vkBindImageMemor
         }
         *((VkImage *)&pPacket->pBindInfos[i].image) = remappedImage;
         *((VkDeviceMemory *)&pPacket->pBindInfos[i].memory) = m_objMapper.remap_devicememorys(pPacket->pBindInfos[i].memory);
-        if (m_pFileHeader->portability_table_valid && m_platformMatch != 1) {
+        if (g_pReplaySettings->compatibilityMode && m_pFileHeader->portability_table_valid && m_platformMatch != 1) {
             uint64_t memOffsetTemp;
             if (replayGetImageMemoryRequirements.find(remappedImage) == replayGetImageMemoryRequirements.end()) {
                 // vkBindImageMemory2KHR is being called with an image for which vkGetImageMemoryRequirements
