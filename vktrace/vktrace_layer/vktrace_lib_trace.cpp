@@ -208,6 +208,9 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkMapMemory(VkDevice dev
     vktrace_trace_packet_header* pHeader;
     packet_vkMapMemory* pPacket = NULL;
     VKAllocInfo* entry;
+#ifdef USE_PAGEGUARD_SPEEDUP
+    pageguardEnter();
+#endif
     CREATE_TRACE_PACKET(vkMapMemory, sizeof(void*));
     result = mdd(device)->devTable.MapMemory(device, memory, offset, size, flags, ppData);
     vktrace_set_packet_entrypoint_end_time(pHeader);
@@ -219,9 +222,7 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkMapMemory(VkDevice dev
     }
 
 #ifdef USE_PAGEGUARD_SPEEDUP
-    pageguardEnter();
     getPageGuardControlInstance().vkMapMemoryPageGuardHandle(device, memory, offset, size, flags, ppData);
-    pageguardExit();
 #endif
     pPacket = interpret_body_as_vkMapMemory(pHeader);
     pPacket->device = device;
@@ -254,6 +255,9 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkMapMemory(VkDevice dev
             vktrace_delete_trace_packet(&pHeader);
         }
     }
+#ifdef USE_PAGEGUARD_SPEEDUP
+    pageguardExit();
+#endif
     return result;
 }
 
@@ -4497,7 +4501,7 @@ VkResult EnumerateProperties(uint32_t src_count, const T* src_props, uint32_t* d
 }
 
 // LoaderLayerInterface V0
-// https://github.com/KhronosGroup/Vulkan-LoaderAndValidationLayers/blob/master/loader/LoaderAndLayerInterface.md
+// https://github.com/KhronosGroup/Vulkan-Loader/blob/master/loader/LoaderAndLayerInterface.md
 
 VK_LAYER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t* pPropertyCount,
                                                                                   VkLayerProperties* pProperties) {

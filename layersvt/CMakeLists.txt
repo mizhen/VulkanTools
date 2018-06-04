@@ -160,12 +160,12 @@ endif()
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${V_LVL_ROOT_DIR}/loader
-    ${V_LVL_ROOT_DIR}/layers
-    ${V_LVL_ROOT_DIR}/include/vulkan
+ ### LUGMAL   ${VALIDATION_LAYERS_ROOT_DIR}/loader
+    ${VALIDATION_LAYERS_ROOT_DIR}/layers
+    ${VALIDATION_LAYERS_ROOT_DIR}/Vulkan-Headers/include/vulkan
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_BINARY_DIR}
-    ${CMAKE_BINARY_DIR}/${V_LVL_RELATIVE_LOCATION}
+    ${CMAKE_BINARY_DIR}/${VALIDATION_LAYERS_RELATIVE_LOCATION}
     ${PROJECT_SOURCE_DIR}/../glslang/SPIRV
     ${JSONCPP_INCLUDE_DIR}
     ${GLSLANG_SPIRV_INCLUDE_DIR}
@@ -197,16 +197,16 @@ else()
 endif()
 
 #VulkanTools layers
-run_vk_xml_generate(api_dump_generator.py api_dump.cpp)
-run_vk_xml_generate(api_dump_generator.py api_dump_text.h)
-run_vk_xml_generate(api_dump_generator.py api_dump_html.h)
+run_vulkantools_vk_xml_generate(api_dump_generator.py api_dump.cpp)
+run_vulkantools_vk_xml_generate(api_dump_generator.py api_dump_text.h)
+run_vulkantools_vk_xml_generate(api_dump_generator.py api_dump_html.h)
 
-add_vk_layer(monitor monitor.cpp ${V_LVL_ROOT_DIR}/layers/vk_layer_table.cpp)
-add_vk_layer(screenshot screenshot.cpp screenshot_parsing.h screenshot_parsing.cpp ${V_LVL_ROOT_DIR}/layers/vk_layer_table.cpp)
-add_vk_layer(device_simulation device_simulation.cpp ${V_LVL_ROOT_DIR}/layers/vk_layer_table.cpp ${JSONCPP_SOURCE_DIR}/jsoncpp.cpp)
-add_vk_layer(api_dump api_dump.cpp ${V_LVL_ROOT_DIR}/layers/vk_layer_table.cpp)
+add_vk_layer(monitor monitor.cpp ${VALIDATION_LAYERS_ROOT_DIR}/layers/vk_layer_table.cpp)
+add_vk_layer(screenshot screenshot.cpp screenshot_parsing.h screenshot_parsing.cpp ${VALIDATION_LAYERS_ROOT_DIR}/layers/vk_layer_table.cpp)
+add_vk_layer(device_simulation device_simulation.cpp ${VALIDATION_LAYERS_ROOT_DIR}/layers/vk_layer_table.cpp ${JSONCPP_SOURCE_DIR}/jsoncpp.cpp)
+add_vk_layer(api_dump api_dump.cpp ${VALIDATION_LAYERS_ROOT_DIR}/layers/vk_layer_table.cpp)
 # AMD added
-add_vk_layer(png_screenshot png_screenshot.cpp ${V_LVL_ROOT_DIR}/layers/vk_layer_table.cpp)
+add_vk_layer(png_screenshot png_screenshot.cpp ${VALIDATION_LAYERS_ROOT_DIR}/layers/vk_layer_table.cpp)
 target_link_Libraries(VkLayer_png_screenshot ${LIBPNG})
 target_link_Libraries(VkLayer_png_screenshot ${ZLIB})
 

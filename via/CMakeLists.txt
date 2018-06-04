@@ -3,10 +3,32 @@ file(GLOB TEXTURES
 )
 file(COPY ${TEXTURES} DESTINATION ${CMAKE_BINARY_DIR}/via/images)
 
+# Predefine loader root as a cmake cache variable for cmake-gui
+set(LOADER_REPO_ROOT "LOADER-NOTFOUND" CACHE PATH "Absolute path to the root of the loader repository")
+
+if(LOADER_REPO_ROOT)
+    message(STATUS "Using user-supplied path to locate Vulkan")
+    if(WIN32)
+        set (LOADER_SEARCH_PATHS
+            "${LOADER_REPO_ROOT}/${BUILDTGT_DIR}/loader/${DEBUG_DECORATION}"
+            "${LOADER_REPO_ROOT}/${BUILDTGT_DIR}/loader/${RELEASE_DECORATION}"
+            )
+    elseif(UNIX)
+        set (LOADER_SEARCH_PATHS
+            "${LOADER_REPO_ROOT}/${BUILDTGT_DIR}/loader"
+            )
+    endif()
+    find_library(LIBVK NAMES vulkan vulkan-1
+        HINTS ${LOADER_SEARCH_PATHS}
+        )
+    message(STATUS "Found Vulkan: ${LIBVK}")
+else()
+    message(STATUS "Using find_package to locate Vulkan")
+    find_package(Vulkan)
+    set (LIBVK "Vulkan::Vulkan")
+endif()
 
 if(WIN32)
-    set (LIBRARIES "${API_LOWERCASE}-${MAJOR}")
-
     # For Windows, since 32-bit and 64-bit items can co-exist, we build each in its own build directory.
     # 32-bit target data goes in build32, and 64-bit target data goes into build.  So, include/link the
     # appropriate data at build time.
@@ -31,10 +53,6 @@ else()
 
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-    if(UNIX)
-        set (LIBRARIES "${API_LOWERCASE}")
-    endif()
-
     if (BUILD_WSI_XCB_SUPPORT)
         find_package(XCB REQUIRED)
 
@@ -58,15 +76,15 @@ else()
     # the environment setup by the user
     SET(CMAKE_SKIP_BUILD_RPATH  TRUE)
 
-    link_libraries(${API_LOWERCASE} m)
-
 endif()
 
 add_executable(via via.cpp ${JSONCPP_SOURCE_DIR}/jsoncpp.cpp)
 target_include_directories(via PUBLIC ${JSONCPP_INCLUDE_DIR})
-target_link_libraries(via ${LIBRARIES})
+target_link_libraries(via ${LIBVK})
 if(WIN32)
     target_link_libraries(via version shlwapi Cfgmgr32)
+else()
+    target_link_libraries(via dl)
 endif()
 if(UNIX)
     install(TARGETS via DESTINATION ${CMAKE_INSTALL_BINDIR})

@@ -3,14 +3,9 @@
 # to the root binary directory of the project as ${VULKAN_BINARY_DIR}.
 cmake_minimum_required(VERSION 2.8.11)
 project (VULKAN_TOOLS)
-# set (CMAKE_VERBOSE_MAKEFILE 1)
 
-# The API_NAME allows renaming builds to avoid conflicts with installed SDKs
-# The MAJOR number of the version we're building, used in naming
-# <api-name>-<major>.dll (and other files).
-set(API_NAME "Vulkan" CACHE STRING "API name to use when building")
-set(MAJOR "1")
-string(TOLOWER ${API_NAME} API_LOWERCASE)
+set(API_NAME "Vulkan" CACHE STRING "API name")
+add_definitions(-DAPI_NAME="${API_NAME}")
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(PythonInterp 3 REQUIRED)
@@ -67,28 +62,21 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(BUILD_WSI_MIR_SUPPORT)
         find_package(Mir REQUIRED)
     endif()
-
-    # This option can be used to suppress the installation of artifacts from the
-    # Vulkan-LoaderAndValidationLayers repo while running "make install" for the
-    # VulkanTools and VulkanSamples repos.  This can be used to prevent the
-    # overwriting of LVL artifacts when installing these downstream repos.
-    option(INSTALL_LVL_FILES "Install content from LoaderAndValidationLayers repo" ON)
 endif()
 
-
-
-set (V_LVL_RELATIVE_LOCATION submodules/Vulkan-LoaderAndValidationLayers)
+set (VULKAN_SDK $ENV{VULKAN_SDK})
+set (VALIDATION_LAYERS_RELATIVE_LOCATION submodules/Vulkan-ValidationLayers)
 set (SUBPROJECTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/submodules)
 
-add_subdirectory(${V_LVL_RELATIVE_LOCATION})
+add_subdirectory(${VALIDATION_LAYERS_RELATIVE_LOCATION})
 
-set (V_LVL_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/${V_LVL_RELATIVE_LOCATION})
+set (VALIDATION_LAYERS_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/${VALIDATION_LAYERS_RELATIVE_LOCATION})
 
-set(VT_SCRIPTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/scripts)
-set(LVL_SCRIPTS_DIR ${V_LVL_ROOT_DIR}/scripts)
+set(VULKANTOOLS_SCRIPTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/scripts)
+set(VALIDATION_LAYERS_SCRIPTS_DIR ${VALIDATION_LAYERS_ROOT_DIR}/scripts)
 
 # Header file for CMake settings
-include_directories(${V_LVL_ROOT_DIR}/include)
+include_directories(${VALIDATION_LAYERS_ROOT_DIR}/Vulkan-Headers/include)
 
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows" OR
@@ -124,9 +112,6 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 
 endif()
 
-# Define a variable for a default root location to the gslang, SPIRV-Tools and other external sources and cache it to allow the user to customize it as needed
-set(SUBPROJECT_SOURCE_ROOT ${V_LVL_ROOT_DIR}/submodules CACHE STRING "Root path to VulkanTools submodule repositories")
-
 find_path(JSONCPP_INCLUDE_DIR json/json.h HINTS "${SUBPROJECTS_DIR}/jsoncpp/dist"
                                                    "${SUBPROJECTS_DIR}/JsonCpp/dist"
                                                    "${SUBPROJECTS_DIR}/JsonCPP/dist"
@@ -152,18 +137,20 @@ if (WIN32)
                          IMPORTED_LOCATION_DEBUG "${JSONCPP_DLIB}")
 endif()
 
+
+set(VULKAN_REGISTRY_DIR ${VALIDATION_LAYERS_ROOT_DIR}/Vulkan-Headers/registry CACHE PATH "Path to Vulkan registry files")
+
 # Define macro used for building vkxml generated files
-macro(run_vk_xml_generate dependency output)
+macro(run_vulkantools_vk_xml_generate dependency output)
     add_custom_command(OUTPUT ${output}
-    COMMAND ${PYTHON_CMD} ${VT_SCRIPTS_DIR}/vt_genvk.py -registry ${LVL_SCRIPTS_DIR}/vk.xml ${output}
-    DEPENDS ${LVL_SCRIPTS_DIR}/vk.xml ${LVL_SCRIPTS_DIR}/generator.py ${VT_SCRIPTS_DIR}/${dependency} ${VT_SCRIPTS_DIR}/vt_genvk.py ${LVL_SCRIPTS_DIR}/reg.py
+    COMMAND ${PYTHON_CMD} ${VULKANTOOLS_SCRIPTS_DIR}/vt_genvk.py -registry ${VULKAN_REGISTRY_DIR}/vk.xml ${output}
+    DEPENDS ${VULKAN_REGISTRY_DIR}/vk.xml ${VULKAN_REGISTRY_DIR}/generator.py ${VULKANTOOLS_SCRIPTS_DIR}/${dependency} ${VULKANTOOLS_SCRIPTS_DIR}/vt_genvk.py ${VULKAN_REGISTRY_DIR}/reg.py
     )
 endmacro()
 
-add_definitions(-DAPI_NAME="${API_NAME}")
-
 if(BUILD_TESTS)
     add_subdirectory(tests)
+    add_subdirectory(${SUBPROJECTS_DIR}/Vulkan-Tools)
 endif()
 
 if(BUILD_VLF)

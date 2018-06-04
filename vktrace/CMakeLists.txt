@@ -579,15 +579,8 @@ if(BUILD_VKTRACEVIEWER)
 endif()
 
 include_directories(
-	${CMAKE_CURRENT_SOURCE_DIR}/../include/vulkan
+	${VALIDATION_LAYERS_ROOT_DIR}/Vulkan-Headers/include/vulkan
 )
-
-message("")
-message("cmake options:")
-message("  -DCMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}': Build debug or release. (Debug|Release)")
-message("  -DCMAKE_VERBOSE='${CMAKE_VERBOSE}': Spew cmake project options. (On|Off)")
-message("  -DBUILD_X64='${BUILD_X64}': Build 32 or 64-bit. (On|Off)")
-message("")
 
 #
 #  Components to build
@@ -625,12 +618,6 @@ MACRO(SUBDIRLIST result curdir)
   SET(${result} ${dirlist})
 ENDMACRO()
 
-# now generate the list and add each of the subdirectories
-SUBDIRLIST(SUBDIRS ${SRC_DIR}/vktrace_extensions)
-message("Adding extensions: '${SUBDIRS}'")
-FOREACH(subdir ${SUBDIRS})
-    add_subdirectory(${SRC_DIR}/vktrace_extensions/${subdir})
-ENDFOREACH()
 
 
 

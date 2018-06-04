@@ -45,9 +45,7 @@ findtool jarsigner
 set -ev
 
 LAYER_BUILD_DIR=$PWD
-DEMO_BUILD_DIR=$PWD/../submodules/Vulkan-LoaderAndValidationLayers/demos/android
 echo LAYER_BUILD_DIR="${LAYER_BUILD_DIR}"
-echo DEMO_BUILD_DIR="${DEMO_BUILD_DIR}"
 
 function create_APK() {
     aapt package -f -M AndroidManifest.xml -I "$ANDROID_SDK_HOME/platforms/android-23/android.jar" -S res -F bin/$1-unaligned.apk bin/libs
@@ -71,6 +69,12 @@ done
 create_APK vkreplay
 )
 
+if test -z "$VULKAN_SDK" ; then
+    glslang=""
+else
+    glslang=-DGLSLANG_REPO_ROOT=${VULKAN_SDK}/../source/glslang
+fi
+
 #
 # build vktrace
 #
@@ -79,7 +83,7 @@ pushd ..
 ./update_external_sources.sh -g -s
 mkdir -p build
 cd build
-cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_LOADER=Off -DBUILD_TESTS=Off -DBUILD_LAYERS=Off -DBUILD_VKTRACEVIEWER=Off -DBUILD_LAYERSVT=Off -DBUILD_DEMOS=Off -DBUILD_VKJSON=Off -DBUILD_VIA=Off -DBUILD_VKTRACE_LAYER=Off -DBUILD_VKTRACE_REPLAY=Off -DBUILD_VKTRACE=On ..
+cmake -DCMAKE_BUILD_TYPE=Debug $glslang -DBUILD_TESTS=Off -DBUILD_VLF=Off -DBUILD_VKTRACEVIEWER=Off -DBUILD_LAYERSVT=Off -DBUILD_VIA=Off -DBUILD_VKTRACE_LAYER=Off -DBUILD_VKTRACE_REPLAY=Off -DBUILD_VKTRACE=On ..
 make -j $cores vktrace
 popd
 )
@@ -91,7 +95,7 @@ popd
 pushd ..
 mkdir -p build32
 cd build32
-cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_LOADER=Off -DBUILD_TESTS=Off -DBUILD_LAYERS=Off -DBUILD_VKTRACEVIEWER=Off -DBUILD_LAYERSVT=Off -DBUILD_DEMOS=Off -DBUILD_VKJSON=Off -DBUILD_VIA=Off -DBUILD_VKTRACE_LAYER=Off -DBUILD_VKTRACE_REPLAY=Off -DBUILD_X64=Off -DBUILD_VKTRACE=On ..
+cmake -DCMAKE_BUILD_TYPE=Debug $glslang -DBUILD_TESTS=Off -DBUILD_VLF=Off -DBUILD_VKTRACEVIEWER=Off -DBUILD_LAYERSVT=Off -DBUILD_VIA=Off -DBUILD_VKTRACE_LAYER=Off -DBUILD_VKTRACE_REPLAY=Off -DBUILD_X64=Off -DBUILD_VKTRACE=On ..
 make -j $cores vktrace
 popd
 )
