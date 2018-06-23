@@ -233,6 +233,9 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkMapMemory(VkDevice dev
         size = entry->totalSize - offset;
     }
 
+    // Pageguard handling will change real mapped pointer to a pointer of
+    // shadow memory, but trim need to use real mapped pointer.
+    void* pRealMappedData = *ppData;
 #ifdef USE_PAGEGUARD_SPEEDUP
     getPageGuardControlInstance().vkMapMemoryPageGuardHandle(device, memory, offset, size, flags, ppData);
 #endif
@@ -259,7 +262,7 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkMapMemory(VkDevice dev
         if (pInfo != NULL) {
             pInfo->ObjectInfo.DeviceMemory.mappedOffset = offset;
             pInfo->ObjectInfo.DeviceMemory.mappedSize = size;
-            pInfo->ObjectInfo.DeviceMemory.mappedAddress = *ppData;
+            pInfo->ObjectInfo.DeviceMemory.mappedAddress = pRealMappedData;
         }
         if (g_trimIsInTrim) {
             trim::write_packet(pHeader);
