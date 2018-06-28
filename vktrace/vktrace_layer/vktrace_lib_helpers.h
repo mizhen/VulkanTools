@@ -64,6 +64,7 @@ typedef struct _layer_instance_data {
 } layer_instance_data;
 
 // defined in manually written file: vktrace_lib_trace.c
+extern VKTRACE_CRITICAL_SECTION g_bufferToDeviceMemoryLock;
 extern VKMemInfo g_memInfo;
 extern VKTRACE_CRITICAL_SECTION g_memInfoLock;
 extern std::unordered_map<void *, layer_device_data *> g_deviceDataMap;

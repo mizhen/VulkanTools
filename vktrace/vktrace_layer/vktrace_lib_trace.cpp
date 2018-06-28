@@ -87,6 +87,7 @@ std::unordered_map<VkCommandBuffer, std::list<VkCommandBuffer>> g_commandBufferT
 #endif
 
 // declared as extern in vktrace_lib_helpers.h
+VKTRACE_CRITICAL_SECTION g_bufferToDeviceMemoryLock;
 VKTRACE_CRITICAL_SECTION g_memInfoLock;
 VKMemInfo g_memInfo = {0, NULL, NULL, 0};
 
@@ -3271,9 +3272,11 @@ VKTRACER_EXPORT VKAPI_ATTR void VKAPI_CALL __HOOKED_vkDestroyBuffer(VkDevice dev
     mdd(device)->devTable.DestroyBuffer(device, buffer, pAllocator);
     vktrace_set_packet_entrypoint_end_time(pHeader);
 #if defined(USE_PAGEGUARD_SPEEDUP) && !defined(PAGEGUARD_ADD_PAGEGUARD_ON_REAL_MAPPED_MEMORY)
+    vktrace_enter_critical_section(&g_bufferToDeviceMemoryLock);
     if (g_bufferToDeviceMemory.find(buffer) != g_bufferToDeviceMemory.end() && g_bufferToDeviceMemory[buffer].device == device) {
         g_bufferToDeviceMemory.erase(buffer);
     }
+    vktrace_leave_critical_section(&g_bufferToDeviceMemoryLock);
 #endif
     pPacket = interpret_body_as_vkDestroyBuffer(pHeader);
     pPacket->device = device;
@@ -3305,7 +3308,9 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkBindBufferMemory(VkDev
     DeviceMemory deviceMemory = {};
     deviceMemory.device = device;
     deviceMemory.memory = memory;
+    vktrace_enter_critical_section(&g_bufferToDeviceMemoryLock);
     g_bufferToDeviceMemory[buffer] = deviceMemory;
+    vktrace_leave_critical_section(&g_bufferToDeviceMemoryLock);
 #endif
     pPacket = interpret_body_as_vkBindBufferMemory(pHeader);
     pPacket->device = device;
@@ -4543,6 +4548,7 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkWaitForFences(VkDevice
                             for (auto iterBuffer = g_cmdBufferToBuffers[cmdBuffer].begin();
                                  iterBuffer != g_cmdBufferToBuffers[cmdBuffer].end(); ++iterBuffer) {
                                 VkBuffer buffer = *iterBuffer;
+                                vktrace_enter_critical_section(&g_bufferToDeviceMemoryLock);
                                 if (g_bufferToDeviceMemory.find(buffer) != g_bufferToDeviceMemory.end()) {
                                     // Sync real mapped memory (recorded in __HOOKED_vkBindBufferMemory) for the dest buffer
                                     // (recorded in __HOOKED_vkCmdCopyImageToBuffer) back to the copy of that memory
@@ -4550,6 +4556,7 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkWaitForFences(VkDevice
                                     VkDeviceMemory memory = g_bufferToDeviceMemory[buffer].memory;
                                     getPageGuardControlInstance().SyncRealMappedMemoryToMemoryCopyHandle(device, memory);
                                 }
+                                vktrace_leave_critical_section(&g_bufferToDeviceMemoryLock);
                             }
                             // Assuming the command buffer which has vkCmdCopyImageToBuffer will not be re-used.
                             if (g_cmdBufferToBuffers.find(cmdBuffer) != g_cmdBufferToBuffers.end()) {
@@ -4567,6 +4574,8 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkWaitForFences(VkDevice
                         for (auto iterBuffer = g_cmdBufferToBuffers[primaryCmdBuffer].begin();
                              iterBuffer != g_cmdBufferToBuffers[primaryCmdBuffer].end(); ++iterBuffer) {
                             VkBuffer buffer = *iterBuffer;
+
+                            vktrace_enter_critical_section(&g_bufferToDeviceMemoryLock);
                             if (g_bufferToDeviceMemory.find(buffer) != g_bufferToDeviceMemory.end()) {
                                 // Sync real mapped memory (recorded in __HOOKED_vkBindBufferMemory) for the dest buffer (recorded
                                 // in __HOOKED_vkCmdCopyImageToBuffer) back to the copy of that memory
@@ -4574,6 +4583,7 @@ VKTRACER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL __HOOKED_vkWaitForFences(VkDevice
                                 VkDeviceMemory memory = g_bufferToDeviceMemory[buffer].memory;
                                 getPageGuardControlInstance().SyncRealMappedMemoryToMemoryCopyHandle(device, memory);
                             }
+                            vktrace_leave_critical_section(&g_bufferToDeviceMemoryLock);
                         }
                         // Assuming the command buffer which has vkCmdCopyImageToBuffer will not be re-used.
                         if (g_cmdBufferToBuffers.find(primaryCmdBuffer) != g_cmdBufferToBuffers.end()) {
