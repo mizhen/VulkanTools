@@ -1059,26 +1059,42 @@ VKAPI_ATTR void VKAPI_CALL GetDeviceQueue(VkDevice device, uint32_t queueFamilyI
 
     // Make sure this queue can take graphics commands
     uint32_t count;
-    bool graphicsCapable = false;
+    VkBool32 presentCapable = VK_FALSE;
     VkLayerInstanceDispatchTable *pInstanceTable = instance_dispatch_table(physDeviceMap[devMap->physicalDevice]->instance);
     pInstanceTable->GetPhysicalDeviceQueueFamilyProperties(devMap->physicalDevice, &count, NULL);
 
     VkQueueFamilyProperties *queueProps = (VkQueueFamilyProperties *)malloc(count * sizeof(VkQueueFamilyProperties));
     if (queueProps) {
         pInstanceTable->GetPhysicalDeviceQueueFamilyProperties(devMap->physicalDevice, &count, queueProps);
-        graphicsCapable = ((queueProps[queueFamilyIndex].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0);
+
+#if defined(_WIN32)
+        presentCapable = instance_dispatch_table(devMap->physicalDevice)->GetPhysicalDeviceWin32PresentationSupportKHR(devMap->physicalDevice, queueFamilyIndex);
+#elif defined(__linux__)
+        // temp use original logic.
+        // TODO make function call to get present support from vkGetPhysicalDeviceXlibPresentationSupportKHR and vkGetPhysicalDeviceXcbPresentationSupportKHR
+        presentCapable = ((queueProps[queueFamilyIndex].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0);
+#elif defined(__ANDROID__)
+        //Android - all physical devices and queue families must be capable of presentation with any native window
+        presentCapable = VK_TRUE;
+#else   // (__APPLE__) or (__QNXNTO__) or Others
+        // TBD, temp use original logic.
+        presentCapable = ((queueProps[queueFamilyIndex].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0);
+#endif
+
         free(queueProps);
-    } else {
-        graphicsCapable = true;
+    }
+    else {
+        presentCapable = VK_TRUE;
     }
 
-    if (graphicsCapable) {
+    if (presentCapable == VK_TRUE) {
         // Create a mapping from a device to a queue
         VkDevice que = static_cast<VkDevice>(static_cast<void *>(*pQueue));
         deviceMap.emplace(que, devMap);
         devMap->queue = *pQueue;
         queueIndexMap.emplace(*pQueue, queueFamilyIndex);
     }
+
     loader_platform_thread_unlock_mutex(&globalLock);
 }
 
